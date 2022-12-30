@@ -1,0 +1,11 @@
+gym
+mujoco>=2.2.0
+stable_baselines3>=1.4.0
+torch
+wandb
+tensorboard
+numpy
+matplotlib
+scipy
+opencv-python
+ruamel.yaml
