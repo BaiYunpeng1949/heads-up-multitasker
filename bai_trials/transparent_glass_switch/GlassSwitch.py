@@ -248,10 +248,6 @@ class GlassSwitch(Env):
         #  Ultimately, we can simulate the scenario when the eye is perceiving information from the front plane,
         #  how the information from the back plane are losing.
 
-        # TODO the next stage would be recognizing some text shown on the planes, but 2 more steps are needed:
-        #  1. asset implementation, i.e., prepare a png photo or stl model, then introduce it into my env.
-        #  2. picture recognition using CNN.
-
         # ----------------------------------------------------------------------------------------------------
         # Finally confirm all the settings.
         mujoco.mj_forward(self._model, self._data)
@@ -349,19 +345,76 @@ class GlassSwitch(Env):
         mujoco.mjv_moveCamera(self._model, action, 0.0, -0.05 * yoffset, self._scene, self._cam)
 
     def reset(self):
+        # TODO outline
+        #  Reset all variables. (replicate the __init__)
+
+        # Reset the simulated environment.
+        mujoco.mj_resetData(self._model, self._data)
         pass
 
     def step(self, action):
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data)  # nstep=self._run_parameters["frame_skip"]
+        # TODO try using mj_forward, it should be enough.
+
+        # Update environment.
+        reward, done, info = self._update(action=action)
+
+        # Update the simulated steps.
+        self._steps += 1  # TODO declare this variable later.
+
+        # Get observation.
+        obs = self._get_obs()
+
+        return obs, reward, done, info
         pass
 
-    def _update(self):
-        pass
+    def _update(self, action):
+        # TODO outline
+        #  1. action update.
+        #  2. environment update, details are listed below.
+
+        # TODO in the text update part: <need to be checked/confirmed later>
+        #  It seems that the text shown on the 'smart-glass' can not be updated dynamically by reloading different
+        #  xml configurations, this is because the xml parser and compilation has already been finished before the run time.
+        #  Hence that one possible way is creating multiple smart glasses with different content textures attached to them.
+        #  And I will change their visibility accordingly to make it as the content is updating.
+
+        # Setting the done flag.
+        done = False
+
+        # Update the info.
+        self.info = {}  # TODO initialize this later in the __init__
+
+        # Calculate the reward
+        reward = self._reward_function()
+
+        return reward, done, self.info
 
     def _get_obs(self):
-        pass
+        # TODO outline
+        #  the next stage would be recognizing some text shown on the planes, but 2 more steps are needed:
+        #  1. asset implementation, i.e., prepare a png photo or stl model, then introduce it into my env.
+        #  2. picture recognition using CNN.
+        #  3. Just like Aleksi's Perception-vision-base.py, the encoded pixel values could be directly fed into the
+        #   observation space for RL to learn. Reference to get_observation method's comments.
+
+        # TODO
+        #  1. the perception port range factors: lookat point, azithum, elevation, distance.
+        #  2. the perception content factors: encoded rgb + depth pixels.
+        obs = {}
+        return obs
 
     def _reward_function(self):
-        pass
+        # TODO outline
+        #  1. considering using the sum-up manner, i.e., the environment and task has their own reward_functions,
+        #   the sum of the scores will be optimized.
+        #  2. the reward_functions should be high-level and generic enough to utilize the advantages of RL.
+        #   Or there is no difference to using rule-based/hard coded algorithm.
+
+        reward = 0
+
+        return reward
 
     def render(self):  # , mode="human"
         """
@@ -421,13 +474,13 @@ class GlassSwitch(Env):
             elevation = - 180 * math.atan(x) / math.pi  # TODO debug delete later.
 
             # TODO set 1 - dynamic elevation
-            # self._cam.elevation = elevation
-            # self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
+            self._cam.elevation = elevation
+            self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
 
             # TODO set 2 - constant elevation = 0
-            self._cam.elevation = 0
-            self._cam.distance = self._original_viewport_dist + \
-                                 np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
+            # self._cam.elevation = 0
+            # self._cam.distance = self._original_viewport_dist + \
+            #                      np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
 
             # Update the alpha from rgba.
             # Reference: https://github.com/deepmind/mujoco/issues/114#issuecomment-1020594654
