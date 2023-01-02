@@ -380,6 +380,14 @@ class GlassSwitch(Env):
         #  Hence that one possible way is creating multiple smart glasses with different content textures attached to them.
         #  And I will change their visibility accordingly to make it as the content is updating.
 
+        # TODO in the task part:
+        #  In the red plane / environment, there will always be updating colors, the agent needs to press the correct
+        #  virtual button that sets the color flag. It would be rewarded if it presses correctly.
+        #  While in the green plane / smart-glass environment, sometimes there will appear some texts, when they appear,
+        #  The agent is expected to sense the change with low alpha, then get back the lookat point to the smart-glass.
+        #  Then read the content shown on the smart-glass. It would be rewarded if it reads correctly.
+        #  In the end, both rewards would be summed up to contribute to the final reward, which will be optimized by the RL.
+
         # Setting the done flag.
         done = False
 
