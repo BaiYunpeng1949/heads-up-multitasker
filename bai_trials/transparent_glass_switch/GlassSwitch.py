@@ -15,12 +15,13 @@ from gym.spaces import Discrete, Box, Dict, Tuple, MultiBinary, MultiDiscrete
 
 
 class GlassSwitch(Env):
-    @property
     def _config_cam_sta_params(self):
         """
         This method configures all camera related static values, including flags and counters.
         The 'static' here means configurations that will not change in one simulation.
         """
+        # TODO the ValueError can be raised to ensure no conflict flags. See the example:
+        #  https://github.com/deepmind/dm_control/blob/3c67a42d021b97808fcc075c0c468d78f0c2233f/dm_control/mujoco/engine.py#L846
         # Names.
         # The fixed abstract camera name:
         self._camera_name = 'fixed-eye'
@@ -51,12 +52,11 @@ class GlassSwitch(Env):
             self._is_key_mouse_interaction = False
         # The printings.
         self._is_print_camera_config = False        # Set to True to print camera configuration.
-        self._is_print_camera_rgb_depth = True     # Set to True to print camera read pixel rgb and depth info.
+        self._is_print_camera_rgb_depth = False     # Set to True to print camera read pixel rgb and depth info.
 
         # Constant configuration.
         self._simend = 500  # Simulation time. TODO this might be changed later.
 
-    @property
     def _init_cam_dyn_params(self):
         """
         This method is developed for making parameters initialization replicable.
@@ -143,26 +143,16 @@ class GlassSwitch(Env):
         self.observation_space = None   # TODO finish later, should specify what the camera sees, the pixels.
 
         # ----------------------------------------------------------------------------------------------------
+        # TODO the rendering structure can be further enhanced following the dm_control: https://github.com/deepmind/dm_control/blob/main/dm_control/viewer/renderer.py
         # Initialize the camera functionality.
         # Ref: MuJoCoPy Bootcamp Lec 13: https://pab47.github.io/mujocopy.html
         # Configure the camera related static parameters.
-        self._config_cam_sta_params
+        self._config_cam_sta_params()
 
         # Initializations.
         # The abstract camera.
         self._cam = mujoco.MjvCamera()  # Abstract camera.
-        # Concepts:
-        #  An "abstract camera" refers to a virtual camera that is implemented in software and is not directly
-        #   related to the rendering of the scene using OpenGL.
-        #   An abstract camera can be used to define a viewing volume or frustum,
-        #   as well as to specify the position and orientation of the camera in 3D space.
-        #
-        #  On the other hand, an "OpenGL camera" refers to a camera that is implemented using OpenGL functions and is
-        #   used to control the rendering of a scene using OpenGL.
-        #   An OpenGL camera is typically defined by a projection matrix and a view matrix,
-        #   which are used to transform the 3D coordinates of the objects in the scene into 2D coordinates for
-        #   rendering on the screen.
-        #
+        # Concepts: see the
         # "OpenGL® camera" is the name given to the virtual position of a viewer within an Open Graphics Library®
         #  (OpenGL®) scene. It is defined by the position of the viewer within the scene, and then the location or
         #  direction in which the viewer is looking. The position of the camera in an OpenGL® scene will determine
@@ -171,7 +161,7 @@ class GlassSwitch(Env):
 
         mujoco.mjv_defaultCamera(self._cam)
         # Update the camera related dynamic parameters.
-        self._init_cam_dyn_params
+        self._init_cam_dyn_params()
 
         # Identify whether to make the abstract camera's position fixed.
         # Reference: Aleksi's rendering.py, class Camera. https://github.com/BaiYunpeng1949/user-in-the-box/blob/main/uitb/utils/rendering.py
@@ -211,7 +201,7 @@ class GlassSwitch(Env):
 
         # Initialize the mouse and keyboard interactions if permitted.
         if self._is_key_mouse_interaction:
-            self._enable_key_mouse_actions
+            self._enable_key_mouse_actions()
 
         # Initialize visualization data structures.
         self._scene = mujoco.MjvScene(self._model, maxgeom=10000)
@@ -252,7 +242,6 @@ class GlassSwitch(Env):
         # Finally confirm all the settings.
         mujoco.mj_forward(self._model, self._data)
 
-    @property
     def _enable_key_mouse_actions(self):
         """
         This property method installs the keyboard and mouse actions by setting up the correspoding callback functions
@@ -433,6 +422,7 @@ class GlassSwitch(Env):
         to build my camera and GL rendering.
         """
         # TODO ---------------------------------- temporary coding playground ------------------------------
+        _is_added = False
         # I try to render using glfw with a custom window. TODO: this part should be in the step method.
         while not glfw.window_should_close(self._window):
             time_prev = self._data.time
@@ -443,12 +433,31 @@ class GlassSwitch(Env):
             if self._data.time >= self._simend:
                 break
             # -------------------------------------------------------------------------------------------------------
+            # TODO trials: create a virtual geom, if it works, later the xml will be the asset configuration files,
+            #  all dynamic objects will be created in the runtime - it doesn't seem to be working.
+            # Ref: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjvgeom
+            # This is the data structure describing one abstract visualization geom - which could correspond to a model
+            #  geom or to a decoration element constructed by the visualizer.
+            # _type = mujoco.mjtGeom.mjGEOM_SPHERE
+            _type = mujoco.mjtGeom.mjGEOM_CAPSULE
+            # _pos = np.array([0, 0, 0])
+            _pos = np.zeros(3)
+            _size = np.array([0.2, 0.5, 0.5])
+            # _size = np.zeros(3)
+            # _mat = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0])
+            _mat = np.zeros(9)
+            _rgba = np.array([0, 1, 0, 0.5])
+            _width = 0.3
+            _point_a = np.array([0, 0, 0.2])
+            _point_b = np.array([0.2, 0.5, 0.5])
+
             # Update the scene TODO debug delete later
-            abs_dx = 0.005
-            abs_da = 0.0015
-            _my_timestep_interval = 10
-            _my_num_changes = 100
-            for i in range(_my_num_changes):
+            _const_animation = 0.05
+            abs_dx = 0.05
+            abs_da = 0.45
+            _my_timestep_interval = 1  # int(_const_animation / abs_dx)
+            _const_my_num_changes = 100
+            for i in range(_const_my_num_changes):
                 if self._data.time <= i * _my_timestep_interval:
                     if i % 2 != 0:
                         dx = abs_dx
@@ -461,6 +470,7 @@ class GlassSwitch(Env):
             self._cam.lookat[1] += dx
 
             # TODO find an established algorithm for this kind of control.
+            _const_alpha_coefficient = 0.5
             original_sg_y = self._model.geom('smart-glass').pos[1]
             gain_alpha_change = 1.0 # The gain could be used later. In a non-linear control.
             y_abs_dist = abs(self._cam.lookat[1] - original_sg_y)
@@ -474,7 +484,7 @@ class GlassSwitch(Env):
             if y_abs_dist >= dist_map['max_dist']:
                 alpha = 0
             else:
-                alpha = (dist_map['max_dist'] - y_abs_dist) / mapping_range
+                alpha = _const_alpha_coefficient * (dist_map['max_dist'] - y_abs_dist) / mapping_range
 
             # The elevation update. TODO
             x = self._original_viewport_height / np.abs(
@@ -482,28 +492,48 @@ class GlassSwitch(Env):
             elevation = - 180 * math.atan(x) / math.pi  # TODO debug delete later.
 
             # TODO set 1 - dynamic elevation
-            self._cam.elevation = elevation
-            self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
+            # self._cam.elevation = elevation
+            # self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
 
             # TODO set 2 - constant elevation = 0
-            # self._cam.elevation = 0
-            # self._cam.distance = self._original_viewport_dist + \
-            #                      np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
+            self._cam.elevation = 0
+            self._cam.distance = self._original_viewport_dist + \
+                                 np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
 
             # Update the alpha from rgba.
+            # TODO disable all the rgba configurations in texture, material, and geoms.
+            #  If one wants to only render the texts, one can create his own geom mesh, but it would be very complex when
+            #  dealing with paragraphs of texts.
+            # TODO to be noted that the geom rgba takes the precedence over the material rgba.
             # Reference: https://github.com/deepmind/mujoco/issues/114#issuecomment-1020594654
             # From there I realized the model, which was stated to be treated as a constant object could still be changed!
             # self._model.geom(self._geom_smart_glass_name).rgba[3] -= da # TODO trial uncomment
-            self._model.geom(self._geom_smart_glass_name).rgba[3] = alpha
+            # TODO the material and its attaching geom seems can't be separated, consider using 2 planes.
+            # self._model.geom(self._geom_smart_glass_name).rgba = [0.5, 0.5, 0.5, 1]
+            self._model.geom('smart-glass-lenc').rgba = [0.3, 0.3, 0.3, 0.3]
+            self._model.mat('smart-glass-display-cube').rgba = [0.3, 0.3, 0.3, alpha]
+
+            # Get the id.
+            # _id_mat_sgc = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_MATERIAL, 'smart-glass-display-cube')
+            # Apply the new changes to the model.
+            # print(self._model.geom(self._geom_smart_glass_name).matid)
+            # print(self._model.geom(self._geom_smart_glass_name).rgba)
+
             # TODO: design a looking algorithm that seems like the camera is fixed. Inverse kinematic algorithm.
             # To implement inverse kinematics for a camera, you will need to define the kinematic chain for the camera, which may include the camera's position, orientation, and various other parameters such as the distance from the camera to the lookat point, the azimuth and elevation angles, and so on. You will then need to define the desired position and orientation for the camera, and use an inverse kinematics algorithm to compute the joint angles that will allow the camera to reach that position and orientation.
             # Get the ball moving along. TODO: need a method to sync the ball and the focal point.
             self._data.qpos[0:3] = self._cam.lookat
-            print('elevation: {}, qpos: {}'.format(self._cam.elevation, self._data.qpos[0:3]))
+            # print('elevation: {}, qpos: {}'.format(self._cam.elevation, self._data.qpos[0:3]))
             #-------------------------------------------------------------------------------------------------------
 
             # Get framebuffer viewport.
-            self._get_framebuffer_viewport
+            self._get_framebuffer_viewport()
+
+            # TODO Add a geom trial
+            if self._data.time >= 4 * _my_timestep_interval and _is_added is False:
+                self._add_geom(type=_type, size=_size, pos=_pos, mat=_mat, rgba=_rgba,
+                               width=_width, point_a=_point_a, point_b=_point_b)
+                _is_added = True
 
             # print camera configuration (help to initialize the view)
             if self._is_print_camera_config:
@@ -511,7 +541,7 @@ class GlassSwitch(Env):
                 print('cam.lookat =np.array([', self._cam.lookat[0], ',', self._cam.lookat[1], ',', self._cam.lookat[2], '])')
 
             # Update scene and render.
-            self._update_scene_render
+            self._update_scene_render()
 
             # Read the current frame's pixels.
             #  Ref: mujoco mjr_readPixels: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjr-readpixels
@@ -519,6 +549,35 @@ class GlassSwitch(Env):
             #  client buffer starts at (0,0).
             mujoco.mjr_readPixels(rgb=self._rgb_buffer, depth=self._depth_buffer,
                                   viewport=self._viewport, con=self._context)
+
+            # # TODO debug parts - see what exactly is the pixel-wise segmentation. Ref:
+            # #  https://github.com/deepmind/dm_control/blob/3c67a42d021b97808fcc075c0c468d78f0c2233f/dm_control/mujoco/engine.py#L886
+            # # Convert 3-channel uint8 to 1-channel uint32.
+            # image3 = self._rgb_buffer.astype(np.uint32)
+            # segimage = (image3[:, :, 0] +
+            #             image3[:, :, 1] * (2 ** 8) +
+            #             image3[:, :, 2] * (2 ** 16))
+            # # Remap segid to 2-channel (object ID, object type) pair.
+            # # Seg ID 0 is background -- will be remapped to (-1, -1).
+            # segid2output = np.full((self._scene.ngeom + 1, 2), fill_value=-1,
+            #                        dtype=np.int32)  # Seg id cannot be > ngeom + 1.
+            # print(segid2output)
+            # visible_geoms = [g for g in self._scene.geoms if g.segid != -1]
+            # visible_segids = np.array([g.segid + 1 for g in visible_geoms], np.int32)
+            # visible_objid = np.array([g.objid for g in visible_geoms], np.int32)
+            # visible_objtype = np.array([g.objtype for g in visible_geoms], np.int32)
+            # segid2output[visible_segids, 0] = visible_objid
+            # segid2output[visible_segids, 1] = visible_objtype
+            # print(len(visible_geoms), len(visible_segids), len(visible_objid), len(visible_objtype))
+            # print('visible_segids[:10]\n{}\n'.format(visible_segids[:10]))
+            # print('visible_objtype[:10]\n{}\n'.format(visible_objtype[:10]))
+            # print('visible_objid[:10]\n{}\n'.format(visible_objid[:10]))
+            # print('This is the segid2output: \n{}\n'.format(segid2output))
+            # print('The len(segimage):\n{}\n'.format(len(segimage)))
+            # print('This is the segimage: \n{}\n'.format(segimage))
+            # image = segid2output[segimage]
+            # print('This is the image: \n{}\n'.format(image))
+
             if self._is_print_camera_rgb_depth:
                 print('The size of rgb buffer: {}\nThe size of depth buffer: {}\n'.format(self._rgb_buffer.shape, self._depth_buffer.shape))
                 print('The rgb buffer:\n {}\nThe depth buffer:\n {}\n'.format(self._rgb_buffer, self._depth_buffer))
@@ -537,6 +596,39 @@ class GlassSwitch(Env):
 
         # glfw.terminate()
 
+    def _add_geom(self, type, size, pos, mat, rgba, width, point_a, point_b):
+        """
+        This method add one abstract visualization geom to the scene in a programming way.
+        Ref:
+            1. mjvGeom: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjvgeom
+            2. mjv_initGeom: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjv-initgeom
+            3. mjv_makeConnector: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjv-makeconnector
+            4. mujoco colab tutorial - modifying the scene:
+                https://colab.research.google.com/github/deepmind/mujoco/blob/main/python/tutorial.ipynb#scrollTo=AGm5-e0sHEAF
+        """
+        # Add one abstract geom to the mjvScene scene.
+        if self._scene.ngeom >= self._scene.maxgeom:
+            return 'The number of geoms in the MjvScene buffer overflows.'
+        else:
+            self._scene.ngeom += 1  # Increment the ngeom.
+            # Get the new added mjvGeom geom.
+            # print('the number of scene geoms: {}\n the number of model geoms: {}'.format(self._scene.ngeom, self._model.ngeom))
+            geom = self._scene.geoms[self._scene.ngeom - 1]
+            # Initialize a new geom with the given type info and OpenGL info.
+            mujoco.mjv_initGeom(geom=geom, type=type, size=np.array([0.2, 0.2, 0.2]), pos=np.array([0, 0, 0.5]), mat=np.zeros(9), rgba=np.array([0, 1, 0, 1]))
+
+            # geom.size = np.array([0.2, 0.2, 0.2])
+            # geom.pos = np.array([0, 0, 0.5])
+            # geom.rgba = np.array([0, 1, 0, 1])
+            # # Then add it to the scene using mjv_makeConnector.
+            # mujoco.mjv_makeConnector(geom=self._scene.geoms[self._scene.ngeom - 1], type=mujoco.mjtGeom.mjGEOM_CAPSULE, width=width,
+            #                          a0=point_a[0], a1=point_a[1], a2=point_a[2],
+            #                          b0=point_b[0], b1=point_b[1], b2=point_b[2])
+            # print('The geoms in the scene:\n', self._scene.geoms, '\n')
+            # print('The type of the scene.geom: ', type(self._scene.geoms))
+            # print(self._scene.geoms[self._scene.ngeom - 1])
+            mujoco.mjr_render(self._viewport, self._scene, self._context)
+
     def close(self):
         """
         This is an override method inherited from its parent class gym.Env,
@@ -548,15 +640,19 @@ class GlassSwitch(Env):
         self._window = None
         glfw.terminate()
 
-    @property
     def _get_framebuffer_viewport(self):
+        """
+        This method initializes and gets the frame buffer's viewport.
+        """
         viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
         # viewport_width = self._width
         # viewport_height = self._height
         self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
 
-    @property
     def _update_scene_render(self):
+        """
+        This method updates and renders the scene.
+        """
         mujoco.mjv_updateScene(self._model, self._data, self._opt, None, self._cam, mujoco.mjtCatBit.mjCAT_ALL.value,
                                self._scene)
         mujoco.mjr_render(self._viewport, self._scene, self._context)

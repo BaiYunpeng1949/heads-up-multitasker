@@ -31,7 +31,7 @@
     <texture name="blue-eye" type="cube" gridsize="3 4" gridlayout=".U..LFRB.D.." file="assets/blue-eye.png"/> <!-- The X pic size is 4096 * 3072-->
     <material name="blue-eye" texture="blue-eye" texuniform="true"/>
 
-    <texture name="smart-glass-display-cube" type="cube" builtin="none" filedown="assets/letter-X.png"/>
+    <texture name="smart-glass-display-cube" type="cube" builtin="none" filedown="assets/vector-letter-B.png"/>
     <material name="smart-glass-display-cube" texture="smart-glass-display-cube" texuniform="false"/>
 
     <texture name="smart-glass-display-2d" type="2d" builtin="none" file="assets/vector-letter-B.png"
@@ -52,7 +52,8 @@
 
     <!-- Two rectangular planes -->
     <geom name="ambient-env" type="box" pos="0 2.3 1.5"  size="1.5 .001 1.5" rgba="1 0 0 1" />   # Red.
-    <geom name="smart-glass" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5" rgba="0 1 0 1" material="smart-glass-display-cube"/>  # Green.
+    <geom name="smart-glass" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5"  material="smart-glass-display-cube"/>  # Green.
+    <geom name="smart-glass-lenc" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5"/>
 <!--    <geom name="smart-glass" type="plane" euler="90 0 0" pos="0 -0.3 1.5"  size="1.5 1.5 .001" rgba="0 1 0 1" material="smart-glass-display-2d"/>  # Green.-->
 
 <!--    <geom name="cube" type="box" pos="0 0 5"  size="1.5 1.5 1.5" rgba="0 1 0 0.5" material="smart-glass-display"/>  &lt;!&ndash; trial &ndash;&gt;-->
