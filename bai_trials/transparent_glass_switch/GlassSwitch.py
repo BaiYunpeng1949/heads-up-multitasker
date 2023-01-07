@@ -244,7 +244,7 @@ class GlassSwitch(Env):
 
     def _enable_key_mouse_actions(self):
         """
-        This property method installs the keyboard and mouse actions by setting up the correspoding callback functions
+        This method installs the keyboard and mouse actions by setting up the correspoding callback functions
         in the glfw.
         """
         glfw.set_key_callback(self._window, self._keyboard)
@@ -356,7 +356,6 @@ class GlassSwitch(Env):
         obs = self._get_obs()
 
         return obs, reward, done, info
-        pass
 
     def _update(self, action):
         # TODO outline
@@ -423,6 +422,13 @@ class GlassSwitch(Env):
         """
         # TODO ---------------------------------- temporary coding playground ------------------------------
         _is_added = False
+        self._accumulating_pos = 0
+        # Viewport.
+        viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
+        self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
+        # Scene.
+        mujoco.mjv_updateScene(self._model, self._data, self._opt, None, self._cam, mujoco.mjtCatBit.mjCAT_ALL.value,
+                               self._scene)
         # I try to render using glfw with a custom window. TODO: this part should be in the step method.
         while not glfw.window_should_close(self._window):
             time_prev = self._data.time
@@ -492,13 +498,13 @@ class GlassSwitch(Env):
             elevation = - 180 * math.atan(x) / math.pi  # TODO debug delete later.
 
             # TODO set 1 - dynamic elevation
-            # self._cam.elevation = elevation
-            # self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
+            self._cam.elevation = elevation
+            self._cam.distance = self._original_viewport_height / math.sin(np.abs(x))
 
             # TODO set 2 - constant elevation = 0
-            self._cam.elevation = 0
-            self._cam.distance = self._original_viewport_dist + \
-                                 np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
+            # self._cam.elevation = 0
+            # self._cam.distance = self._original_viewport_dist + \
+            #                      np.abs(self._init_cam_config['cam_lookat'][1] - self._cam.lookat[1])
 
             # Update the alpha from rgba.
             # TODO disable all the rgba configurations in texture, material, and geoms.
@@ -525,22 +531,18 @@ class GlassSwitch(Env):
             self._data.qpos[0:3] = self._cam.lookat
             # print('elevation: {}, qpos: {}'.format(self._cam.elevation, self._data.qpos[0:3]))
             #-------------------------------------------------------------------------------------------------------
-
-            # Get framebuffer viewport.
-            self._get_framebuffer_viewport()
-
-            # TODO Add a geom trial
-            if self._data.time >= 4 * _my_timestep_interval and _is_added is False:
-                self._add_geom(type=_type, size=_size, pos=_pos, mat=_mat, rgba=_rgba,
-                               width=_width, point_a=_point_a, point_b=_point_b)
-                _is_added = True
+            # # TODO Add a geom trial
+            # if 2 * _my_timestep_interval < self._data.time <= 10 * _my_timestep_interval:
+            #     self._add_geom(type=_type, size=_size, pos=_pos, mat=_mat, rgba=_rgba,
+            #                    width=_width, point_a=_point_a, point_b=_point_b)
+            #     # _is_added = True
 
             # print camera configuration (help to initialize the view)
             if self._is_print_camera_config:
                 print('cam.azimuth =', self._cam.azimuth, ';', 'cam.elevation =', self._cam.elevation, ';', 'cam.distance = ', self._cam.distance)
                 print('cam.lookat =np.array([', self._cam.lookat[0], ',', self._cam.lookat[1], ',', self._cam.lookat[2], '])')
 
-            # Update scene and render.
+            # Update scene and render. TODO this is the necessary GLFW processing.
             self._update_scene_render()
 
             # Read the current frame's pixels.
@@ -582,18 +584,6 @@ class GlassSwitch(Env):
                 print('The size of rgb buffer: {}\nThe size of depth buffer: {}\n'.format(self._rgb_buffer.shape, self._depth_buffer.shape))
                 print('The rgb buffer:\n {}\nThe depth buffer:\n {}\n'.format(self._rgb_buffer, self._depth_buffer))
 
-            # Swap OpenGL buffers (blocking call due to v-sync)
-            #  The glfw.swap_buffers function is used to swap the front and back buffers of a window.
-            #  A window typically has two buffers: the front buffer and the back buffer.
-            #  The front buffer is the one that is displayed on the screen, and the back buffer is used for drawing.
-            #  When glfw.swap_buffers is called, it swaps the front and back buffers of the window,
-            #  so that the image in the back buffer becomes visible on the screen.
-            #  This allows the application to draw the next frame in the back buffer while the previous frame is being displayed in the front buffer.
-            glfw.swap_buffers(self._window)
-
-            # Process pending GUI events, call GLFW callbacks
-            glfw.poll_events()
-
         # glfw.terminate()
 
     def _add_geom(self, type, size, pos, mat, rgba, width, point_a, point_b):
@@ -610,20 +600,26 @@ class GlassSwitch(Env):
         if self._scene.ngeom >= self._scene.maxgeom:
             return 'The number of geoms in the MjvScene buffer overflows.'
         else:
+            mujoco.mjv_updateScene(self._model, self._data, self._opt, None, self._cam,
+                                   mujoco.mjtCatBit.mjCAT_ALL.value,
+                                   self._scene)
             self._scene.ngeom += 1  # Increment the ngeom.
             # Get the new added mjvGeom geom.
-            # print('the number of scene geoms: {}\n the number of model geoms: {}'.format(self._scene.ngeom, self._model.ngeom))
+            print('the number of scene geoms: {}\n the number of model geoms: {}'.format(self._scene.ngeom, self._model.ngeom))
             geom = self._scene.geoms[self._scene.ngeom - 1]
             # Initialize a new geom with the given type info and OpenGL info.
-            mujoco.mjv_initGeom(geom=geom, type=type, size=np.array([0.2, 0.2, 0.2]), pos=np.array([0, 0, 0.5]), mat=np.zeros(9), rgba=np.array([0, 1, 0, 1]))
+            mujoco.mjv_initGeom(geom=geom, type=mujoco.mjtGeom.mjGEOM_BOX.value,
+                                size=np.array([0.2, 0.2, 0.2]), pos=np.array([0, 0, 0.5]), mat=np.zeros(9), rgba=np.array([0, 1, 0, 1]))
 
             # geom.size = np.array([0.2, 0.2, 0.2])
             # geom.pos = np.array([0, 0, 0.5])
             # geom.rgba = np.array([0, 1, 0, 1])
             # # Then add it to the scene using mjv_makeConnector.
-            # mujoco.mjv_makeConnector(geom=self._scene.geoms[self._scene.ngeom - 1], type=mujoco.mjtGeom.mjGEOM_CAPSULE, width=width,
-            #                          a0=point_a[0], a1=point_a[1], a2=point_a[2],
-            #                          b0=point_b[0], b1=point_b[1], b2=point_b[2])
+            mujoco.mjv_makeConnector(geom=self._scene.geoms[self._scene.ngeom - 1], type=mujoco.mjtGeom.mjGEOM_CAPSULE, width=0.2,
+                                     a0=point_a[0], a1=point_a[1], a2=point_a[2],
+                                     b0=point_b[0], b1=point_b[1], b2=point_b[2])
+            _pertb = mujoco.MjvPerturb()
+            mujoco.mjv_addGeoms(m=self._model, d=self._data, opt=self._opt, pert=_pertb, catmask=mujoco.mjtCatBit.mjCAT_ALL.value, scn=self._scene)
             # print('The geoms in the scene:\n', self._scene.geoms, '\n')
             # print('The type of the scene.geom: ', type(self._scene.geoms))
             # print(self._scene.geoms[self._scene.ngeom - 1])
@@ -640,24 +636,52 @@ class GlassSwitch(Env):
         self._window = None
         glfw.terminate()
 
-    def _get_framebuffer_viewport(self):
-        """
-        This method initializes and gets the frame buffer's viewport.
-        """
-        viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
-        # viewport_width = self._width
-        # viewport_height = self._height
-        self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
-
     def _update_scene_render(self):
         """
-        This method updates and renders the scene.
+        This method gets the viewport, updates the abstract mjvScene and the render, and swap buffers, processing pending events.
         """
+        # Viewport.
+        viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
+        self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
+        # Scene.
         mujoco.mjv_updateScene(self._model, self._data, self._opt, None, self._cam, mujoco.mjtCatBit.mjCAT_ALL.value,
                                self._scene)
+        # TODO debug delete later
+        _my_timestep_interval = 1
+        self._accumulating_pos += 0.01
+        if 4 * _my_timestep_interval < self._data.time <= 25 * _my_timestep_interval:
+            point_a = np.array([0.3, 0.3, 0.3])
+            point_b = np.array([0.3, 0.3, 0.5+self._accumulating_pos])
+            # self._scene.ngeom += 1  # Increment the ngeom.
+            # # Get the new added mjvGeom geom.
+            # print('the number of scene geoms: {} the number of model geoms: {}'.format(self._scene.ngeom,
+            #                                                                              self._model.ngeom))
+            # geom = self._scene.geoms[self._scene.ngeom-1]
+            # # # Initialize a new geom with the given type info and OpenGL info.
+            # mujoco.mjv_initGeom(geom=geom, type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            #                     size=np.zeros(3), pos=np.zeros(3), mat=np.zeros(9),
+            #                     rgba=np.array([0, 1, 0, 1]))
+            #
+            # geom.size = np.array([0.2, 0.2, 0.2])
+            # geom.pos = np.array([0.3, 0.3, 1])
+            # geom.rgba = np.array([0.5, 0.5, 0.5, 1])
+
+            # # Then add it to the scene using mjv_makeConnector.
+            # mujoco.mjv_makeConnector(geom=self._scene.geoms[self._scene.ngeom-1], type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+            #                          width=0.05,
+            #                          a0=point_a[0], a1=point_a[1], a2=point_a[2],
+            #                          b0=point_b[0], b1=point_b[1], b2=point_b[2])
+        # TODO debug delete later
+
+        # Render.
         mujoco.mjr_render(self._viewport, self._scene, self._context)
 
-    @property
+        # Swap OpenGL buffers (blocking call due to v-sync)
+        glfw.swap_buffers(self._window)
+
+        # Process pending GUI events, call GLFW callbacks
+        glfw.poll_events()
+
     def encoder(self):  # TODO implement a simple cnn to recognize pictures.
         """
         This method should encode the rgb data into something DL networks, such as CNN can interpret and classify.
