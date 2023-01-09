@@ -11,7 +11,16 @@ from RLPipeline import RLPipeline
 glass_switch_path = os.path.join('glass-switch-env-v1224.xml')
 
 env = GlassSwitch(xml_path=glass_switch_path)
-env.render()
+_num_episodes = 3
+for episode in range(1, _num_episodes + 1):
+    state = env.reset()
+    done = False
+    score = 0
+    while not done:
+        action = env.action_space.sample()
+        n_state, reward, done, info = env.step(action)
+        score += reward
+    print('Episode:{}   Score:{}   Info: {}'.format(episode, score, info))
 env.close()
 
 # Train in the RL.

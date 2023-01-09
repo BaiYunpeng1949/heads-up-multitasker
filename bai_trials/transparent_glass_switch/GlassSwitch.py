@@ -1,6 +1,6 @@
 import numpy as np
 import os
-import math
+import math, random
 from typing import Callable, NamedTuple, Optional, Union, List
 
 import mujoco
@@ -34,7 +34,27 @@ class GlassSwitch(Env):
         is_print_cam_rgb_depth = False
         simend = 500
         viewer_mode = 'through_glass'
-        task_mode = 'demo'
+        task_mode = 'color_switch'  # TODO get a valueError Raiser
+        task_env_config = {
+            'glass_display_choices': [0, 1, 2],    # 0 for the display  0 (the grey blank space), 1 for the display 1, and 2 for the display 2.
+            'env_color_choices': [
+                [0.5, 0.5, 0.5],     # grey, the default color
+                [1, 0, 0],  # red
+                [0, 1, 0],  # green
+                [0, 0, 1]   # blue
+            ],  # rgb choices
+            'glass_display_duration': 0.4,    # duration of the glass display in seconds, which simulates the content changes TODO change later, it is not the seconds, related to the fps
+            'env_color_duration': 0.6,    # duration of the environment color change in seconds, which simulates the env changes
+            'x_sample': int(height/2 - 5),  # sample point of the x and y for easily differentiate perceived pixels
+            'y_sample': int(width/2 + 5),
+            'on_env_grey': np.array([112, 112, 112]),   # differential rgb values for a specific point
+            'on_env_red': np.array([154, 72, 72]),
+            'on_env_green': np.array([72, 154, 72]),
+            'on_env_blue': np.array([72, 72, 154]),
+            'on_glass_nothing': np.array([81, 81, 41]),
+            'on_glass_B': np.array([35, 35, 15]),
+            'on_glass_X': np.array([41, 41, 21]),
+        }
         # --------------------------------------------------------------------------------------------------------------
 
         # Get strings.
@@ -45,7 +65,11 @@ class GlassSwitch(Env):
         # The geom names.
         self._geom_name_ambient_env = 'ambient-env'
         self._geom_name_smart_glass_lenses = 'smart-glass-lenses'
-        self._geom_name_smart_glass_display_1 = 'smart-glass-display-1'
+        self._geom_names_glass_display_ids = {
+            0: 'smart-glass-display-0',
+            1: 'smart-glass-display-1',
+            2: 'smart-glass-display-2'
+        }
 
         # OpenGL.
         # Resolution in pixels: width * height
@@ -96,9 +120,11 @@ class GlassSwitch(Env):
         # Focal point moving distance configurations.
         self._dist_configs = {
             'min_dist': 0,
-            'max_dist': 1.5,  # TODO This could be a tunable parameter in the design space.
+            'max_dist': 1,  # TODO This could be a tunable parameter in the design space.
         }
         self._mapping_range = self._dist_configs['max_dist'] - self._dist_configs['min_dist']
+        # The task environment settings configuration.
+        self._task_env_config = task_env_config
 
     def _init_cam_dyn_data(self):
         """
@@ -119,7 +145,7 @@ class GlassSwitch(Env):
 
         # Initialize the abstract camera's pose specifications.
         # Variability: free or fixed.
-        self._set_cam_variability()
+        self._set_cam_free()
         # mjvCamera: https://mujoco.readthedocs.io/en/stable/APIreference.html#mjvcamera
         # Set the camera position and pose according to the environment setting, e.g., the planes' positions.
         if self._viewer_mode == self._viewer_modes[0]:  # through the glass
@@ -131,8 +157,11 @@ class GlassSwitch(Env):
             self._static_cam_height = 5.5
             self._initial_cam_pos_y = -7.5
 
+        self._geom_pos_y_smart_glass_lenses = self._model.geom(self._geom_name_smart_glass_lenses).pos[1]
+        self._geom_pos_y_ambient_env = self._model.geom(self._geom_name_ambient_env).pos[1]
+
         self._init_cam_pose = {
-            'cam_lookat': np.array([0, self._model.geom(self._geom_name_smart_glass_lenses).pos[1], 1.5]),  # lookat point
+            'cam_lookat': np.array([0, self._geom_pos_y_smart_glass_lenses, 1.5]),  # lookat point
             'cam_distance': 5,  # Distance to lookat point or tracked body.
             'cam_azimuth': 90.0,    # Camera azimuth (deg). The concept reference: https://www.photopills.com/articles/understanding-azimuth-and-elevation
             'cam_elevation': 0.0  # Camera elevation (deg).
@@ -150,7 +179,7 @@ class GlassSwitch(Env):
         self._depth_buffer = np.empty((self._height, self._width),
                                       dtype=np.float32) if self._is_depth else None
 
-    def _set_cam_variability(self):
+    def _set_cam_free(self):
         """
         This method sets the camera's variability: free or fixed, according to the configuration.
         """
@@ -228,12 +257,40 @@ class GlassSwitch(Env):
         # Initialize MjData.
         self._data = mujoco.MjData(self._model)
 
-        # Initialize necessary properties for RL: action_space and observation_space.
-        # TODO finish later, should specify where should the camera see, can be encoded into: arithma, elevation, distance, and focal point.
-        self.action_space = None
-        self.observation_space = None   # TODO finish later, should specify what the camera sees, the pixels.
-        # TODO replace later.
-        self._step = 0
+        # Initialize necessary properties for RL: action_space.
+        # The action will be either 1 or 0.    # TODO the simple version: look at the glass or environment.
+        #  0 for looking at the smart-glass and 1 for looking at the ambient-env.
+        self.action_space = Discrete(2)
+
+        # The observation_space.
+        self.observation_space = Dict({
+            'rgb': Box(low=np.uint8(0), high=np.uint8(1), shape=(self._height, self._width, 3))
+        })   # TODO the simple version: the perception pixels.
+
+        # The agent's internal state: a finite status machine. Will be used on evaluating results TODO to be updated.
+        self._states = {
+            'total_time_on_glass_B': 0,
+            'total_time_on_env_red': 0,
+            'total_time_on_glass_X': 0,
+            'total_time_miss_glass_B': 0,
+            'total_time_miss_env_red': 0,
+            'total_time_miss_glass_X': 0,
+            'current_on_level': 0,      # 0 for getting nothing, 1 for X, 2 for red, 3 for B, -1 for losing X, -2 for red, -3 for
+        }
+
+        # The task's finite state machine.
+        self._task_FSM = {
+            'current_glass_display_id': 0,
+            'current_env_color_id': 0,
+            'start_step_glass_display_timestamp': 0,        # the current glass display started frame's timestamp, in seconds
+            'start_step_env_color_timestamp': 0,           # the current env class started frame's timestamp, in seconds
+            'previous_glass_display_id': 0,
+            'previous_env_color_id': 0,
+            'previous_step_timestamp': 0,
+        }
+
+        # TODO replace this initialization later.
+        self._steps = 0
         # --------------------------------------- Visual perception camera and rendering initialization -------------------------------------------------------------
         # TODO the rendering structure can be further enhanced following the
         #  dm_control: https://github.com/deepmind/dm_control/blob/main/dm_control/viewer/renderer.py
@@ -291,7 +348,7 @@ class GlassSwitch(Env):
         self._init_cam_dyn_data()
 
         # Reset the RL related data. TODO to pack these variables later.
-        self._step = 0
+        self._steps = 0
 
         ob = self._get_obs()
         return ob
@@ -303,13 +360,10 @@ class GlassSwitch(Env):
         # mujoco.mj_forward(m=self._model, d=self._data)
 
         # Update environment.
-        reward, done, info = self._update(action=action)
+        obs, reward, done, info = self._update(action=action)   # TODO research on the pipeline and observation ~ states.
 
         # Update the simulated steps.
         self._steps += 1
-
-        # Get observation.
-        obs = self._get_obs()
 
         return obs, reward, done, info
 
@@ -326,30 +380,26 @@ class GlassSwitch(Env):
         #   The rewards are proportional to the time it stays on the wall.
         #   The tricky part is: letting the agent learn, when he is looking at the wall, it must go back and check the smart
         #   glass content. What would be the best focal change frequency.
+        #  Specifically, the action space will be a binary decision space: look at the glass or look at the environment.
+        #   The observation space would be what the agent can see: the pixels with only rgb values captured by the abstract camera.
+        #   And to simplify the task, only when the user is looking at the environment, the color will be disclosed. Or it will be the default grey.
 
-        # Setting the done flag.
-        done = False
+        # Do the task. TODO finish soon
+        obs, done = self._do_task(action=action)
 
         # Update the info.
-        self.info = {}  # TODO initialize this later in the __init__
+        self.info = self._states
 
         # Calculate the reward
         reward = self._reward_function()
 
-        return reward, done, self.info
+        return obs, reward, done, self.info
 
     def _get_obs(self):
-        # TODO outline
-        #  the next stage would be recognizing some text shown on the planes, but 2 more steps are needed:
-        #  1. asset implementation, i.e., prepare a png photo or stl model, then introduce it into my env.
-        #  2. picture recognition using CNN.
-        #  3. Just like Aleksi's Perception-vision-base.py, the encoded pixel values could be directly fed into the
-        #   observation space for RL to learn. Reference to get_observation method's comments.
-
-        # TODO
-        #  1. the perception port range factors: lookat point, azithum, elevation, distance.
-        #  2. the perception content factors: encoded rgb + depth pixels.
-        obs = {}
+        # Returns the read rgb pixels.
+        obs = {
+            'rgb': self._rgb_buffer.copy()
+        }
         return obs
 
     def _reward_function(self):
@@ -359,7 +409,24 @@ class GlassSwitch(Env):
         #  2. the reward_functions should be high-level and generic enough to utilize the advantages of RL.
         #   Or there is no difference to using rule-based/hard coded algorithm.
 
-        reward = 0
+        # Write the reward function based on the agent's states.
+        states = self._states.copy()
+
+        # Get the rewards. Write in this awkward form because it is easy to tune them.
+        if states['current_on_level'] == 3:
+            reward = 3
+        elif states['current_on_level'] == 2:
+            reward = 2
+        elif states['current_on_level'] == 1:
+            reward = 1
+        elif states['current_on_level'] == 0:
+            reward = 0
+        elif states['current_on_level'] == -1:
+            reward = -1
+        elif states['current_on_level'] == -2:
+            reward = -2
+        elif states['current_on_level'] == -3:
+            reward = -3
 
         return reward
 
@@ -386,16 +453,13 @@ class GlassSwitch(Env):
                     break
 
                 # Do the given task.
-                self._do_task()
-
-                # Update the scene and render everything.
-                self._update_scene_render()
+                self._do_task(action=None)
 
                 # Print logs.
                 self._print_logs()
         # The task mode is 'color_switch'.
         elif self._task_mode == self._task_modes[1]:
-            # TODO do the framewise updates in the override step().
+            # TODO do the frame-wise updates in the override step() --> _update().
             pass
 
     def close(self):
@@ -409,12 +473,12 @@ class GlassSwitch(Env):
         self._window = None
         glfw.terminate()
 
-    def _do_task(self):
+    def _do_task(self, action):
         """
-        This method determines how the tasks are performed.
-        The most importantly, it specifies how the actions are taken, and how the observation space should be changed.
+        Important: this method determines how the tasks are performed at each step / frame.
+        It specifies how the actions are taken, and how the observation space would be.
 
-        Before I made a separate task class, this method is the temporal place to hold all task logics.
+        P.S., before I made a separate task class, this method is the temporal place to hold all task logics.
         """
         if self._task_mode == self._task_modes[0]:  # the demo mode
             const_animation = 0.05
@@ -436,9 +500,8 @@ class GlassSwitch(Env):
 
             # Transparency manipulation.
             alpha_change_coefficient = 0.5
-            smart_glass_lenses_y = self._model.geom(self._geom_name_smart_glass_lenses).pos[1]
             alpha_change_gain = 1.0  # The gain could be used later. In a non-linear control.
-            abs_y_dist = abs(self._cam.lookat[1] - smart_glass_lenses_y)
+            abs_y_dist = abs(self._cam.lookat[1] - self._geom_pos_y_smart_glass_lenses)
 
             if abs_y_dist >= self._dist_configs['max_dist']:
                 alpha = 0
@@ -446,20 +509,165 @@ class GlassSwitch(Env):
                 alpha = alpha_change_coefficient * (self._dist_configs['max_dist'] - abs_y_dist) / self._mapping_range
 
             # Update the alpha from rgba's transparency value.
-            self._model.geom(self._geom_name_smart_glass_display_1).rgba[3] = alpha
+            self._model.geom(self._geom_names_glass_display_ids[1]).rgba[3] = alpha
 
-            # Sync the visualized focal point - ball's movement.
+            # Sync up the visualized focal point - ball's movement.
             self._data.qpos[0:3] = self._cam.lookat
             # print('elevation: {}, qpos: {}'.format(self._cam.elevation, self._data.qpos[0:3]))
-        elif self._task_mode == self._task_modes[1]:    # the rl task: color switch
-            # TODO the task specification: the viewer will be in the 'through_glass' viewer mode. Through the half-transparent smart-glass-lenses,
-            #  the agent can perceive pixel values of the environment plane: 'ambient-env'. The agent's task is simply
-            #  move his focal point to the ambient env whenever he detects any color change happened on the 'ambient-env'.
-            #  And responds correctly to the correct color, i.e., the red color, when the focal point is fixed on the ambient-env.
-            #  To be noted that when the fixed eye moves from the smart glass lenses (sgl), the sgl's transparency will increase and thus its masking effect
-            #  over the environment will be diminished. This would be the first part of the task.
 
-            pass
+            # Get the observations.
+            obs = self._get_obs()
+
+            # Update the scene and render everything.
+            self._update_scene_render()
+
+            done = False
+
+        elif self._task_mode == self._task_modes[1]:    # the rl task: color switch
+            # Update the environment changes according to the task/game rules.  # TODO maybe write into an independent class later.
+            # Get the current timestamp and the elapsed time since last step.
+            current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later
+            elapsed_time = current_step_timestep - self._task_FSM['previous_step_timestamp']
+            # print(elapsed_time) # TODO debug delete later
+            # Check if the glass display and env color has run out the duration.
+            # The glass.
+            current_glass_display_duration = current_step_timestep - self._task_FSM['start_step_glass_display_timestamp']
+            print('current_glass_display_duration: {}'.format(current_glass_display_duration)) # TODO debug the negative time
+            # If ran out of time, then allocate the new display and color.
+            if current_glass_display_duration > self._task_env_config['glass_display_duration']:
+                # Make sure the new display is not the same as the previous.
+                while True:
+                    current_glass_display_id = Discrete(len(self._task_env_config['glass_display_choices'])).sample()
+                    print('the glass id is:', current_glass_display_id) # TODO debug delete later
+                    if current_glass_display_id != self._task_FSM['previous_glass_display_id']:
+                        break
+                    else:
+                        pass
+                # Update the task state machine.
+                self._task_FSM['start_step_glass_display_timestamp'] = current_step_timestep
+                self._task_FSM['previous_glass_display_id'] = self._task_FSM['current_glass_display_id']
+                self._task_FSM['current_glass_display_id'] = current_glass_display_id
+            # If not, update the time.
+            elif current_glass_display_duration <= self._task_env_config['glass_display_duration']:
+                pass
+            # The environment.
+            current_env_color_duration = current_step_timestep - self._task_FSM['start_step_env_color_timestamp']
+            if current_env_color_duration > self._task_env_config['env_color_duration']:
+                while True:
+                    current_env_color_id = Discrete(len(self._task_env_config['env_color_choices'])).sample()
+                    if current_env_color_id != self._task_FSM['previous_env_color_id']:
+                        break
+                    else:
+                        pass
+                self._task_FSM['start_step_env_color_timestamp'] = current_step_timestep
+                self._task_FSM['previous_env_color_id'] = self._task_FSM['current_env_color_id']
+                self._task_FSM['current_env_color_id'] = current_env_color_id
+            elif current_env_color_duration <= self._task_env_config['env_color_duration']:
+                pass
+
+            # Update stuff related to the action.
+            # 1. The look at point's y position.
+            # 2.And sync up the glass transparency - an easier version of demo. When look at the glass, the content shows.
+            #  When look at the env, the content is hided.
+            # 3. And the environment color - when look at the environment, the value will be disclosed,
+            #  or it would always be the default grey color.
+            if action == 0:     # look at the smart glass lenses
+                self._cam.lookat[1] = self._geom_pos_y_smart_glass_lenses
+                alpha = 0.5
+                color_id = 0
+            elif action == 1:   # look at the env
+                self._cam.lookat[1] = self._geom_pos_y_ambient_env
+                alpha = 0
+                color_id = self._task_FSM['current_env_color_id']
+            # Sync up the visualized focal point - ball's movement.
+            self._data.qpos[0:3] = self._cam.lookat
+            # Sync up the correct smart glass's content transparency according to the above update.
+            for i in range(len(self._geom_names_glass_display_ids)):
+                if i == 0:  # the display 0 is always transparent - display nothing
+                    self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = 0
+                elif i == self._task_FSM['current_glass_display_id']:
+                    self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = alpha
+                else:
+                    self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = 0
+            # Sync up the correct env color according to the above update.
+            self._model.geom(self._geom_name_ambient_env).rgba[0:3] = self._task_env_config['env_color_choices'][color_id]
+
+            # Update the scene and render everything.
+            self._update_scene_render()
+
+            # Get the observations.
+            obs = self._get_obs()
+
+            # Decide based on the visual perceptions, and update the states.
+            # Determine what the camera agent sees.
+            sample_point_rgb = self._rgb_buffer[self._task_env_config['x_sample'], self._task_env_config['y_sample'], :]
+            if (sample_point_rgb == self._task_env_config['on_env_grey']).all:  # it outputs an array of [True, True, True], hence ().all is needed
+                # Check if lost the B glass display.
+                if self._task_FSM['current_glass_display_id'] == 1:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -3
+                elif self._task_FSM['current_glass_display_id'] == 2:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -1
+                elif self._task_FSM['current_glass_display_id'] == 0:
+                    self._states['current_on_level'] = 0
+            elif (sample_point_rgb == self._task_env_config['on_env_red']).all:
+                self._states['total_time_on_env_red'] += elapsed_time
+                # Check if lost the B glass display.
+                if self._task_FSM['current_glass_display_id'] == 1:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -3
+                elif self._task_FSM['current_glass_display_id'] == (0 or 2):
+                    self._states['current_on_level'] = 2
+            elif (sample_point_rgb == self._task_env_config['on_env_green']).all:
+                # Check if lost the B glass display.
+                if self._task_FSM['current_glass_display_id'] == 1:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -3
+                elif self._task_FSM['current_glass_display_id'] == 2:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -1
+                elif self._task_FSM['current_glass_display_id'] == 0:
+                    self._states['current_on_level'] = 0
+            elif (sample_point_rgb == self._task_env_config['on_env_blue']).all:
+                # Check if lost the B glass display.
+                if self._task_FSM['current_glass_display_id'] == 1:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -3
+                elif self._task_FSM['current_glass_display_id'] == 2:
+                    self._states['total_time_miss_glass_B'] += elapsed_time
+                    self._states['current_on_level'] = -1
+                elif self._task_FSM['current_glass_display_id'] == 0:
+                    self._states['current_on_level'] = 0
+            elif (sample_point_rgb == self._task_env_config['on_glass_nothing']).all:
+                # Check if lost the red env.
+                if self._task_FSM['current_env_color_id'] == 1:
+                    self._states['total_time_miss_env_red'] += elapsed_time
+                    self._states['current_on_level'] = -2
+                elif self._task_FSM['current_env_color_id'] == (0 or 2 or 3):
+                    self._states['current_on_level'] = 0
+            elif (sample_point_rgb == self._task_env_config['on_glass_B']).all:
+                self._states['total_time_on_glass_B'] += elapsed_time
+                self._states['current_on_level'] = 3
+            elif (sample_point_rgb == self._task_env_config['on_glass_X']).all:
+                self._states['total_time_on_glass_X'] += elapsed_time
+                # Check if lost the red env.
+                if self._task_FSM['current_env_color_id'] == 1:
+                    self._states['total_time_miss_env_red'] += elapsed_time
+                    self._states['current_on_level'] = -2
+                elif self._task_FSM['current_env_color_id'] == (0 or 2 or 3):
+                    self._states['current_on_level'] = 1
+
+            # Update the timer.
+            self._states['previous_step_timestamp'] = current_step_timestep
+
+            # Update the boundary.
+            if self._steps >= 500:
+                done = True
+            else:
+                done = False
+
+        return obs, done
 
     def _update_cam_pos(self):
         """

@@ -39,8 +39,12 @@
     <mesh name="hand_thumbdist" file="assets/hand_thumbdist.stl" />
 <!--    The end of the trial region-->
 
-    <texture name="smart-glass-display-cube" type="cube" builtin="none" filedown="assets/vector-letter-B.png"/>
-    <material name="smart-glass-display-cube" texture="smart-glass-display-cube" texuniform="false"/>
+    <texture name="smart-glass-display-cube-letter-B" type="cube" builtin="none" filedown="assets/vector-letter-B.png"/>
+    <material name="smart-glass-display-cube-letter-B" texture="smart-glass-display-cube-letter-B" texuniform="false"/>
+
+    <texture name="smart-glass-display-cube-letter-X" type="cube" builtin="none" filedown="assets/letter-X.png"/>
+    <material name="smart-glass-display-cube-letter-X" texture="smart-glass-display-cube-letter-X" texuniform="false"/>
+
 <!--    More materials will be created here with various content textures.-->
   </asset>
 
@@ -52,10 +56,12 @@
     <geom name="floor" size="0 0 .05" type="plane" material="grid" condim="3"/>
 <!--    <geom name="floor" size="0 0 .05" type="plane" material="smart-glass-display-2d" condim="3"/>-->
 
-    <!-- Multiple rectangular planes: the ambient environment, the smart glass lenses, and the displays/content -->
-    <geom name="ambient-env" type="box" pos="0 2.3 1.5"  size="1.5 .001 1.5" rgba="1 0 0 1" />   # Red.
-    <geom name="smart-glass-display-1" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5"  material="smart-glass-display-cube" rgba="0.2 0.2 0.2 0.2"/>  # Green.
+    <!-- Multiple rectangular planes: the ambient environment, the smart glass lenses, and the displays/content -->1
+    <geom name="ambient-env" type="box" pos="0 2.3 1.5"  size="1.5 .001 1.5" rgba="0.5 0.5 0.5 1" />   # Red.
     <geom name="smart-glass-lenses" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5" rgba="0.2 0.2 0.2 0.2"/>
+    <geom name="smart-glass-display-0" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5" rgba="0.2 0.2 0.2 0.05"/>
+    <geom name="smart-glass-display-1" type="box" pos="0 -0.3 1.5"  size="1.5 0.001 1.5"  material="smart-glass-display-cube-letter-B" rgba="0.2 0.2 0.2 0.2"/>  # Green.
+    <geom name="smart-glass-display-2" type="box" pos="0 -0.3 1.5" size="1.5 0.001 1.5" material="smart-glass-display-cube-letter-X" rgba="0.2 0.2 0.2 0"/>
 <!--    <geom name="smart-glass" type="plane" euler="90 0 0" pos="0 -0.3 1.5"  size="1.5 1.5 .001" rgba="0 1 0 1" material="smart-glass-display-2d"/>
 # Green, the planes are still not reliable, introducing external gravity-like forces.-->
 
