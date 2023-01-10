@@ -10,26 +10,26 @@ from RLPipeline import RLPipeline
 # Load the 'mujoco' environment model.
 glass_switch_path = os.path.join('glass-switch-env-v1224.xml')
 
-env = GlassSwitch(xml_path=glass_switch_path)
-_num_episodes = 1
-for episode in range(1, _num_episodes + 1):
-    state = env.reset()
-    done = False
-    score = 0
-    while not done:
-        action = env.action_space.sample()
-        n_state, reward, done, info = env.step(action)
-        score += reward
-    print('Episode:{}   Score:{}   Info: {}'.format(episode, score, info))
-env.close()
+# env = GlassSwitch(xml_path=glass_switch_path)
+# _num_episodes = 1
+# for episode in range(1, _num_episodes + 1):
+#     state = env.reset()
+#     done = False
+#     score = 0
+#     while not done:
+#         action = env.action_space.sample()
+#         n_state, reward, done, info = env.step(action)
+#         score += reward
+#     print('Episode:{}   Score:{}   Info: {}'.format(episode, score, info))
+# env.close()
 
 # Train in the RL.
-# rl_pipeline = RLPipeline(glass_switch_model_xml_path=glass_switch_path,
-#                        total_timesteps=20000,
-#                        num_episodes=10,
-#                        model_name='shower_temp_200k',
-#                        to_train=True)
-# rl_pipeline.run()
+rl_pipeline = RLPipeline(model_xml_path=glass_switch_path,
+                         total_timesteps=20000,
+                         num_episodes=1,
+                         model_name='glass_switch_20k',
+                         to_train=None)     # None for just baselines, True for train and test, False for just test.
+rl_pipeline.run()
 
 
 # env = ShowerTemp()
