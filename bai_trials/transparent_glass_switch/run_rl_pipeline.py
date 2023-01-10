@@ -11,7 +11,7 @@ from RLPipeline import RLPipeline
 glass_switch_path = os.path.join('glass-switch-env-v1224.xml')
 
 env = GlassSwitch(xml_path=glass_switch_path)
-_num_episodes = 3
+_num_episodes = 1
 for episode in range(1, _num_episodes + 1):
     state = env.reset()
     done = False

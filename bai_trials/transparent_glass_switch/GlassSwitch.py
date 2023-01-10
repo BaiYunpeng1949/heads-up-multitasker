@@ -43,8 +43,8 @@ class GlassSwitch(Env):
                 [0, 1, 0],  # green
                 [0, 0, 1]   # blue
             ],  # rgb choices
-            'glass_display_duration': 0.4,    # duration of the glass display in seconds, which simulates the content changes TODO change later, it is not the seconds, related to the fps
-            'env_color_duration': 0.6,    # duration of the environment color change in seconds, which simulates the env changes
+            'glass_display_duration': 1,    # duration of the glass display in seconds, which simulates the content changes TODO change later, it is not the seconds, related to the fps
+            'env_color_duration': 2,    # duration of the environment color change in seconds, which simulates the env changes
             'x_sample': int(height/2 - 5),  # sample point of the x and y for easily differentiate perceived pixels
             'y_sample': int(width/2 + 5),
             'on_env_grey': np.array([112, 112, 112]),   # differential rgb values for a specific point
@@ -55,6 +55,7 @@ class GlassSwitch(Env):
             'on_glass_B': np.array([35, 35, 15]),
             'on_glass_X': np.array([41, 41, 21]),
         }
+        stop_step = 10000
         # --------------------------------------------------------------------------------------------------------------
 
         # Get strings.
@@ -125,6 +126,38 @@ class GlassSwitch(Env):
         self._mapping_range = self._dist_configs['max_dist'] - self._dist_configs['min_dist']
         # The task environment settings configuration.
         self._task_env_config = task_env_config
+        # The stopping step that terminates the simulation manually.
+        self._stop_step = stop_step
+
+    def _init_rl_dyn_data(self):
+        """
+        This method initializes all the reinforcement related data, i.e., parameters.
+        """
+        # The agent's internal state: a finite status machine. Will be used on evaluating results TODO to be updated.
+        self._states = {
+            'total_time_on_glass_B': 0,
+            'total_time_on_env_red': 0,
+            'total_time_on_glass_X': 0,
+            'total_time_miss_glass_B': 0,
+            'total_time_miss_env_red': 0,
+            'total_time_miss_glass_X': 0,
+            'current_on_level': 0,
+            # 0 for getting nothing, 1 for X, 2 for red, 3 for B, -1 for losing X, -2 for red, -3 for
+        }
+
+        # The task's finite state machine.
+        self._task_FSM = {
+            'current_glass_display_id': 0,
+            'current_env_color_id': 0,
+            'start_step_glass_display_timestamp': 0,  # the current glass display started frame's timestamp, in seconds
+            'start_step_env_color_timestamp': 0,  # the current env class started frame's timestamp, in seconds
+            'previous_glass_display_id': 0,
+            'previous_env_color_id': 0,
+            'previous_step_timestamp': 0,
+        }
+
+        # The global simulation step.
+        self._steps = 0
 
     def _init_cam_dyn_data(self):
         """
@@ -267,30 +300,8 @@ class GlassSwitch(Env):
             'rgb': Box(low=np.uint8(0), high=np.uint8(1), shape=(self._height, self._width, 3))
         })   # TODO the simple version: the perception pixels.
 
-        # The agent's internal state: a finite status machine. Will be used on evaluating results TODO to be updated.
-        self._states = {
-            'total_time_on_glass_B': 0,
-            'total_time_on_env_red': 0,
-            'total_time_on_glass_X': 0,
-            'total_time_miss_glass_B': 0,
-            'total_time_miss_env_red': 0,
-            'total_time_miss_glass_X': 0,
-            'current_on_level': 0,      # 0 for getting nothing, 1 for X, 2 for red, 3 for B, -1 for losing X, -2 for red, -3 for
-        }
-
-        # The task's finite state machine.
-        self._task_FSM = {
-            'current_glass_display_id': 0,
-            'current_env_color_id': 0,
-            'start_step_glass_display_timestamp': 0,        # the current glass display started frame's timestamp, in seconds
-            'start_step_env_color_timestamp': 0,           # the current env class started frame's timestamp, in seconds
-            'previous_glass_display_id': 0,
-            'previous_env_color_id': 0,
-            'previous_step_timestamp': 0,
-        }
-
-        # TODO replace this initialization later.
-        self._steps = 0
+        # Initiate the rl related data, i.e., parameters.
+        self._init_rl_dyn_data()
         # --------------------------------------- Visual perception camera and rendering initialization -------------------------------------------------------------
         # TODO the rendering structure can be further enhanced following the
         #  dm_control: https://github.com/deepmind/dm_control/blob/main/dm_control/viewer/renderer.py
@@ -347,8 +358,8 @@ class GlassSwitch(Env):
         # Reset the abstract camera related data.
         self._init_cam_dyn_data()
 
-        # Reset the RL related data. TODO to pack these variables later.
-        self._steps = 0
+        # Reset the rl related data, including the global simulation steps.
+        self._init_rl_dyn_data()
 
         ob = self._get_obs()
         return ob
@@ -528,17 +539,14 @@ class GlassSwitch(Env):
             # Get the current timestamp and the elapsed time since last step.
             current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later
             elapsed_time = current_step_timestep - self._task_FSM['previous_step_timestamp']
-            # print(elapsed_time) # TODO debug delete later
             # Check if the glass display and env color has run out the duration.
             # The glass.
             current_glass_display_duration = current_step_timestep - self._task_FSM['start_step_glass_display_timestamp']
-            print('current_glass_display_duration: {}'.format(current_glass_display_duration)) # TODO debug the negative time
             # If ran out of time, then allocate the new display and color.
             if current_glass_display_duration > self._task_env_config['glass_display_duration']:
                 # Make sure the new display is not the same as the previous.
                 while True:
                     current_glass_display_id = Discrete(len(self._task_env_config['glass_display_choices'])).sample()
-                    print('the glass id is:', current_glass_display_id) # TODO debug delete later
                     if current_glass_display_id != self._task_FSM['previous_glass_display_id']:
                         break
                     else:
@@ -601,7 +609,37 @@ class GlassSwitch(Env):
             # Decide based on the visual perceptions, and update the states.
             # Determine what the camera agent sees.
             sample_point_rgb = self._rgb_buffer[self._task_env_config['x_sample'], self._task_env_config['y_sample'], :]
-            if (sample_point_rgb == self._task_env_config['on_env_grey']).all:  # it outputs an array of [True, True, True], hence ().all is needed
+            # print(action, sample_point_rgb, self._task_FSM['current_glass_display_id'], self._task_FSM['current_env_color_id']) # TODO debug delete later
+
+            # TODO reconstruct this part later. Make it more generalizable.
+            def identify_visual_content(sample_point, comparisons):
+                states = comparisons.copy()
+                dist_threshold = 6
+                content = 'none'
+
+                # Enumerate all scenarios - according to the level of importance.
+                if np.linalg.norm(sample_point[0:2] - states['on_env_grey'][0:2]) <= dist_threshold:
+                    content = 'on_env_grey'
+                if np.linalg.norm(sample_point[0:2] - states['on_env_green'][0:2]) <= dist_threshold:
+                    content = 'on_env_green'
+                if np.linalg.norm(sample_point[0:2] - states['on_env_blue'][0:2]) <= dist_threshold:
+                    content = 'on_env_blue'
+                if np.linalg.norm(sample_point[0:2] - states['on_glass_nothing'][0:2]) <= dist_threshold:
+                    content = 'on_glass_nothing'
+                if np.linalg.norm(sample_point[0:2] - states['on_glass_X'][0:2]) <= dist_threshold:
+                    content = 'on_glass_X'
+                if np.linalg.norm(sample_point[0:2] - states['on_env_red'][0:2]) <= dist_threshold:
+                    content = 'on_env_red'
+                if np.linalg.norm(sample_point[0:2] - states['on_glass_B'][0:2]) <= dist_threshold:
+                    content = 'on_glass_B'
+
+                # print('the content is: {}\n'.format(content))   # TODO debug delete later
+                return content
+
+            perceived_content = identify_visual_content(sample_point=sample_point_rgb, comparisons=self._task_env_config)
+
+            # Update the internal agent states.
+            if perceived_content == 'on_env_grey':
                 # Check if lost the B glass display.
                 if self._task_FSM['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
@@ -611,7 +649,7 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = -1
                 elif self._task_FSM['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
-            elif (sample_point_rgb == self._task_env_config['on_env_red']).all:
+            elif perceived_content == 'on_env_red':
                 self._states['total_time_on_env_red'] += elapsed_time
                 # Check if lost the B glass display.
                 if self._task_FSM['current_glass_display_id'] == 1:
@@ -619,7 +657,7 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = -3
                 elif self._task_FSM['current_glass_display_id'] == (0 or 2):
                     self._states['current_on_level'] = 2
-            elif (sample_point_rgb == self._task_env_config['on_env_green']).all:
+            elif perceived_content == 'on_env_green':
                 # Check if lost the B glass display.
                 if self._task_FSM['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
@@ -629,7 +667,7 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = -1
                 elif self._task_FSM['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
-            elif (sample_point_rgb == self._task_env_config['on_env_blue']).all:
+            elif perceived_content == 'on_env_blue':
                 # Check if lost the B glass display.
                 if self._task_FSM['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
@@ -639,17 +677,17 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = -1
                 elif self._task_FSM['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
-            elif (sample_point_rgb == self._task_env_config['on_glass_nothing']).all:
+            elif perceived_content == 'on_glass_nothing':
                 # Check if lost the red env.
                 if self._task_FSM['current_env_color_id'] == 1:
                     self._states['total_time_miss_env_red'] += elapsed_time
                     self._states['current_on_level'] = -2
                 elif self._task_FSM['current_env_color_id'] == (0 or 2 or 3):
                     self._states['current_on_level'] = 0
-            elif (sample_point_rgb == self._task_env_config['on_glass_B']).all:
+            elif perceived_content == 'on_glass_B':
                 self._states['total_time_on_glass_B'] += elapsed_time
                 self._states['current_on_level'] = 3
-            elif (sample_point_rgb == self._task_env_config['on_glass_X']).all:
+            elif perceived_content == 'on_glass_X':
                 self._states['total_time_on_glass_X'] += elapsed_time
                 # Check if lost the red env.
                 if self._task_FSM['current_env_color_id'] == 1:
@@ -659,10 +697,10 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = 1
 
             # Update the timer.
-            self._states['previous_step_timestamp'] = current_step_timestep
+            self._task_FSM['previous_step_timestamp'] = current_step_timestep
 
             # Update the boundary.
-            if self._steps >= 500:
+            if self._steps >= self._stop_step:
                 done = True
             else:
                 done = False
