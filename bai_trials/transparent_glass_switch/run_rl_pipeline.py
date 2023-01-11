@@ -28,7 +28,7 @@ rl_pipeline = RLPipeline(model_xml_path=glass_switch_path,
                          total_timesteps=10000,
                          num_episodes=3,
                          model_name='glass_switch_10k',
-                         to_train=True)     # None for just baselines, True for train and test, False for just test.
+                         to_train=False)     # None for just baselines, True for train and test, False for just test.
 rl_pipeline.run()
 # TODO fix the UserWarning Evaluation environment is not wrapped with a ``Monitor`` wrapper. This may result in reporting modified episode lengths and rewards, if other wrappers happen to modify these. Consider wrapping environment first with ``Monitor`` wrapper.
 # TODO make a progress visualizer later.
