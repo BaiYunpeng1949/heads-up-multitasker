@@ -55,7 +55,7 @@ class GlassSwitch(Env):
             'on_glass_B': np.array([35, 35, 15]),
             'on_glass_X': np.array([41, 41, 21]),
         }
-        stop_step = 3000
+        stop_step = 10000
         # --------------------------------------------------------------------------------------------------------------
 
         # Get strings.
@@ -141,12 +141,14 @@ class GlassSwitch(Env):
             'total_time_miss_glass_B': 0,
             'total_time_miss_env_red': 0,
             'total_time_miss_glass_X': 0,
+            'num_on_glass': 0,
+            'num_on_env': 0,
             'current_on_level': 0,
             # 0 for getting nothing, 1 for X, 2 for red, 3 for B, -1 for losing X, -2 for red, -3 for
         }
 
         # The task's finite state machine.
-        self._task_fsm = {  # task finite state machine
+        self._task_states = {  # task finite state machine
             'current_glass_display_id': 0,
             'current_env_color_id': 0,
             'start_step_glass_display_timestamp': 0,  # the current glass display started frame's timestamp, in seconds
@@ -538,38 +540,38 @@ class GlassSwitch(Env):
             # Update the environment changes according to the task/game rules.  # TODO maybe write into an independent class later.
             # Get the current timestamp and the elapsed time since last step.
             current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later
-            elapsed_time = current_step_timestep - self._task_fsm['previous_step_timestamp']
+            elapsed_time = current_step_timestep - self._task_states['previous_step_timestamp']
             # Check if the glass display and env color has run out the duration.
             # The glass.
-            current_glass_display_duration = current_step_timestep - self._task_fsm['start_step_glass_display_timestamp']
+            current_glass_display_duration = current_step_timestep - self._task_states['start_step_glass_display_timestamp']
             # If ran out of time, then allocate the new display and color.
             if current_glass_display_duration > self._task_env_config['glass_display_duration']:
                 # Make sure the new display is not the same as the previous.
                 while True:
                     current_glass_display_id = Discrete(len(self._task_env_config['glass_display_choices'])).sample()
-                    if current_glass_display_id != self._task_fsm['previous_glass_display_id']:
+                    if current_glass_display_id != self._task_states['previous_glass_display_id']:
                         break
                     else:
                         pass
                 # Update the task state machine.
-                self._task_fsm['start_step_glass_display_timestamp'] = current_step_timestep
-                self._task_fsm['previous_glass_display_id'] = self._task_fsm['current_glass_display_id']
-                self._task_fsm['current_glass_display_id'] = current_glass_display_id
+                self._task_states['start_step_glass_display_timestamp'] = current_step_timestep
+                self._task_states['previous_glass_display_id'] = self._task_states['current_glass_display_id']
+                self._task_states['current_glass_display_id'] = current_glass_display_id
             # If not, update the time.
             elif current_glass_display_duration <= self._task_env_config['glass_display_duration']:
                 pass
             # The environment.
-            current_env_color_duration = current_step_timestep - self._task_fsm['start_step_env_color_timestamp']
+            current_env_color_duration = current_step_timestep - self._task_states['start_step_env_color_timestamp']
             if current_env_color_duration > self._task_env_config['env_color_duration']:
                 while True:
                     current_env_color_id = Discrete(len(self._task_env_config['env_color_choices'])).sample()
-                    if current_env_color_id != self._task_fsm['previous_env_color_id']:
+                    if current_env_color_id != self._task_states['previous_env_color_id']:
                         break
                     else:
                         pass
-                self._task_fsm['start_step_env_color_timestamp'] = current_step_timestep
-                self._task_fsm['previous_env_color_id'] = self._task_fsm['current_env_color_id']
-                self._task_fsm['current_env_color_id'] = current_env_color_id
+                self._task_states['start_step_env_color_timestamp'] = current_step_timestep
+                self._task_states['previous_env_color_id'] = self._task_states['current_env_color_id']
+                self._task_states['current_env_color_id'] = current_env_color_id
             elif current_env_color_duration <= self._task_env_config['env_color_duration']:
                 pass
 
@@ -583,17 +585,19 @@ class GlassSwitch(Env):
                 self._cam.lookat[1] = self._geom_pos_y_smart_glass_lenses
                 alpha = 0.5
                 color_id = 0
+                self._states['num_on_glass'] += 1
             elif action == 1:   # look at the env
                 self._cam.lookat[1] = self._geom_pos_y_ambient_env
                 alpha = 0
-                color_id = self._task_fsm['current_env_color_id']
+                color_id = self._task_states['current_env_color_id']
+                self._states['num_on_env'] += 1
             # Sync up the visualized focal point - ball's movement.
             self._data.qpos[0:3] = self._cam.lookat
             # Sync up the correct smart glass's content transparency according to the above update.
             for i in range(len(self._geom_names_glass_display_ids)):
                 if i == 0:  # the display 0 is always transparent - display nothing
                     self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = 0
-                elif i == self._task_fsm['current_glass_display_id']:
+                elif i == self._task_states['current_glass_display_id']:
                     self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = alpha
                 else:
                     self._model.geom(self._geom_names_glass_display_ids[i]).rgba[3] = 0
@@ -644,48 +648,48 @@ class GlassSwitch(Env):
             # Update the internal agent states.
             if perceived_content == 'on_env_grey':
                 # Check if lost the B glass display.
-                if self._task_fsm['current_glass_display_id'] == 1:
+                if self._task_states['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
                     self._states['current_on_level'] = -3
-                elif self._task_fsm['current_glass_display_id'] == 2:
+                elif self._task_states['current_glass_display_id'] == 2:
                     self._states['total_time_miss_glass_X'] += elapsed_time
                     self._states['current_on_level'] = -1
-                elif self._task_fsm['current_glass_display_id'] == 0:
+                elif self._task_states['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
             elif perceived_content == 'on_env_red':
                 self._states['total_time_on_env_red'] += elapsed_time
                 # Check if lost the B glass display.
-                if self._task_fsm['current_glass_display_id'] == 1:
+                if self._task_states['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
                     self._states['current_on_level'] = -3
-                elif self._task_fsm['current_glass_display_id'] == (0 or 2):
+                elif self._task_states['current_glass_display_id'] == (0 or 2):
                     self._states['current_on_level'] = 2
             elif perceived_content == 'on_env_green':
                 # Check if lost the B glass display.
-                if self._task_fsm['current_glass_display_id'] == 1:
+                if self._task_states['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
                     self._states['current_on_level'] = -3
-                elif self._task_fsm['current_glass_display_id'] == 2:
+                elif self._task_states['current_glass_display_id'] == 2:
                     self._states['total_time_miss_glass_X'] += elapsed_time
                     self._states['current_on_level'] = -1
-                elif self._task_fsm['current_glass_display_id'] == 0:
+                elif self._task_states['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
             elif perceived_content == 'on_env_blue':
                 # Check if lost the B glass display.
-                if self._task_fsm['current_glass_display_id'] == 1:
+                if self._task_states['current_glass_display_id'] == 1:
                     self._states['total_time_miss_glass_B'] += elapsed_time
                     self._states['current_on_level'] = -3
-                elif self._task_fsm['current_glass_display_id'] == 2:
+                elif self._task_states['current_glass_display_id'] == 2:
                     self._states['total_time_miss_glass_X'] += elapsed_time
                     self._states['current_on_level'] = -1
-                elif self._task_fsm['current_glass_display_id'] == 0:
+                elif self._task_states['current_glass_display_id'] == 0:
                     self._states['current_on_level'] = 0
             elif perceived_content == 'on_glass_nothing':
                 # Check if lost the red env.
-                if self._task_fsm['current_env_color_id'] == 1:
+                if self._task_states['current_env_color_id'] == 1:
                     self._states['total_time_miss_env_red'] += elapsed_time
                     self._states['current_on_level'] = -2
-                elif self._task_fsm['current_env_color_id'] == (0 or 2 or 3):
+                elif self._task_states['current_env_color_id'] == (0 or 2 or 3):
                     self._states['current_on_level'] = 0
             elif perceived_content == 'on_glass_B':
                 self._states['total_time_on_glass_B'] += elapsed_time
@@ -693,14 +697,14 @@ class GlassSwitch(Env):
             elif perceived_content == 'on_glass_X':
                 self._states['total_time_on_glass_X'] += elapsed_time
                 # Check if lost the red env.
-                if self._task_fsm['current_env_color_id'] == 1:
+                if self._task_states['current_env_color_id'] == 1:
                     self._states['total_time_miss_env_red'] += elapsed_time
                     self._states['current_on_level'] = -2
-                elif self._task_fsm['current_env_color_id'] == (0 or 2 or 3):
+                elif self._task_states['current_env_color_id'] == (0 or 2 or 3):
                     self._states['current_on_level'] = 1
 
             # Update the timer.
-            self._task_fsm['previous_step_timestamp'] = current_step_timestep
+            self._task_states['previous_step_timestamp'] = current_step_timestep
 
             # Update the boundary.
             if self._steps >= self._stop_step:
