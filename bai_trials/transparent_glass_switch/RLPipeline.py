@@ -2,12 +2,13 @@ import os
 
 import yaml
 from tqdm import tqdm
+import numpy as np
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecFrameStack
 from stable_baselines3.common.evaluation import evaluate_policy
 
-from ShowerTemp import ShowerTemp
+from deprecatedShowerTemp import ShowerTemp
 from GlassSwitch import GlassSwitch
 
 _BASELINE = 'baseline'
@@ -15,7 +16,7 @@ _TESTING = 'testing'
 
 
 class RLPipeline:
-    def __init__(self, config):
+    def __init__(self, config_file):
         """
         This is the reinforcement learning pipeline where mujoco environments are created, models are trained and tested.
 
@@ -29,12 +30,12 @@ class RLPipeline:
                       Choose from: None, True, False
         """
         # Read the configurations from the YAML file.
-        with open(config) as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
+        with open(config_file) as f:
+            configs = yaml.load(f, Loader=yaml.FullLoader)
 
-        self._config_rl_pipeline = config['rl_pipeline']
+        self._config_rl_pipeline = configs['rl_pipeline']
 
-        self._env = GlassSwitch(config=config)
+        self._env = GlassSwitch(configs=configs)
 
         self._to_train = self._config_rl_pipeline['train']
 
@@ -46,8 +47,9 @@ class RLPipeline:
         self._total_timesteps = self._config_rl_pipeline['total_timesteps']
         self._num_episodes = self._config_rl_pipeline['num_episodes']
 
-        if self._to_train is True:
-            self._model = PPO(self._config_rl_pipeline['policy_type'], self._env, verbose=1, tensorboard_log=self._log_path)
+        if self._to_train is True:  # TODO automate the device later.
+            self._model = PPO(self._config_rl_pipeline['policy_type'], self._env, verbose=1, tensorboard_log=self._log_path,
+                              device='cuda')
             # TODO the policy needs to be changed, e.g., MultiInputPolicy, when dealing with higher dimension observation space.
         elif self._to_train is False:
             self._model = PPO.load(self._save_path, self._env)
@@ -80,8 +82,19 @@ class RLPipeline:
                 score += reward
                 progress_bar.update(1)
             progress_bar.close()    # Tip: this line's better before any update. Or it would be split.
-            print('Episode:{}   Score:{}   Info: {}'.format(episode, score, info))
-
+            print('Episode:{}   Score:{}    Score Pct: {}%   '
+                  '\nInfo details: '
+                  '\n   optimal score: {}    num_on_glass: {}     num_on_env: {}'
+                  '\n   glass B:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'
+                  '\n   env red:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'    
+                  '\n   glass X:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'
+                  '\n   total intermediate time: {}'
+                  .format(episode, score, np.round(100*score/info['optimal_score'], 2),
+                          info['optimal_score'], info['num_on_glass'], info['num_on_env'],
+                          info['total_time_glass_B'], info['total_time_on_glass_B'], info['total_time_miss_glass_B'], np.round(100*info['total_time_miss_glass_B']/info['total_time_on_glass_B'], 2),
+                          info['total_time_env_red'], info['total_time_on_env_red'], info['total_time_miss_env_red'], np.round(100*info['total_time_miss_env_red']/info['total_time_on_env_red'], 2),
+                          info['total_time_glass_X'], info['total_time_on_glass_X'], info['total_time_miss_glass_X'], np.round(100*info['total_time_miss_glass_X']/info['total_time_on_glass_X'], 2),
+                          info['total_time_intermediate']))
 
         # if mode == _TESTING:
         #     # Use the official evaluation tool.
@@ -96,26 +109,31 @@ class RLPipeline:
 
         # Save the model.
         self._model.save(self._save_path)
+        print('The model has been saved as: {} in {}'.format(self._model_name, self._save_path))
 
     def run(self):
         """
         This method helps run the RL pipeline.
         Call it.
         """
-        # Run the pipeline.
-        self._generate_results(mode=_BASELINE)
-
         # Check train or not.
         if self._to_train is True:
             self._train()
-
-        # Display the results.
-        if self._to_train is not None:
+        elif self._to_train is False:
+            # Generate the baseline.
+            # TODO comment the baseline generation out because this is a deterministic problem, only apply once: -17.51%
+            # self._generate_results(mode=_BASELINE)
+            # Generate the results from the pre-trained model.
             self._generate_results(mode=_TESTING)
-
             # Write a video.
-            video_path = os.path.join('training', 'videos', self._model_name + '.avi')
+            video_folder_path = os.path.join('training', 'videos')
+            if os.path.exists(video_folder_path) is False:
+                os.makedirs(video_folder_path)
+            video_path = os.path.join(video_folder_path, self._model_name + '.avi')
             self._env.write_video(filepath=video_path)
+        else:
+            # Generate the baseline.
+            self._generate_results(mode=_BASELINE)
 
     def __del__(self):
         # Close the environment.

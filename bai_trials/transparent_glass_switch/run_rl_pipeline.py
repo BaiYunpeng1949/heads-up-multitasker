@@ -3,7 +3,7 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 
-from ShowerTemp import ShowerTemp
+from deprecatedShowerTemp import ShowerTemp
 from GlassSwitch import GlassSwitch
 from RLPipeline import RLPipeline
 
@@ -24,7 +24,7 @@ glass_switch_path = os.path.join('glass-switch-env-v1224.xml')
 # env.close()
 
 # Train in the RL.
-rl_pipeline = RLPipeline(config='config.yaml')     # None for just baselines, True for train and test, False for just test.
+rl_pipeline = RLPipeline(config_file='config.yaml')     # None for just baselines, True for train and test, False for just test.
 rl_pipeline.run()
 
 # env = ShowerTemp()

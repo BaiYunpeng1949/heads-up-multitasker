@@ -7,7 +7,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from BallSwitch import BallSwitch
 
 
-class RLPipeline():
+class RLPipeline:
     def __init__(self, ball_switch_model_xml_path, total_timesteps, num_episodes, model_name, to_train):
         self._env = BallSwitch(model_xml_path=ball_switch_model_xml_path)
 

@@ -3,34 +3,34 @@ import numpy as np
 import os
 import math
 from typing import Callable, NamedTuple, Optional, Union, List
+import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET   # This package.class could be used to add XML elements dynamically.
 
 import mujoco
 from mujoco.glfw import glfw
-import matplotlib.pyplot as plt
-import xml.etree.ElementTree as ET   # This package.class could be used to add XML elements dynamically.
 
 import gym
 from gym import Env
 from gym import utils
 from gym.spaces import Discrete, Box, Dict, Tuple, MultiBinary, MultiDiscrete
 
+from Task import Task
+
 
 class GlassSwitch(Env):
 
-    def _config(self, config):
+    def _config(self, configs):
         """
-        This method configures all static configurations, including flags and counters.
+        This method configures all static settings from the YAML file, including flags and counters.
         The 'static' here means configurations that will not change in the runtime.
         And this is the only changable part of the simulation by the user.
 
         Args:
-            config: the configuration content from YAML file.
+            configs: the configuration content from YAML file.
         """
-        self._config_mj_env = config['mujoco_env']
-
-        # Get strings.
-        # Get the names that were declared in XML.
-        # TODO might use the etree to programmatically access to the string names.
+        # -------------------------------------------------------------------------------------------------------------
+        # Config the mujoco environment.
+        # Get strings. Get the names that were declared in XML. # TODO might use the etree to programmatically access to the string names.
         # The fixed abstract camera name:
         self._camera_name = 'fixed-eye'
         # The geom names.
@@ -42,7 +42,9 @@ class GlassSwitch(Env):
             2: 'smart-glass-display-2'
         }
 
-        # OpenGL.
+        # Config the OpenGL rendering related configurations.
+        self._configs = configs     # TODO for debugging, refine later.
+        self._config_mj_env = configs['mujoco_env']
         # Resolution in pixels: width * height
         # Reference: glfw.GLFWwindow * glfwCreateWindow
         # https://www.glfw.org/docs/3.3/group__window.html#ga3555a418df92ad53f917597fe2f64aeb
@@ -50,7 +52,7 @@ class GlassSwitch(Env):
         self._width = self._config_mj_env['render']['width']
         self._height = self._config_mj_env['render']['height']
 
-        # Flags.
+        # Config Flags.
         # Internal buffer configuration.
         self._is_rgb = self._config_mj_env['render']['rgb']     # Set to True to read rgb.
         self._is_depth = self._config_mj_env['render']['depth']   # Set to True to read depth.
@@ -77,7 +79,6 @@ class GlassSwitch(Env):
             self._framebuffer_type = mujoco.mjtFramebuffer.mjFB_OFFSCREEN.value
             # The keyboard interaction setting.
             self._is_key_mouse_interaction = False
-
         # Raise some value errors when the settings are having conflicts.
         if self._is_key_mouse_interaction and (self._is_camera_fixed or self._is_window_visible == 0):
             raise ValueError('Invalid keyboard and mouse settings: a visible window and a free camera are both necessary.')
@@ -85,41 +86,52 @@ class GlassSwitch(Env):
         self._is_print_cam_config = self._config_mj_env['utils']['is_print_cam_config']        # Set to True to print camera configuration.
         self._is_print_cam_rgb_depth = self._config_mj_env['utils']['is_print_cam_rgb_depth']     # Set to True to print camera read pixel rgb and depth info.
 
-        # Constant configuration.
+        # Config constants.
         # The display modes. Must select from the predefined ones.
         self._viewer_modes = ['through_glass', 'overhead']
-        self._viewer_mode = config['task_spec']['viewer_mode']
+        self._viewer_mode = self._config_mj_env['render']['viewer_mode']
         if self._viewer_mode not in self._viewer_modes:
             raise ValueError('Invalid viewer mode: it must be selected from the predefined options [through_glass, overhead].')
         # The task modes. Must select from the predefined modes.
         # 'demo' corresponds to the demonstration, a visible window is required.
         # The others are tasks used in RL, they can be operated in an off-screen manner.
         self._task_modes = ['demo', 'color_switch']
-        self._task_mode = config['task_spec']['task_mode']
+        self._task_mode = self._config_mj_env['render']['task_mode']
         if self._task_mode not in self._task_modes:
             raise ValueError('Invalid task mode: it must be selected from the predefined options [demo, color_switch].')
         if self._task_mode == self._task_modes[0] and (self._is_window_visible == 0 or self._is_camera_fixed is True):
             raise ValueError('Invalid configuration: the window must be visible and the camera must be free in the demo task mode.')
+
+        # -------------------------------------------------------------------------------------------------------------
+        # Config the RL pipeline related stuff.
+        # The stopping step that terminates the simulation manually.
+        self._stop_step = configs['rl_pipeline']['total_timesteps']
+
+        # -------------------------------------------------------------------------------------------------------------
+        # Config the task game related stuff.
+        # Create an instance of task.
+        # self._task = Task(configs=configs)        # TODO separate this later.
+
         # Focal point moving distance configurations.
-        self._dist_configs = {
+        self._demo_dist_configs = {
             'min_dist': 0,
             'max_dist': 1,  # TODO This could be a tunable parameter in the design space.
         }
-        self._mapping_range = self._dist_configs['max_dist'] - self._dist_configs['min_dist']
+        self._demo_mapping_range = self._demo_dist_configs['max_dist'] - self._demo_dist_configs['min_dist']
         # The task environment settings configuration.
-        self._task_scripts = config['task_spec']['scripts']
-        self._task_scripts['x_sample'] = int(self._height/2 - 5)
-        self._task_scripts['y_sample'] = int(self._width/2 - 5)
-        # The stopping step that terminates the simulation manually.
-        self._stop_step = config['rl_pipeline']['total_timesteps']
+        self._task_scripts = configs['task_spec']['scripts']
+        offset = 2  # TODO normalize this later.
+        self._task_scripts['x_sample'] = int(self._height / 2 - offset)
+        self._task_scripts['y_sample'] = int(self._width / 2 - offset)
 
         # The demo mode's simulation time.
-        self._demo_sim_time = config['task_spec']['demo_sim_time']
+        self._demo_sim_time = configs['task_spec']['demo_sim_time']
 
     def _init_rl_data(self):
         """
         This method initializes all the reinforcement related data, i.e., parameters.
         """
+        # ------------------------------------------------------------------------------------------------------------
         # The agent's internal state: a finite status machine. Will be used on evaluating results TODO to be updated.
         self._states = {
             'optimal_score': 0,
@@ -129,12 +141,19 @@ class GlassSwitch(Env):
             'total_time_miss_glass_B': 0,
             'total_time_miss_env_red': 0,
             'total_time_miss_glass_X': 0,
+            'total_time_glass_B': 0,
+            'total_time_glass_X': 0,
+            'total_time_env_red': 0,
+            'total_time_intermediate': 0,
             'num_on_glass': 0,
             'num_on_env': 0,
             'current_on_level': 0,
             # 0 for getting nothing, 1 for X, 2 for red, 3 for B, -1 for losing X, -2 for red, -3 for
         }
 
+        # ------------------------------------------------------------------------------------------------------------
+        # The RL task related stuff, reset the task states.
+        # self._task.reset()        # TODO enable this later.
         # The task's finite state machine.
         self._task_states = {  # task finite state machine
             'current_glass_display_id': 0,
@@ -243,7 +262,7 @@ class GlassSwitch(Env):
             glfw.set_mouse_button_callback(self._window, self._mouse_button)
             glfw.set_scroll_callback(self._window, self._scroll)
 
-    def __init__(self, config):
+    def __init__(self, configs):
         """
         This class defines the mujoco environment where simulates human's visual perception behaviors when
         they are shifting/switching focal point between the smart glasses and the environment behind it.
@@ -270,12 +289,12 @@ class GlassSwitch(Env):
                 The viewport is important because it determines how the 3D scene is projected onto the 2D window.
 
         Args:
-            config: the YAML config file content.
+            configs: the YAML config file content.
         """
         # Initialize the configurations, including camera settings.
         # Ref: MuJoCoPy Bootcamp Lec 13: https://pab47.github.io/mujocopy.html
         # Read the configurations from the YAML file.
-        self._config(config=config)
+        self._config(configs=configs)
         # --------------------------------------- RL initialization -------------------------------------------------------------
         # Load the xml MjModel.
         self._model = mujoco.MjModel.from_xml_path(self._config_mj_env['model_path'])
@@ -288,10 +307,16 @@ class GlassSwitch(Env):
         #  0 for looking at the smart-glass and 1 for looking at the ambient-env.
         self.action_space = Discrete(2)
 
-        # The observation_space.
+        # The observation_space - the simple version: the perception pixels. TODO try only a small central portion of the pixels.
+        offset = int(self._width / 4)   # TODO normalize it later
+        self._obs_idx_h = [int(self._height/2 - offset), int(self._height/2 + offset)]
+        self._obs_idx_w = [int(self._width/2 - offset), int(self._width/2 + offset)]
         self.observation_space = Dict({
-            'rgb': Box(low=np.uint8(0), high=np.uint8(1), shape=(self._height, self._width, 3))
-        })   # TODO the simple version: the perception pixels.
+            'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(offset*2, offset*2, 3))
+        })
+        # self.observation_space = Dict({
+        #     'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(self._height, self._width, 3))   # TODO the rgb was between 0-255
+        # })
 
         # Initiate the rl related data, i.e., parameters.
         self._init_rl_data()
@@ -324,15 +349,23 @@ class GlassSwitch(Env):
         glfw.init()
         glfw.window_hint(glfw.VISIBLE, self._is_window_visible)
         # Create an OpenGL context using GLFW.
-        self._window = glfw.create_window(self._width, self._height, "Bai Yunpeng's Window", None, None)
+        self._window = glfw.create_window(width=self._width, height=self._height, title="Bai Yunpeng's Window",
+                                          monitor=None, share=None)
         glfw.make_context_current(self._window)
-        glfw.swap_interval(1)
         # An OpenGL context is what enables the application to talk to the video driver and send rendering commands.
         #  It must exist and must be current in the calling thread before mjr_makeContext is called.
         #  GLFW and related libraries provide the necessary functions as shown above.
+        # glfw.swap_interval(1)
+        # This function sets the swap interval for the current OpenGL or OpenGL ES context, i.e. the number of screen
+        # updates to wait from the time glfwSwapBuffers was called before swapping the buffers and returning.
+        # This is sometimes called vertical synchronization, vertical retrace synchronization or just vsync.
+        # Parameter interval: The minimum number of screen updates to wait for until the buffers are swapped by glfwSwapBuffers.
+        # Ref: https://www.glfw.org/docs/3.3/group__context.html#ga6d4e0cdf151b5e579bd67f13202994ed
 
         # Initialize visualization data structures.
         self._scene = mujoco.MjvScene(self._model, maxgeom=10000)
+        # TODO in the headless rendering, try offwidth and offheight. And disable the viewport get windows resolution.
+        #  Ref: https://github.com/deepmind/mujoco/issues/517#issuecomment-1272187780
         # Make the model-specific mjrContext. Ref https://mujoco.readthedocs.io/en/latest/programming/visualization.html#opengl-rendering
         # MjrContext contains the function mjr_makeContext in the light of Cpp.
         self._context = mujoco.MjrContext(self._model, mujoco.mjtFontScale.mjFONTSCALE_150.value)
@@ -341,21 +374,24 @@ class GlassSwitch(Env):
         # Set the context's frame buffer type: a visible window buffer or an offscreen buffer.
         mujoco.mjr_setBuffer(self._framebuffer_type, self._context)
 
+        # Viewport.
+        self._viewport = mujoco.MjrRect(0, 0, self._width, self._height)
+
+        # --------------------------------------- Utilities -------------------------------------------------------------
         # Initialize the mouse and keyboard interactions if permitted, these are also related to rendering.
         self._set_interactions()
-
-        # --------------------------------------- XXX initialization -------------------------------------------------------------
-
-        # Initializing the environment variation functions.
-        # TODO in the design space part:
-        #  The design_space method: Only one plane will be green, the other plane should be ***changed*** at some extend,
-        #  e.g., the color or the alpha. This could be the insight of developing heads-up computing using RL.
 
         # --------------------------------------- Confirmation -------------------------------------------------------------
         # Finally confirm all the settings.
         mujoco.mj_forward(m=self._model, d=self._data)
 
     def reset(self):
+        """
+        The override method: reset all data.
+
+        Returns:
+            obs: the reset observations.
+        """
         # Reset the simulated environment. TODO check whether the dynamic values are changed to their defaults.
         mujoco.mj_resetData(m=self._model, d=self._data)
 
@@ -365,14 +401,24 @@ class GlassSwitch(Env):
         # Reset the rl related data, including the global simulation steps.
         self._init_rl_data()
 
-        ob = self._get_obs()
-        return ob
+        obs = self._get_obs()
+        return obs
 
     def step(self, action):
+        """
+        The override method: generates a specific step.
+
+        Args:
+            action: one sample from the action space.
+
+        Returns:
+            obs: observations.
+            reward: reward for the current step.
+            done: the flag shows whether the simulation is finished.
+            info: the detailed information.
+        """
         # Advance the simulation
-        mujoco.mj_step(m=self._model, d=self._data)  # nstep=self._run_parameters["frame_skip"]
-        # TODO maybe try using mj_forward sometimes, it might be enough.
-        # mujoco.mj_forward(m=self._model, d=self._data)
+        mujoco.mj_step(m=self._model, d=self._data, nstep=1)  # nstep=self._run_parameters["frame_skip"]
 
         # Update environment.
         obs, reward, done, info = self._update(action=action)   # TODO research on the pipeline and observation ~ states.
@@ -383,84 +429,107 @@ class GlassSwitch(Env):
         return obs, reward, done, info
 
     def _update(self, action):
-        # TODO outline
-        #  1. action update.
-        #  2. environment update, details are listed below.
+        """
+        The hierarchy game:
+         B letter - higher priority: stay on the glass until the content changed.
+          Only when the focal point is on the glass that the agent knows the content.
+          The rewards are proportional to the time it stays on the smart glass.
+         Red color - lower priority: stay on the env until the color changed.
+          The rewards are proportional to the time it stays on the wall.
+          The tricky part is: letting the agent learn, when he is looking at the wall, it must go back and check the smart
+          glass content. What would be the best focal change frequency.
+         Specifically, the action space will be a binary decision space: look at the glass or look at the environment.
+          The observation space would be what the agent can see: the pixels with only rgb values captured by the abstract camera.
+          And to simplify the task, only when the user is looking at the environment, the color will be disclosed. Or it will be the default grey.
 
-        # TODO The hierarchy game
-        #  B letter - higher priority: stay on the glass until the content changed.
-        #   Only when the focal point is on the glass that the agent knows the content.
-        #   The rewards are proportional to the time it stays on the smart glass.
-        #  Red color - lower priority: stay on the env until the color changed.
-        #   The rewards are proportional to the time it stays on the wall.
-        #   The tricky part is: letting the agent learn, when he is looking at the wall, it must go back and check the smart
-        #   glass content. What would be the best focal change frequency.
-        #  Specifically, the action space will be a binary decision space: look at the glass or look at the environment.
-        #   The observation space would be what the agent can see: the pixels with only rgb values captured by the abstract camera.
-        #   And to simplify the task, only when the user is looking at the environment, the color will be disclosed. Or it will be the default grey.
+        Args:
+            action: action: one sample from the action space.
 
-        # Do the task. TODO finish soon
+        Returns:
+            obs: observations.
+            reward: reward for the current step.
+            done: the flag shows whether the simulation is finished.
+            info: the detailed information.
+        """
+
+        # Do the task.
         obs, done = self._do_task(action=action)
 
-        # Update the info.
-        self.info = self._states
+        # Update the info. TODO current version: direct ask from states. Add more information about actual game states, such as env_red, env_green later.
+        info = self._states
 
         # Calculate the reward
         reward = self._reward_function()
 
-        return obs, reward, done, self.info
+        return obs, reward, done, info
 
     def _get_obs(self):
+        """
+        Get the observations.
+
+        Returns:
+            obs: observations.
+        """
         # Returns the read rgb pixels.
-        obs = {
-            'rgb': self._rgb_buffer.copy()
+        obs = {     # TODO the partial pixels - make it as an API
+            'rgb': self._rgb_buffer.copy()[self._obs_idx_h[0]:self._obs_idx_h[1], self._obs_idx_w[0]:self._obs_idx_w[1], :]
+            # 'rgb': self._rgb_buffer.copy()
         }
         return obs
 
     def _reward_function(self):
+        """
+        Defines the reward function and gets the reward value.
+
+        Returns:
+            reward: the reward value for the current step.
+        """
         # TODO outline
         #  1. considering using the sum-up manner, i.e., the environment and task has their own reward_functions,
         #   the sum of the scores will be optimized.
         #  2. the reward_functions should be high-level and generic enough to utilize the advantages of RL.
         #   Or there is no difference to using rule-based/hard coded algorithm.
 
-        # TODO -rewards for spending time
-
         # Write the reward function based on the agent's states.
         states = self._states.copy()
         task_states = self._task_states.copy()
 
+        # TODO unbalance the task by tuning the rewards.
         # Get the rewards. Write in this awkward form because it is easy to tune them.
         if states['current_on_level'] == 3:
-            reward = 3
+            reward = 5
         elif states['current_on_level'] == 2:
-            reward = 2
+            reward = 3
         elif states['current_on_level'] == 1:
             reward = 1
-        elif states['current_on_level'] == 0:
-            reward = 0
+        # TODO -rewards for spending time or useless switches,
+        #  which might enhance the too frequent changing behavior.
         elif states['current_on_level'] == -1:
             reward = -1
         elif states['current_on_level'] == -2:
-            reward = -2
-        elif states['current_on_level'] == -3:
             reward = -3
+        elif states['current_on_level'] == -3:
+            reward = -5
         else:
             reward = 0
 
         # Calculate the optimal rewards.
         if task_states['current_glass_display_id'] == 1:
-            self._states['optimal_score'] += 3
-        elif task_states['current_env_color_id'] == 1 and task_states['current_glass_display_id'] != 1:
-            self._states['optimal_score'] += 2
-        elif task_states['current_glass_display_id'] == 2 and task_states['current_env_color_id'] != 1:
-            self._states['optimal_score'] += 1
+            self._states['optimal_score'] += 5
+        elif task_states['current_glass_display_id'] == 2:
+            if task_states['current_env_color_id'] != 1:
+                self._states['optimal_score'] += 1
+            else:
+                self._states['optimal_score'] += 3
         else:
-            self._states['optimal_score'] += 0
+            if task_states['current_env_color_id'] == 1:
+                self._states['optimal_score'] += 3
+            else:
+                self._states['optimal_score'] += 0
 
         return reward
 
-    def render(self, mode="human"):  # , mode="human"
+    def render(self, mode="human"):
         """
         This is an override method inherited from its parent class gym.Env,
         it is compulsory and might be called in the established RL pipeline.
@@ -516,6 +585,10 @@ class GlassSwitch(Env):
         It specifies how the actions are taken, and how the observation space would be.
 
         P.S., before I made a separate task class, this method is the temporal place to hold all task logics.
+        TODO change this into the task class later.
+        Returns:
+            obs: observations.
+            done: the flag shows whether the simulation is finished.
         """
         if self._task_mode == self._task_modes[0]:  # the demo mode
             const_animation = 0.05
@@ -540,10 +613,10 @@ class GlassSwitch(Env):
             alpha_change_gain = 1.0  # The gain could be used later. In a non-linear control.
             abs_y_dist = abs(self._cam.lookat[1] - self._geom_pos_y_smart_glass_lenses)
 
-            if abs_y_dist >= self._dist_configs['max_dist']:
+            if abs_y_dist >= self._demo_dist_configs['max_dist']:
                 alpha = 0
             else:
-                alpha = alpha_change_coefficient * (self._dist_configs['max_dist'] - abs_y_dist) / self._mapping_range
+                alpha = alpha_change_coefficient * (self._demo_dist_configs['max_dist'] - abs_y_dist) / self._demo_mapping_range
 
             # Update the alpha from rgba's transparency value.
             self._model.geom(self._geom_names_glass_display_ids[1]).rgba[3] = alpha
@@ -563,41 +636,61 @@ class GlassSwitch(Env):
         elif self._task_mode == self._task_modes[1]:    # the rl task: color switch
             # Update the environment changes according to the task/game rules.  # TODO maybe write into an independent class later.
             # Get the current timestamp and the elapsed time since last step.
-            current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later
+            current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later - maybe use the step as the counter instead of the timer.
             elapsed_time = current_step_timestep - self._task_states['previous_step_timestamp']
-            # Check if the glass display and env color has run out the duration.
+            # Check if the glass display and env color has run out the duration.    # TODO apply some game settings that are less random and easier to learn.
             # The glass.
             current_glass_display_duration = current_step_timestep - self._task_states['start_step_glass_display_timestamp']
             # If ran out of time, then allocate the new display and color.
             if current_glass_display_duration > self._task_scripts['glass_display_duration']:
-                # Make sure the new display is not the same as the previous.
-                while True:
-                    current_glass_display_id = Discrete(len(self._task_scripts['glass_display_choices'])).sample()
-                    if current_glass_display_id != self._task_states['previous_glass_display_id']:
-                        break
-                    else:
-                        pass
+                # Make sure the new display is not the same as the previous. TODO more generalized scenario.
+                # while True:
+                #     current_glass_display_id = Discrete(len(self._task_scripts['glass_display_choices'])).sample()
+                #     if current_glass_display_id != self._task_states['previous_glass_display_id']:
+                #         break
+                #     else:
+                #         pass
+                # Generate fix-ordered displays. TODO easier scenario - the deterministic task with a fixed order.
+                current_glass_display_id = int((self._task_states['current_glass_display_id'] + 1) %
+                                               len(self._task_scripts['glass_display_choices']))
+
                 # Update the task state machine.
                 self._task_states['start_step_glass_display_timestamp'] = current_step_timestep
                 self._task_states['previous_glass_display_id'] = self._task_states['current_glass_display_id']
                 self._task_states['current_glass_display_id'] = current_glass_display_id
             # If not, update the time.
             elif current_glass_display_duration <= self._task_scripts['glass_display_duration']:
-                pass
+                # Get the exact glass display time:
+                if self._task_states['current_glass_display_id'] == 1:
+                    self._states['total_time_glass_B'] += elapsed_time
+                elif self._task_states['current_glass_display_id'] == 2:
+                    self._states['total_time_glass_X'] += elapsed_time
+                else:
+                    pass
             # The environment.
             current_env_color_duration = current_step_timestep - self._task_states['start_step_env_color_timestamp']
             if current_env_color_duration > self._task_scripts['env_color_duration']:
-                while True:
-                    current_env_color_id = Discrete(len(self._task_scripts['env_color_choices'])).sample()
-                    if current_env_color_id != self._task_states['previous_env_color_id']:
-                        break
-                    else:
-                        pass
+                # while True:
+                #     current_env_color_id = Discrete(len(self._task_scripts['env_color_choices'])).sample()
+                #     if current_env_color_id != self._task_states['previous_env_color_id']:
+                #         break
+                #     else:
+                #         pass
+
+                # A fix-ordered env color display. TODO easier mode
+                current_env_color_id = int((self._task_states['current_env_color_id'] + 1) %
+                                           len(self._task_scripts['env_color_choices']))
+
+                # Update the task state machine.
                 self._task_states['start_step_env_color_timestamp'] = current_step_timestep
                 self._task_states['previous_env_color_id'] = self._task_states['current_env_color_id']
                 self._task_states['current_env_color_id'] = current_env_color_id
             elif current_env_color_duration <= self._task_scripts['env_color_duration']:
-                pass
+                # Get the exact env color time:
+                if self._task_states['current_env_color_id'] == 1:
+                    self._states['total_time_env_red'] += elapsed_time
+                else:
+                    pass
 
             # Update stuff related to the action.
             # 1. The look at point's y position.
@@ -640,37 +733,61 @@ class GlassSwitch(Env):
             # Determine what the camera agent sees.
             sample_point_rgb = self._rgb_buffer[self._task_scripts['x_sample'], self._task_scripts['y_sample'], :]
 
-            # TODO reconstruct this part later. Make it more generalizable.
+            # TODO reconstruct this part later. Make it more generalizable and accurate.
             def identify_visual_content(sample_point, comparisons):
                 states = comparisons.copy()
                 dist_threshold = 6
                 content = 'none'
 
-                # Enumerate all scenarios - according to the level of importance.
-                if np.linalg.norm(sample_point[0:2] - states['on_env_grey'][0:2]) <= dist_threshold:
-                    content = 'on_env_grey'
-                if np.linalg.norm(sample_point[0:2] - states['on_env_green'][0:2]) <= dist_threshold:
-                    content = 'on_env_green'
-                if np.linalg.norm(sample_point[0:2] - states['on_env_blue'][0:2]) <= dist_threshold:
-                    content = 'on_env_blue'
-                if np.linalg.norm(sample_point[0:2] - states['on_glass_nothing'][0:2]) <= dist_threshold:
-                    content = 'on_glass_nothing'
-                if np.linalg.norm(sample_point[0:2] - states['on_glass_X'][0:2]) <= dist_threshold:
-                    content = 'on_glass_X'
-                if np.linalg.norm(sample_point[0:2] - states['on_env_red'][0:2]) <= dist_threshold:
-                    content = 'on_env_red'
-                if np.linalg.norm(sample_point[0:2] - states['on_glass_B'][0:2]) <= dist_threshold:
-                    content = 'on_glass_B'
+                for comparison in states['on_env_grey']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        if self._task_states['current_glass_display_id'] != 0:
+                            # TODO fix this ambiguity later: the overlapped identification for the env_grey and glass_nothing.
+                            content = 'on_env_grey'
+                        # elif (sample_point == states['on_env_grey'][0]).all():
+                        #     content = 'on_env_grey'
+
+                for comparison in states['on_env_green']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        content = 'on_env_green'
+
+                for comparison in states['on_env_blue']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        content = 'on_env_blue'
+
+                for comparison in states['on_glass_nothing']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        if self._task_states['current_env_color_id'] != 0:
+                            # TODO fix this ambiguity later: the overlapped identification for the env_grey and glass_nothing.
+                            content = 'on_glass_nothing'
+                        # elif (sample_point == states['on_glass_nothing'][1]).all():
+                        #     content = 'on_glass_nothing'
+
+                for comparison in states['on_glass_X']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        content = 'on_glass_X'
+
+                for comparison in states['on_env_red']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        content = 'on_env_red'
+
+                for comparison in states['on_glass_B']:
+                    if np.linalg.norm(sample_point - comparison) <= dist_threshold:
+                        content = 'on_glass_B'
 
                 return content
 
             # Get the current visual content.
             perceived_content = identify_visual_content(sample_point=sample_point_rgb, comparisons=self._task_scripts)
 
-            # print(action, sample_point_rgb, self._task_fsm['current_glass_display_id'],
-            #       self._task_fsm['current_env_color_id'], perceived_content)  # TODO debug delete later
+            if self._configs['rl_pipeline']['train'] is None:
+                print('action: {}   rgb: {}     glass id: {}    env id: {}      perceived result: {}'
+                      .format(action, sample_point_rgb, self._task_states['current_glass_display_id'],
+                              self._task_states['current_env_color_id'], perceived_content))
+            # TODO debug help promote the decision making section. TODO get this into the pipeline later.
+            # TODO [89 89 42] is a very common transition status when the agent is changing his focal from the 2 planes.
+            #  Maybe I can add some fixation + majority voting behavior to get rid of the transient [89 89 42] oscillations.
 
-            # TODO why does it never miss the glass_X
             # Update the internal agent states.
             if perceived_content == 'on_env_grey':
                 # Check if lost the B glass display.
@@ -728,12 +845,16 @@ class GlassSwitch(Env):
                     self._states['current_on_level'] = -2
                 elif self._task_states['current_env_color_id'] == (0 or 2 or 3):
                     self._states['current_on_level'] = 1
+            else:
+                self._states['total_time_intermediate'] += elapsed_time
+                self._states['current_on_level'] = 0
 
             # Update the timer.
             self._task_states['previous_step_timestamp'] = current_step_timestep
 
-            # Append the rgb frames.
-            self._rgb_images.append(np.flipud(self._rgb_buffer).copy())
+            # Append the rgb frames.    # TODO add a warning.
+            if not self._configs['rl_pipeline']['train'] and self._configs['rl_pipeline']['total_timesteps']<=30000:   # TODO only enable this in the testing mode. Need to be reorganized later.
+                self._rgb_images.append(np.flipud(self._rgb_buffer).copy())
 
             # Update the boundary.
             if self._steps >= (self._stop_step - 1):
@@ -767,9 +888,9 @@ class GlassSwitch(Env):
         # Update the abstract camera pose.
         self._update_cam_pos()
 
-        # Viewport.
-        viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
-        self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
+        # # Viewport.
+        # viewport_width, viewport_height = glfw.get_framebuffer_size(self._window)
+        # self._viewport = mujoco.MjrRect(0, 0, viewport_width, viewport_height)
         # Scene.
         # TODO be careful with this function, it updates everything (as the catmask sets) according to the mujoco model and data.
         #  The dynamical geoms created in the runtime programmatically was never stored.
@@ -777,6 +898,7 @@ class GlassSwitch(Env):
                                self._scene)
 
         # Render.
+        # TODO the rendering will slow down 3 times together with read-pixels.
         mujoco.mjr_render(self._viewport, self._scene, self._context)
 
         # Read the current frame's pixels.
@@ -787,10 +909,13 @@ class GlassSwitch(Env):
                               viewport=self._viewport, con=self._context)
 
         # Swap OpenGL buffers (blocking call due to v-sync)
-        glfw.swap_buffers(self._window)
+        # TODO this is the main cause for slowing the simulation down like 16 times. And it has nothing to do with the window buffer or offscreen buffer.
+        # TODO modify these later into an interactive mode.
+        if self._is_window_visible == 1:
+            glfw.swap_buffers(self._window)
 
         # Process pending GUI events, call GLFW callbacks
-        glfw.poll_events()
+        # glfw.poll_events()
 
     def _print_logs(self):
         """
@@ -889,7 +1014,6 @@ class GlassSwitch(Env):
         action = mujoco.mjtMouse.mjMOUSE_ZOOM
         mujoco.mjv_moveCamera(self._model, action, 0.0, -0.05 * yoffset, self._scene, self._cam)
 
-
     @property
     def get_cam_pose(self):
         """
@@ -900,16 +1024,16 @@ class GlassSwitch(Env):
         return self._cam.lookat, self._cam.distance, self._cam.azimuth, self._cam.elevation
 
     def write_video(self, filepath):
-        """Writes a video from images.
+        """
+        Writes a video from images.
         Args:
-          imgs: A list of images.
           filepath: Path where the video will be saved.
         Raises:
           ValueError: If frames per second (fps) is not set (set_fps is not called)
         """
 
-        # Make sure fps has been set
-        fps = 20
+        # Make sure fps has been set.
+        fps = 120    # TODO embed this into the configuration file later.
 
         if self._is_depth:
             depth_images = np.flipud(self._depth_buffer).copy()
@@ -921,7 +1045,7 @@ class GlassSwitch(Env):
             for img in self._rgb_images:
                 out.write(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             out.release()
-            print('The video has been made and released.')
+            print('\nThe video has been made and released to: {}.'.format(filepath))
         else:
             pass
 
