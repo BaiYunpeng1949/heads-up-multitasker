@@ -4,15 +4,59 @@ import yaml
 from tqdm import tqdm
 import numpy as np
 
+import gym
+
+import torch as th
+from torch import nn
+
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from deprecatedShowerTemp import ShowerTemp
 from GlassSwitch import GlassSwitch
 
 _BASELINE = 'baseline'
 _TESTING = 'testing'
+
+
+class CustomCNN(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        """
+        The custom cnn feature extractor.
+        Ref: https://stable-baselines3.readthedocs.io/en/master/guide/custom_policy.html#custom-feature-extractor
+        :param observation_space: (gym.Space)
+        :param features_dim: (int) Number of features extracted.
+            This corresponds to the number of unit for the last layer.
+        """
+        super().__init__(observation_space, features_dim)
+        # We assume CxHxW images (channels first)
+        # Re-ordering will be done by pre-preprocessing or wrapper
+        # n_input_channels = observation_space.shape[0]  # TODO specify
+        n_input_channels = observation_space.shape[0]   # TODO change to the multi-input later.
+        self.cnn = nn.Sequential(
+            nn.Conv2d(in_channels=n_input_channels, out_channels=8, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
+            nn.Flatten(),
+        )
+
+        # Compute shape by doing one forward pass
+        with th.no_grad():
+            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]    # TODO change to the multi-input mode later.
+
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.linear(self.cnn(observations))
 
 
 class RLPipeline:
@@ -35,24 +79,50 @@ class RLPipeline:
 
         self._config_rl_pipeline = configs['rl_pipeline']
 
-        self._env = GlassSwitch(configs=configs)
+        # Get an env instance for further constructing parallel environments.
+        self._env = GlassSwitch()
+        
+        # Initialise parallel environments.
+        self._parallel_envs = make_vec_env(env_id=self._env.__class__,
+                                           n_envs=self._config_rl_pipeline["num_workers"],
+                                           seed=None,
+                                           vec_env_cls=DummyVecEnv,
+                                           )  # TODO the DummyVecEnv is usually the fastest way. What is the difference with SubprocVecEnv?
+                                           # env_kwargs={"simulator_folder": simulator_folder})
 
         self._to_train = self._config_rl_pipeline['train']
-
+        self._checkpoints_name = self._config_rl_pipeline['checkpoints_name']
         self._model_name = self._config_rl_pipeline['model_name']
         if self._to_train is not None:
             self._log_path = os.path.join('training', 'logs')
-            self._save_path = os.path.join('training', 'saved_models', self._model_name)
+            # self._save_path = os.path.join('training', 'saved_models', self._model_name)  TODO deprecated for having the checkpoint saver.
+        self._save_path = os.path.join('training', 'saved_models', self._checkpoints_name)
+        self._load_path = os.path.join(self._save_path, self._model_name)
 
+        self._num_steps = self._config_rl_pipeline['num_steps']
         self._total_timesteps = self._config_rl_pipeline['total_timesteps']
         self._num_episodes = self._config_rl_pipeline['num_episodes']
 
         if self._to_train is True:  # TODO automate the device later.
-            self._model = PPO(self._config_rl_pipeline['policy_type'], self._env, verbose=1, tensorboard_log=self._log_path,
-                              device='cuda')
-            # TODO the policy needs to be changed, e.g., MultiInputPolicy, when dealing with higher dimension observation space.
+            # self._model = PPO(self._config_rl_pipeline['policy_type'], self._env, verbose=1,
+            #                   tensorboard_log=self._log_path, device=self._config_rl_pipeline['device'])
+
+            # Initialise model that is run with multiple threads. TODO finalise this later
+            policy_kwargs = dict(   # TODO regulate later
+                features_extractor_class=CustomCNN,
+                features_extractor_kwargs=dict(features_dim=128),
+            )
+            self._model = PPO(policy=self._config_rl_pipeline["policy_type"],
+                              env=self._parallel_envs,
+                              verbose=1,
+                              policy_kwargs=policy_kwargs, #self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
+                              tensorboard_log=self._log_path,
+                              n_steps=self._config_rl_pipeline["num_steps"],
+                              batch_size=self._config_rl_pipeline["batch_size"],
+                              device=self._config_rl_pipeline["device"])
+
         elif self._to_train is False:
-            self._model = PPO.load(self._save_path, self._env)
+            self._model = PPO.load(self._load_path, self._env)
         elif self._to_train is None:
             pass
 
@@ -72,7 +142,7 @@ class RLPipeline:
             obs = self._env.reset()
             done = False
             score = 0
-            progress_bar = tqdm(total=self._total_timesteps)
+            progress_bar = tqdm(total=self._num_steps)
             while not done:
                 if mode == _BASELINE:
                     action = self._env.action_space.sample()
@@ -96,20 +166,34 @@ class RLPipeline:
                           info['total_time_glass_X'], info['total_time_on_glass_X'], info['total_time_miss_glass_X'], np.round(100*info['total_time_miss_glass_X']/info['total_time_on_glass_X'], 2),
                           info['total_time_intermediate']))
 
-        # if mode == _TESTING:
-        #     # Use the official evaluation tool.
-        #     evl = evaluate_policy(self._model, self._env, n_eval_episodes=self._num_episodes, render=False)
-        #     print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
+        if mode == _TESTING:
+            # Use the official evaluation tool.
+            evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
+            print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
 
     def _train(self):
         """Add comments """
+        # Save a checkpoint every certain steps, which is specified by the configuration file.
+        # Ref: https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html
+        # To account for the multi-envs' steps, save_freq = max(save_freq // n_envs, 1).
+        save_freq = max(self._config_rl_pipeline['save_freq'] // self._config_rl_pipeline['num_workers'], 1)
+        checkpoint_callback = CheckpointCallback(
+            save_freq=save_freq,
+            save_path=self._save_path,
+            name_prefix='rl_model',
+            save_replay_buffer=True,
+            save_vecnormalize=True,
+        )
+
         # Train the RL model and save the logs. The Algorithm and policy were given,
         # but it can always be upgraded to a more flexible pipeline later.
-        self._model.learn(total_timesteps=self._total_timesteps)
+        self._model.learn(total_timesteps=self._total_timesteps,
+                          callback=checkpoint_callback,
+                          progress_bar=True)
 
-        # Save the model.
-        self._model.save(self._save_path)
-        print('The model has been saved as: {} in {}'.format(self._model_name, self._save_path))
+        # # Save the model.
+        # self._model.save(self._save_path)
+        # print('The model has been saved as: {} in {}'.format(self._model_name, self._save_path))
 
     def run(self):
         """
@@ -140,4 +224,4 @@ class RLPipeline:
         self._env.close()
 
         # Visualize the destructor.
-        print('***************************** RL pipeline ends. The mujoco environment of the pipeline has been destructed *************************************')
+        print('***************************** RL pipeline ends. The MuJoCo environment of the pipeline has been destructed *************************************')

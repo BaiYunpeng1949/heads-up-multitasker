@@ -1,14 +1,31 @@
-simulator_name: "glass_switch"
+simulator_name: 'glass_switch'
 
 rl_pipeline:
-  total_timesteps: 18000
-  num_episodes: 1                              # Just set it to 1 to save computing time.
-  model_name: 'glass_switch_trial_36k'            # 'hl' means Headless rendering which uses the offscreen framebuffer.
+  total_timesteps: 72000
+  num_episodes: 10                             # Just set it to 1 to save computing time. TODO need to change if I have the ep_len variable
+  checkpoints_name: 'checkpoints_0124_1125_trials'   # TODO regulate this part in the rl-pipeline, by using getattr or something to verify these configurations' validity.
+  model_name: 'rl_model_16249740_steps'
+                                                  # 'hl' means Headless rendering which uses the offscreen framebuffer.
                                                   # 'px' means obs with partial pixels.
                                                   # 'r' means twisted reward functions.
-  train: no                                   # choose from null for None (just test the simulation), yes for True, no for False.
+                                                  # 'pe' means multi-threads with parallel envs.
+  train: yes                                   # choose from null for None (just test the simulation), yes for True, no for False.
                                               # TODO create 4 modes: train, test, debug, and interact.
-  policy_type: 'MultiInputPolicy'             # Choose from MultiInputPolicy and others.
+#  policy_type: 'MultiInputPolicy'             # Choose from MultiInputPolicy and others.
+  algorithm: 'PPO'
+  policy_type: 'MultiInputPolicy'
+  policy_kwargs:
+    activation_fn: 'torch.nn.LeakyReLU'
+    net_arch: [256, 256]
+    log_std_init: 0.0
+    features_extractor_class: 'feature_extractor.FeatureExtractor'
+    normalize_images: False
+  device: 'cuda'
+  num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
+  num_steps: 3600
+  batch_size: 300
+  target_kl: 1.0
+  save_freq: 250000  # Save a checkpoint every 0.5 million steps.
 
 mujoco_env:
   model_path: 'glass-switch-env-v1224.xml'
@@ -16,7 +33,7 @@ mujoco_env:
     is_window_visible: 0        # Set to 0, use off-screen buffer provided by OpenGL, enable the headless rendering, and disable all the GUI interactions.
                                 # Set to 1, use the default window buffer provided by the operating system, enable the GUI interactions.
     is_camera_fixed: no         # Choose from yes or no. Must be yes when doing the RL.
-    width: 80                  # Default: 400  TODO this might decrease the RL pipeline speed, but first I need to tackle the simulation problem.
+    width: 80                  # Default: 400
     height: 64                  # Default: 320
     rgb: yes                    # Choose from yes or no.
     depth: yes                  # Choose from yes or no.

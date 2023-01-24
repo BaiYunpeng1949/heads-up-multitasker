@@ -4,15 +4,19 @@ import os
 import math
 from typing import Callable, NamedTuple, Optional, Union, List
 import matplotlib.pyplot as plt
-import xml.etree.ElementTree as ET   # This package.class could be used to add XML elements dynamically.
+import xml.etree.ElementTree as ET  # This package.class could be used to add XML elements dynamically.
 
 import mujoco
+import yaml
 from mujoco.glfw import glfw
 
 import gym
 from gym import Env
 from gym import utils
 from gym.spaces import Discrete, Box, Dict, Tuple, MultiBinary, MultiDiscrete
+
+from torch import nn
+import torch
 
 from Task import Task
 
@@ -43,7 +47,7 @@ class GlassSwitch(Env):
         }
 
         # Config the OpenGL rendering related configurations.
-        self._configs = configs     # TODO for debugging, refine later.
+        self._configs = configs  # TODO for debugging, refine later.
         self._config_mj_env = configs['mujoco_env']
         # Resolution in pixels: width * height
         # Reference: glfw.GLFWwindow * glfwCreateWindow
@@ -54,10 +58,10 @@ class GlassSwitch(Env):
 
         # Config Flags.
         # Internal buffer configuration.
-        self._is_rgb = self._config_mj_env['render']['rgb']     # Set to True to read rgb.
-        self._is_depth = self._config_mj_env['render']['depth']   # Set to True to read depth.
+        self._is_rgb = self._config_mj_env['render']['rgb']  # Set to True to read rgb.
+        self._is_depth = self._config_mj_env['render']['depth']  # Set to True to read depth.
         # The camera to be fixed or not.
-        self._is_camera_fixed = False    # self._config_mj_env['render']['is_camera_fixed']   # Set to True to disable the camera moving functions.
+        self._is_camera_fixed = False  # self._config_mj_env['render']['is_camera_fixed']   # Set to True to disable the camera moving functions.
         # The display window, rendering buffer, and the operating system vs. OpenGL.
         # Ref https://mujoco.readthedocs.io/en/latest/programming/visualization.html#buffers-for-rendering
         # From the perspective of OpenGL, there are important differences between the window framebuffer and offscreen framebuffer,
@@ -70,7 +74,8 @@ class GlassSwitch(Env):
         #  they are session/software-specific and not model-specific. In contrast, the offscreen framebuffer is managed
         #  entirely by OpenGL, and so we can create that buffer with whatever properties we want,
         #  namely with the resolution and multi-sample properties specified in mjModel.vis.
-        self._is_window_visible = self._config_mj_env['render']['is_window_visible']    # Set to 1 to enable the window being visible. 0 to hide the window.
+        self._is_window_visible = self._config_mj_env['render'][
+            'is_window_visible']  # Set to 1 to enable the window being visible. 0 to hide the window.
         if self._is_window_visible == 1:
             self._framebuffer_type = mujoco.mjtFramebuffer.mjFB_WINDOW.value
             # The key and mouse interaction to be enabled or not.
@@ -81,17 +86,21 @@ class GlassSwitch(Env):
             self._is_key_mouse_interaction = False
         # Raise some value errors when the settings are having conflicts.
         if self._is_key_mouse_interaction and (self._is_camera_fixed or self._is_window_visible == 0):
-            raise ValueError('Invalid keyboard and mouse settings: a visible window and a free camera are both necessary.')
+            raise ValueError(
+                'Invalid keyboard and mouse settings: a visible window and a free camera are both necessary.')
         # The printings.
-        self._is_print_cam_config = self._config_mj_env['utils']['is_print_cam_config']        # Set to True to print camera configuration.
-        self._is_print_cam_rgb_depth = self._config_mj_env['utils']['is_print_cam_rgb_depth']     # Set to True to print camera read pixel rgb and depth info.
+        self._is_print_cam_config = self._config_mj_env['utils'][
+            'is_print_cam_config']  # Set to True to print camera configuration.
+        self._is_print_cam_rgb_depth = self._config_mj_env['utils'][
+            'is_print_cam_rgb_depth']  # Set to True to print camera read pixel rgb and depth info.
 
         # Config constants.
         # The display modes. Must select from the predefined ones.
         self._viewer_modes = ['through_glass', 'overhead']
         self._viewer_mode = self._config_mj_env['render']['viewer_mode']
         if self._viewer_mode not in self._viewer_modes:
-            raise ValueError('Invalid viewer mode: it must be selected from the predefined options [through_glass, overhead].')
+            raise ValueError(
+                'Invalid viewer mode: it must be selected from the predefined options [through_glass, overhead].')
         # The task modes. Must select from the predefined modes.
         # 'demo' corresponds to the demonstration, a visible window is required.
         # The others are tasks used in RL, they can be operated in an off-screen manner.
@@ -100,12 +109,13 @@ class GlassSwitch(Env):
         if self._task_mode not in self._task_modes:
             raise ValueError('Invalid task mode: it must be selected from the predefined options [demo, color_switch].')
         if self._task_mode == self._task_modes[0] and (self._is_window_visible == 0 or self._is_camera_fixed is True):
-            raise ValueError('Invalid configuration: the window must be visible and the camera must be free in the demo task mode.')
+            raise ValueError(
+                'Invalid configuration: the window must be visible and the camera must be free in the demo task mode.')
 
         # -------------------------------------------------------------------------------------------------------------
         # Config the RL pipeline related stuff.
-        # The stopping step that terminates the simulation manually.
-        self._stop_step = configs['rl_pipeline']['total_timesteps']
+        # The length of the episode. The timesteps that it takes.
+        self._num_steps = configs['rl_pipeline']['num_steps']
 
         # -------------------------------------------------------------------------------------------------------------
         # Config the task game related stuff.
@@ -197,7 +207,7 @@ class GlassSwitch(Env):
             self._static_cam_height = 5.5
             self._initial_cam_pos_y = -7.5
             pass
-        elif self._viewer_mode == self._viewer_modes[1]:    # overhead
+        elif self._viewer_mode == self._viewer_modes[1]:  # overhead
             # TODO firstly I just do a 1-D change on the y axis. Complete later.
             self._static_cam_height = 5.5
             self._initial_cam_pos_y = -7.5
@@ -208,7 +218,8 @@ class GlassSwitch(Env):
         self._init_cam_pose = {
             'cam_lookat': np.array([0, self._geom_pos_y_smart_glass_lenses, 1.5]),  # lookat point
             'cam_distance': 5,  # Distance to lookat point or tracked body.
-            'cam_azimuth': 90.0,    # Camera azimuth (deg). The concept reference: https://www.photopills.com/articles/understanding-azimuth-and-elevation
+            'cam_azimuth': 90.0,
+            # Camera azimuth (deg). The concept reference: https://www.photopills.com/articles/understanding-azimuth-and-elevation
             'cam_elevation': 0.0  # Camera elevation (deg).
         }
 
@@ -262,7 +273,7 @@ class GlassSwitch(Env):
             glfw.set_mouse_button_callback(self._window, self._mouse_button)
             glfw.set_scroll_callback(self._window, self._scroll)
 
-    def __init__(self, configs):
+    def __init__(self):
         """
         This class defines the mujoco environment where simulates human's visual perception behaviors when
         they are shifting/switching focal point between the smart glasses and the environment behind it.
@@ -287,13 +298,12 @@ class GlassSwitch(Env):
                 It is defined by the projection matrix and the view matrix,
                 which specify the position and orientation of the camera in the 3D scene.
                 The viewport is important because it determines how the 3D scene is projected onto the 2D window.
-
-        Args:
-            configs: the YAML config file content.
         """
         # Initialize the configurations, including camera settings.
         # Ref: MuJoCoPy Bootcamp Lec 13: https://pab47.github.io/mujocopy.html
         # Read the configurations from the YAML file.
+        with open('config.yaml') as f:
+            configs = yaml.load(f, Loader=yaml.FullLoader)
         self._config(configs=configs)
         # --------------------------------------- RL initialization -------------------------------------------------------------
         # Load the xml MjModel.
@@ -308,15 +318,19 @@ class GlassSwitch(Env):
         self.action_space = Discrete(2)
 
         # The observation_space - the simple version: the perception pixels. TODO try only a small central portion of the pixels.
-        offset = int(self._width / 4)   # TODO normalize it later
-        self._obs_idx_h = [int(self._height/2 - offset), int(self._height/2 + offset)]
-        self._obs_idx_w = [int(self._width/2 - offset), int(self._width/2 + offset)]
-        self.observation_space = Dict({
-            'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(offset*2, offset*2, 3))
-        })
+        offset = int(self._width / 4)  # TODO normalize it later
+        self._obs_idx_h = [int(self._height / 2 - offset), int(self._height / 2 + offset)]
+        self._obs_idx_w = [int(self._width / 2 - offset), int(self._width / 2 + offset)]
+        self.observation_space = Box(low=np.uint8(0), high=np.uint8(255), shape=(offset * 2, offset * 2, 3))
+        # self.observation_space = Dict({
+        #     'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(offset * 2, offset * 2, 3))
+        # })
         # self.observation_space = Dict({
         #     'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(self._height, self._width, 3))   # TODO the rgb was between 0-255
         # })
+        # TODO debug delete later
+        # print('dududu', self.observation_space['rgb'].sample())
+        # print('The observation space sample looks like: {}, the shape is: {}'.format(self.observation_space.sample(), self.observation_space['rgb'].shape))
 
         # Initiate the rl related data, i.e., parameters.
         self._init_rl_data()
@@ -421,7 +435,7 @@ class GlassSwitch(Env):
         mujoco.mj_step(m=self._model, d=self._data, nstep=1)  # nstep=self._run_parameters["frame_skip"]
 
         # Update environment.
-        obs, reward, done, info = self._update(action=action)   # TODO research on the pipeline and observation ~ states.
+        obs, reward, done, info = self._update(action=action)  # TODO research on the pipeline and observation ~ states.
 
         # Update the simulated steps.
         self._steps += 1
@@ -470,11 +484,15 @@ class GlassSwitch(Env):
         Returns:
             obs: observations.
         """
+        rgb = self._rgb_buffer.copy()[self._obs_idx_h[0]:self._obs_idx_h[1], self._obs_idx_w[0]:self._obs_idx_w[1], :]
         # Returns the read rgb pixels.
-        obs = {     # TODO the partial pixels - make it as an API
-            'rgb': self._rgb_buffer.copy()[self._obs_idx_h[0]:self._obs_idx_h[1], self._obs_idx_w[0]:self._obs_idx_w[1], :]
-            # 'rgb': self._rgb_buffer.copy()
-        }
+        # obs = {  # TODO the partial pixels - make it as an API
+        #     'rgb': rgb
+        #     # 'rgb': self._rgb_buffer.copy()
+        # }
+        obs = rgb
+        # TODO delete later
+        # print('The sample obs: {}, the shape is: {}'.format(obs, obs_rgb.shape))
         return obs
 
     def _reward_function(self):
@@ -539,7 +557,8 @@ class GlassSwitch(Env):
         """
         # Render the demo in the 'demo' task mode.
         if self._task_mode == self._task_modes[0]:
-            while not glfw.window_should_close(self._window):   # Decides when the window will be closed, such as a mouse click event.
+            while not glfw.window_should_close(
+                    self._window):  # Decides when the window will be closed, such as a mouse click event.
                 time_prev = self._data.time
 
                 # Skip some frames, restrict the render fps to be around 60Hz.
@@ -616,7 +635,8 @@ class GlassSwitch(Env):
             if abs_y_dist >= self._demo_dist_configs['max_dist']:
                 alpha = 0
             else:
-                alpha = alpha_change_coefficient * (self._demo_dist_configs['max_dist'] - abs_y_dist) / self._demo_mapping_range
+                alpha = alpha_change_coefficient * (
+                            self._demo_dist_configs['max_dist'] - abs_y_dist) / self._demo_mapping_range
 
             # Update the alpha from rgba's transparency value.
             self._model.geom(self._geom_names_glass_display_ids[1]).rgba[3] = alpha
@@ -633,14 +653,15 @@ class GlassSwitch(Env):
 
             done = False
 
-        elif self._task_mode == self._task_modes[1]:    # the rl task: color switch
+        elif self._task_mode == self._task_modes[1]:  # the rl task: color switch
             # Update the environment changes according to the task/game rules.  # TODO maybe write into an independent class later.
             # Get the current timestamp and the elapsed time since last step.
-            current_step_timestep = self._data.time     # TODO assume all the operations does not take time, improve it later - maybe use the step as the counter instead of the timer.
+            current_step_timestep = self._data.time  # TODO assume all the operations does not take time, improve it later - maybe use the step as the counter instead of the timer.
             elapsed_time = current_step_timestep - self._task_states['previous_step_timestamp']
             # Check if the glass display and env color has run out the duration.    # TODO apply some game settings that are less random and easier to learn.
             # The glass.
-            current_glass_display_duration = current_step_timestep - self._task_states['start_step_glass_display_timestamp']
+            current_glass_display_duration = current_step_timestep - self._task_states[
+                'start_step_glass_display_timestamp']
             # If ran out of time, then allocate the new display and color.
             if current_glass_display_duration > self._task_scripts['glass_display_duration']:
                 # Make sure the new display is not the same as the previous. TODO more generalized scenario.
@@ -698,12 +719,12 @@ class GlassSwitch(Env):
             #  When look at the env, the content is hided.
             # 3. And the environment color - when look at the environment, the value will be disclosed,
             #  or it would always be the default grey color.
-            if action == 0:     # look at the smart glass lenses
+            if action == 0:  # look at the smart glass lenses
                 self._cam.lookat[1] = self._geom_pos_y_smart_glass_lenses
                 alpha = 0.5
                 color_id = 0
                 self._states['num_on_glass'] += 1
-            elif action == 1:   # look at the env
+            elif action == 1:  # look at the env
                 self._cam.lookat[1] = self._geom_pos_y_ambient_env
                 alpha = 0
                 color_id = self._task_states['current_env_color_id']
@@ -853,11 +874,12 @@ class GlassSwitch(Env):
             self._task_states['previous_step_timestamp'] = current_step_timestep
 
             # Append the rgb frames.    # TODO add a warning.
-            if not self._configs['rl_pipeline']['train'] and self._configs['rl_pipeline']['total_timesteps']<=30000:   # TODO only enable this in the testing mode. Need to be reorganized later.
+            if not self._configs['rl_pipeline']['train'] and self._configs['rl_pipeline'][
+                'total_timesteps'] <= 30000:  # TODO only enable this in the testing mode. Need to be reorganized later.
                 self._rgb_images.append(np.flipud(self._rgb_buffer).copy())
 
             # Update the boundary.
-            if self._steps >= (self._stop_step - 1):
+            if self._steps >= (self._num_steps - 1):
                 done = True
             else:
                 done = False
@@ -874,7 +896,8 @@ class GlassSwitch(Env):
         #  Right now the only variable is lookat point, more features, such as azimuth, elevation, distance, will be added.
         if self._viewer_mode == self._viewer_modes[0]:
             self._cam.elevation = 0
-            self._cam.distance = self._init_cam_pose['cam_distance'] + np.abs(self._init_cam_pose['cam_lookat'][1] - self._cam.lookat[1])
+            self._cam.distance = self._init_cam_pose['cam_distance'] + np.abs(
+                self._init_cam_pose['cam_lookat'][1] - self._cam.lookat[1])
         elif self._viewer_mode == self._viewer_modes[1]:
             elevation_tan = self._static_cam_height / np.abs(self._initial_cam_pos_y - self._cam.lookat[1])
             elevation_degree = - 180 * math.atan(elevation_tan) / math.pi
@@ -1033,7 +1056,7 @@ class GlassSwitch(Env):
         """
 
         # Make sure fps has been set.
-        fps = 120    # TODO embed this into the configuration file later.
+        fps = 120  # TODO embed this into the configuration file later.
 
         if self._is_depth:
             depth_images = np.flipud(self._depth_buffer).copy()
@@ -1055,5 +1078,34 @@ class GlassSwitch(Env):
         For example, the pure color (there must be rule-based algorithm to classify according to rgb values),
         the pixel numbers on the plane (ImageNet).
         """
-        # return small_cnn(observation_shape=self._observation_shape, out_features=256)
-        return
+        return small_cnn(observation_shape=self._observation_shape, out_features=256)
+
+
+def small_cnn(observation_shape, out_features):
+    """
+    An encoder (typically a PyTorch neural network) that maps the observations from higher dimensional arrays into
+    vectors.
+    Referenced from Aleksi's repo.  TODO learn this later.
+
+    Args:
+        observation_shape: the shape of inputs: observation space.
+        out_features: the output features.
+
+    Returns:
+        A cnn network.
+    """
+    cnn = nn.Sequential(nn.Conv2d(in_channels=observation_shape[0], out_channels=8, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+                        nn.LeakyReLU(),
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+                        nn.LeakyReLU(),
+                        nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+                        nn.LeakyReLU(),
+                        nn.Flatten())
+
+    # Compute shape by doing one forward pass.
+    with torch.no_grad():
+        n_flatten = cnn(torch.zeros(observation_shape)[None]).shape[1]
+
+    return nn.Sequential(cnn,
+                         nn.Linear(in_features=n_flatten, out_features=out_features),
+                         nn.LeakyReLU())
