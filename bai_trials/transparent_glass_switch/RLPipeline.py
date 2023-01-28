@@ -20,8 +20,12 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from deprecatedShowerTemp import ShowerTemp
 from GlassSwitch import GlassSwitch
 
-_BASELINE = 'baseline'
-_TESTING = 'testing'
+_MODES = {
+    'train': 'train',
+    'test': 'test',
+    'debug': 'debug',
+    'interact': 'interact'
+}
 
 
 class CustomCNN(BaseFeaturesExtractor):
@@ -64,79 +68,112 @@ class RLPipeline:
         """
         This is the reinforcement learning pipeline where mujoco environments are created, models are trained and tested.
 
-        Args: (now all are embedded in the YAML file)
-            model_xml_path: mujoco models' relative path.
-            total_timesteps: the total timesteps.
-            num_episodes: the number of episodes.
-            model_name: the custom RL model name the experimenter gives for saving model or reusing model.
-            to_train: the flag that determines whether the pipeline would behave: generate baseline only (testing the environment)?
-                        Or training and testing the RL model, or just testing the pre-trained model.
-                      Choose from: None, True, False
+        Args:
+            config_file: the YAML configuration file that records the configs.
         """
         # Read the configurations from the YAML file.
         with open(config_file) as f:
             configs = yaml.load(f, Loader=yaml.FullLoader)
 
-        self._config_rl_pipeline = configs['rl_pipeline']
+        self._configs_rl = configs['rl']
+
+        # Specify the pipeline mode.
+        self._mode = self._configs_rl['mode']
 
         # Get an env instance for further constructing parallel environments.
         self._env = GlassSwitch()
-        
-        # Initialise parallel environments.
-        self._parallel_envs = make_vec_env(env_id=self._env.__class__,
-                                           n_envs=self._config_rl_pipeline["num_workers"],
-                                           seed=None,
-                                           vec_env_cls=DummyVecEnv,
-                                           )  # TODO the DummyVecEnv is usually the fastest way. What is the difference with SubprocVecEnv?
-                                           # env_kwargs={"simulator_folder": simulator_folder})
 
-        self._to_train = self._config_rl_pipeline['train']
-        self._checkpoints_name = self._config_rl_pipeline['checkpoints_name']
-        self._model_name = self._config_rl_pipeline['model_name']
-        if self._to_train is not None:
-            self._log_path = os.path.join('training', 'logs')
-            # self._save_path = os.path.join('training', 'saved_models', self._model_name)  TODO deprecated for having the checkpoint saver.
-        self._save_path = os.path.join('training', 'saved_models', self._checkpoints_name)
-        self._load_path = os.path.join(self._save_path, self._model_name)
-
-        self._num_steps = self._config_rl_pipeline['num_steps']
-        self._total_timesteps = self._config_rl_pipeline['total_timesteps']
-        self._num_episodes = self._config_rl_pipeline['num_episodes']
-
-        if self._to_train is True:  # TODO automate the device later.
-            # self._model = PPO(self._config_rl_pipeline['policy_type'], self._env, verbose=1,
-            #                   tensorboard_log=self._log_path, device=self._config_rl_pipeline['device'])
-
+        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
+        # Train the model, and save the logs and modes at each checkpoints.
+        if self._mode == _MODES['train']:
+            # MuJoCo environment related variables.
+            # Initialise parallel environments.
+            self._parallel_envs = make_vec_env(
+                env_id=self._env.__class__,
+                n_envs=self._configs_rl['train']["num_workers"],
+                seed=None,
+                vec_env_cls=DummyVecEnv,
+                # TODO the DummyVecEnv is usually the fastest way. What is the difference with SubprocVecEnv?
+                #  For now using SubprocVecEnv would cause errors, solve this later.
+                # env_kwargs={"simulator_folder": simulator_folder})
+            )
+            # Pipeline related variables.
+            self._training_logs_path = os.path.join('training', 'logs')
+            self._checkpoints_folder_name = self._configs_rl['train']['checkpoints_folder_name']
+            self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+            # RL training related variable: total time-steps.
+            self._total_timesteps = self._configs_rl['train']['total_timesteps']
+            # Configure the model.
             # Initialise model that is run with multiple threads. TODO finalise this later
-            policy_kwargs = dict(   # TODO regulate later
+            policy_kwargs = dict(  # TODO regulate later
                 features_extractor_class=CustomCNN,
                 features_extractor_kwargs=dict(features_dim=128),
             )
-            self._model = PPO(policy=self._config_rl_pipeline["policy_type"],
-                              env=self._parallel_envs,
-                              verbose=1,
-                              policy_kwargs=policy_kwargs, #self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
-                              tensorboard_log=self._log_path,
-                              n_steps=self._config_rl_pipeline["num_steps"],
-                              batch_size=self._config_rl_pipeline["batch_size"],
-                              device=self._config_rl_pipeline["device"])
-
-        elif self._to_train is False:
-            self._model = PPO.load(self._load_path, self._env)
-        elif self._to_train is None:
+            self._model = PPO(
+                policy=self._configs_rl['train']["policy_type"],
+                env=self._parallel_envs,
+                verbose=1,
+                policy_kwargs=policy_kwargs,
+                # self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
+                tensorboard_log=self._training_logs_path,
+                n_steps=self._configs_rl['train']["num_steps"],
+                batch_size=self._configs_rl['train']["batch_size"],
+                device=self._configs_rl['train']["device"]
+            )
+        # Load the pre-trained models and test.
+        elif self._mode == _MODES['test']:
+            # Pipeline related variables.
+            self._loaded_model_name = self._configs_rl['test']['loaded_model_name']
+            self._checkpoints_folder_name = self._configs_rl['train']['checkpoints_folder_name']
+            self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+            self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
+            # RL testing related variable: number of episodes and number of steps in each episodes.
+            self._num_episodes = self._configs_rl['test']['num_episodes']
+            self._num_steps = self._env.num_steps
+            # Load the model
+            self._model = PPO.load(self._loaded_model_path, self._env)
+        # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
+        elif self._mode == _MODES['debug']:
+            self._num_episodes = self._configs_rl['test']['num_episodes']
+            self._num_steps = self._env.num_steps
+        # The MuJoCo environment demo display with user interactions, such as mouse interactions.
+        elif self._mode == _MODES['interact']:
+            pass
+        else:
             pass
 
-    def _generate_results(self, mode):
+    def _train(self):
+        """Add comments """
+        # Save a checkpoint every certain steps, which is specified by the configuration file.
+        # Ref: https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html
+        # To account for the multi-envs' steps, save_freq = max(save_freq // n_envs, 1).
+        save_freq = self._configs_rl['train']['save_freq']
+        n_envs = self._configs_rl['train']['num_workers']
+        save_freq = max(save_freq // n_envs, 1)
+        checkpoint_callback = CheckpointCallback(
+            save_freq=save_freq,
+            save_path=self._models_save_path,
+            name_prefix='rl_model',
+            save_replay_buffer=True,
+            save_vecnormalize=True,
+        )
+
+        # Train the RL model and save the logs. The Algorithm and policy were given,
+        # but it can always be upgraded to a more flexible pipeline later.
+        self._model.learn(
+            total_timesteps=self._total_timesteps,
+            callback=checkpoint_callback,
+            progress_bar=True
+        )
+
+    def _test(self):
         """
         This method generates the RL env testing results with or without a pre-trained RL model in a manual way.
-
-        Args:
-            mode: the RL model testing mode or the baseline generating mode. Choose from: 'baseline' or 'testing'.
         """
-        if mode == _BASELINE:
-            print('\nThe baselines: ')
-        elif mode == _TESTING:
-            print('\nThe testing: ')
+        if self._mode == _MODES['debug']:
+            print('\nThe MuJoCo env and tasks baseline: ')
+        elif self._mode == _MODES['test']:
+            print('\nThe pre-trained RL model testing: ')
 
         for episode in range(1, self._num_episodes + 1):
             obs = self._env.reset()
@@ -144,10 +181,12 @@ class RLPipeline:
             score = 0
             progress_bar = tqdm(total=self._num_steps)
             while not done:
-                if mode == _BASELINE:
+                if self._mode == _MODES['debug']:
                     action = self._env.action_space.sample()
-                elif mode == _TESTING:
+                elif self._mode == _MODES['test']:
                     action, _states = self._model.predict(obs)
+                else:
+                    action = 0
                 obs, reward, done, info = self._env.step(action)
                 score += reward
                 progress_bar.update(1)
@@ -166,62 +205,40 @@ class RLPipeline:
                           info['total_time_glass_X'], info['total_time_on_glass_X'], info['total_time_miss_glass_X'], np.round(100*info['total_time_miss_glass_X']/info['total_time_on_glass_X'], 2),
                           info['total_time_intermediate']))
 
-        if mode == _TESTING:
-            # Use the official evaluation tool.
-            evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
-            print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
-
-    def _train(self):
-        """Add comments """
-        # Save a checkpoint every certain steps, which is specified by the configuration file.
-        # Ref: https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html
-        # To account for the multi-envs' steps, save_freq = max(save_freq // n_envs, 1).
-        save_freq = max(self._config_rl_pipeline['save_freq'] // self._config_rl_pipeline['num_workers'], 1)
-        checkpoint_callback = CheckpointCallback(
-            save_freq=save_freq,
-            save_path=self._save_path,
-            name_prefix='rl_model',
-            save_replay_buffer=True,
-            save_vecnormalize=True,
-        )
-
-        # Train the RL model and save the logs. The Algorithm and policy were given,
-        # but it can always be upgraded to a more flexible pipeline later.
-        self._model.learn(total_timesteps=self._total_timesteps,
-                          callback=checkpoint_callback,
-                          progress_bar=True)
-
-        # # Save the model.
-        # self._model.save(self._save_path)
-        # print('The model has been saved as: {} in {}'.format(self._model_name, self._save_path))
+        # if self._mode == _MODES['test']:
+        #     # Use the official evaluation tool.
+        #     evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
+        #     print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
 
     def run(self):
         """
         This method helps run the RL pipeline.
         Call it.
         """
+        print('\n\n***************************** RL Pipeline starts with the mode {} *************************************'.format(self._mode))
         # Check train or not.
-        if self._to_train is True:
+        if self._mode == _MODES['train']:
             self._train()
-        elif self._to_train is False:
-            # Generate the baseline.
-            # TODO comment the baseline generation out because this is a deterministic problem, only apply once: -17.51%
-            # self._generate_results(mode=_BASELINE)
+        elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
-            self._generate_results(mode=_TESTING)
+            self._test()
             # Write a video.
             video_folder_path = os.path.join('training', 'videos')
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
-            video_path = os.path.join(video_folder_path, self._model_name + '.avi')
+            video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
             self._env.write_video(filepath=video_path)
-        else:
+        elif self._mode == _MODES['debug']:
             # Generate the baseline.
-            self._generate_results(mode=_BASELINE)
+            self._test()
+        else:
+            # TODO specify the demo mode later.
+            #  Should be something like: self._env.demo()
+            pass
 
     def __del__(self):
         # Close the environment.
         self._env.close()
 
         # Visualize the destructor.
-        print('***************************** RL pipeline ends. The MuJoCo environment of the pipeline has been destructed *************************************')
+        print('\n\n***************************** RL pipeline ends. The MuJoCo environment of the pipeline has been destructed *************************************')

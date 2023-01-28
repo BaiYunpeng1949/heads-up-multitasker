@@ -23,7 +23,7 @@ from Task import Task
 
 class GlassSwitch(Env):
 
-    def _config(self, configs):
+    def _load_configs(self, configs):
         """
         This method configures all static settings from the YAML file, including flags and counters.
         The 'static' here means configurations that will not change in the runtime.
@@ -115,7 +115,7 @@ class GlassSwitch(Env):
         # -------------------------------------------------------------------------------------------------------------
         # Config the RL pipeline related stuff.
         # The length of the episode. The timesteps that it takes.
-        self._num_steps = configs['rl_pipeline']['num_steps']
+        self._num_steps = configs['rl']['train']['num_steps']
 
         # -------------------------------------------------------------------------------------------------------------
         # Config the task game related stuff.
@@ -304,7 +304,7 @@ class GlassSwitch(Env):
         # Read the configurations from the YAML file.
         with open('config.yaml') as f:
             configs = yaml.load(f, Loader=yaml.FullLoader)
-        self._config(configs=configs)
+        self._load_configs(configs=configs)
         # --------------------------------------- RL initialization -------------------------------------------------------------
         # Load the xml MjModel.
         self._model = mujoco.MjModel.from_xml_path(self._config_mj_env['model_path'])
@@ -801,7 +801,7 @@ class GlassSwitch(Env):
             # Get the current visual content.
             perceived_content = identify_visual_content(sample_point=sample_point_rgb, comparisons=self._task_scripts)
 
-            if self._configs['rl_pipeline']['train'] is None:
+            if self._configs['rl']['mode'] == 'debug':  # TODO decouple this later.
                 print('action: {}   rgb: {}     glass id: {}    env id: {}      perceived result: {}'
                       .format(action, sample_point_rgb, self._task_states['current_glass_display_id'],
                               self._task_states['current_env_color_id'], perceived_content))
@@ -874,8 +874,8 @@ class GlassSwitch(Env):
             self._task_states['previous_step_timestamp'] = current_step_timestep
 
             # Append the rgb frames.    # TODO add a warning.
-            if not self._configs['rl_pipeline']['train'] and self._configs['rl_pipeline'][
-                'total_timesteps'] <= 30000:  # TODO only enable this in the testing mode. Need to be reorganized later.
+            if (self._configs['rl']['mode'] == 'test') and (self._configs['rl']['train']['total_timesteps'] <= 30000):
+                # TODO only enable this in the testing mode. Need to be reorganized later.
                 self._rgb_images.append(np.flipud(self._rgb_buffer).copy())
 
             # Update the boundary.
@@ -1071,6 +1071,14 @@ class GlassSwitch(Env):
             print('\nThe video has been made and released to: {}.'.format(filepath))
         else:
             pass
+
+    @property
+    def num_steps(self):
+        """
+        This property gets the number of steps assigned in the environment.
+        """
+        return self._num_steps
+
 
     def encoder(self):  # TODO implement a simple cnn to recognize pictures.
         """
