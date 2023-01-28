@@ -1,10 +1,10 @@
 simulator_name: 'glass_switch'
 
 rl:
-  mode: train    # Select from train, test, debug, and interact.
+  mode: debug    # Select from train, test, debug, and interact.
 
   train:
-    total_timesteps: 72000
+    total_timesteps: 720000
     checkpoints_folder_name: 'checkpoints_0128_trail'
     num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 3600
@@ -25,43 +25,39 @@ rl:
   # Note, before starting the pipeline, make sure the testing and training environment settings are consistent.
   test:
     num_episodes: 3
-    loaded_model_name: 'rl_model_17999712_steps'
+    loaded_model_name: 'rl_model_699888_steps'
 
-mujoco_env:
+mj_env:
   model_path: 'glass-switch-env-v1224.xml'
   render:
     is_window_visible: 0        # Set to 0, use off-screen buffer provided by OpenGL, enable the headless rendering, and disable all the GUI interactions.
                                 # Set to 1, use the default window buffer provided by the operating system, enable the GUI interactions.
-    is_camera_fixed: no         # Choose from yes or no. Must be yes when doing the RL.
-    width: 80                  # Default: 400
-    height: 64                  # Default: 320
+    width: 80                   # Default: 80
+    height: 64                  # Default: 64
     rgb: yes                    # Choose from yes or no.
     depth: yes                  # Choose from yes or no.
-    viewer_mode: 'through_glass'            # Choose from through_glass or overhead.
-    task_mode: 'color_switch'               # Choose from color_switch or demo.
   utils:
-    is_key_mouse_interaction: yes         # Choose from yes or no.
     is_print_cam_config: no               # Choose from yes or no.
     is_print_cam_rgb_depth: no            # Choose from yes or no.
 
-task_spec:
-  demo_sim_time: 500
-  scripts:
-    glass_display_choices: [0, 1, 2]
-    env_color_choices: [
-      [0.5, 0.5, 0.5],  # grey, the default color.
-      [1, 0, 0],        # red.
-      [0, 1, 0],        # green.
+task:
+  glass_display_choices: [0, 1, 2]
+  env_color_choices: [
+    [0.5, 0.5, 0.5],  # grey, the default color.
+    [1, 0, 0],        # red.
+    [0, 1, 0],        # green.
 #      [0, 0, 1]         # blue.  TODO dismiss one env color to increase the probability and weight of the env red.
-    ]
-    glass_display_duration: 1.0
-    env_color_duration: 3.0
-    x_sample: 0         # Set programmatically.
-    y_sample: 0         # Set programmatically.
-    on_env_grey: [[112, 112, 112], [111, 111, 111]]
-    on_env_red: [[152, 71, 71]]
-    on_env_green: [[71, 152, 71]]
-    on_env_blue: [[72, 72, 154]]
-    on_glass_nothing: [[112, 112, 112], [111, 111, 111]]
-    on_glass_B: [[72, 72, 72]]
-    on_glass_X: [[43, 43, 43]]
+  ]
+  glass_display_duration: 1.0
+  env_color_duration: 3.0
+  x_sample: 0         # Set programmatically.
+  y_sample: 0         # Set programmatically.
+  on_env_grey: [[112, 112, 112], [111, 111, 111]]
+  on_env_red: [[152, 71, 71]]
+  on_env_green: [[71, 152, 71]]
+  on_env_blue: [[72, 72, 154]]
+  on_glass_nothing: [[112, 112, 112], [111, 111, 111]]
+  on_glass_B: [[72, 72, 72]]
+  on_glass_X: [[43, 43, 43]]
+
+  demo_sim_time: 500

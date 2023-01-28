@@ -49,7 +49,7 @@
   </asset>
 
   <worldbody>
-    <camera name="fixed-eye" pos="0 0 4.5" euler="0 0 0"/>
+    <camera name="single-eye" pos="0 0 4.5" euler="0 0 0"/>
     <light name="top" directional="true" castshadow="false" cutoff="4" exponent="20"
            diffuse="1 1 1" pos="0 0 20" dir="0 0 -1"/>
 
@@ -57,7 +57,7 @@
 <!--    <geom name="floor" size="0 0 .05" type="plane" material="smart-glass-display-2d" condim="3"/>-->
 
     <!-- Multiple rectangular planes: the ambient environment, the smart glass lenses, and the displays/content -->1
-    <geom name="ambient-env" type="box" pos="0 2.3 1.5"  size="1.5 .001 1.5" rgba="0.5 0.5 0.5 1" />   # Red.
+    <geom name="env" type="box" pos="0 2.3 1.5"  size="1.5 .001 1.5" rgba="0.5 0.5 0.5 1" />   # Red.
     <geom name="smart-glass-lenses" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5" rgba="0.2 0.2 0.2 0.2"/>
     <geom name="smart-glass-display-0" type="box" pos="0 -0.3 1.5"  size="1.5 .001 1.5" rgba="0.2 0.2 0.2 0.05"/>
     <geom name="smart-glass-display-1" type="box" pos="0 -0.3 1.5"  size="1.5 0.001 1.5"  material="smart-glass-display-cube-letter-B" rgba="0.2 0.2 0.2 0.2"/>  # Green.

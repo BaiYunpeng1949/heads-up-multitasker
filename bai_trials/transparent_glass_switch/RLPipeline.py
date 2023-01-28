@@ -69,19 +69,19 @@ class RLPipeline:
         This is the reinforcement learning pipeline where mujoco environments are created, models are trained and tested.
 
         Args:
-            config_file: the YAML configuration file that records the configs.
+            config_file: the YAML configuration file that records the configurations.
         """
         # Read the configurations from the YAML file.
         with open(config_file) as f:
-            configs = yaml.load(f, Loader=yaml.FullLoader)
+            config = yaml.load(f, Loader=yaml.FullLoader)
 
-        self._configs_rl = configs['rl']
+        self._config_rl = config['rl']
 
         # Specify the pipeline mode.
-        self._mode = self._configs_rl['mode']
+        self._mode = self._config_rl['mode']
 
         # Get an env instance for further constructing parallel environments.
-        self._env = GlassSwitch()
+        self._env = GlassSwitch(config=config)
 
         # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
@@ -90,19 +90,26 @@ class RLPipeline:
             # Initialise parallel environments.
             self._parallel_envs = make_vec_env(
                 env_id=self._env.__class__,
-                n_envs=self._configs_rl['train']["num_workers"],
+                env_kwargs={'config': config},
+                n_envs=self._config_rl['train']["num_workers"],
                 seed=None,
-                vec_env_cls=DummyVecEnv,
-                # TODO the DummyVecEnv is usually the fastest way. What is the difference with SubprocVecEnv?
-                #  For now using SubprocVecEnv would cause errors, solve this later.
-                # env_kwargs={"simulator_folder": simulator_folder})
+                vec_env_cls=SubprocVecEnv,
+                # DummyVecEnv: https://stable-baselines.readthedocs.io/en/master/guide/vec_envs.html#dummyvecenv - runs in the same process, separate threads.
+                # Creates a simple vectorized wrapper for multiple environments,
+                #  calling each environment in sequence on the current Python process.
+                #  This is useful for computationally simple environment.
+
+                # SubprocVecEnv: https://stable-baselines.readthedocs.io/en/master/guide/vec_envs.html#subprocvecenv - runs in separate process.
+                # Creates a multiprocess vectorized wrapper for multiple environments,
+                #  distributing each environment to its own process,
+                #  allowing significant speed up when the environment is computationally complex.
             )
             # Pipeline related variables.
             self._training_logs_path = os.path.join('training', 'logs')
-            self._checkpoints_folder_name = self._configs_rl['train']['checkpoints_folder_name']
+            self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
             self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
             # RL training related variable: total time-steps.
-            self._total_timesteps = self._configs_rl['train']['total_timesteps']
+            self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
             # Initialise model that is run with multiple threads. TODO finalise this later
             policy_kwargs = dict(  # TODO regulate later
@@ -110,31 +117,31 @@ class RLPipeline:
                 features_extractor_kwargs=dict(features_dim=128),
             )
             self._model = PPO(
-                policy=self._configs_rl['train']["policy_type"],
+                policy=self._config_rl['train']["policy_type"],
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
                 # self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
                 tensorboard_log=self._training_logs_path,
-                n_steps=self._configs_rl['train']["num_steps"],
-                batch_size=self._configs_rl['train']["batch_size"],
-                device=self._configs_rl['train']["device"]
+                n_steps=self._config_rl['train']["num_steps"],
+                batch_size=self._config_rl['train']["batch_size"],
+                device=self._config_rl['train']["device"]
             )
         # Load the pre-trained models and test.
         elif self._mode == _MODES['test']:
             # Pipeline related variables.
-            self._loaded_model_name = self._configs_rl['test']['loaded_model_name']
-            self._checkpoints_folder_name = self._configs_rl['train']['checkpoints_folder_name']
+            self._loaded_model_name = self._config_rl['test']['loaded_model_name']
+            self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
             self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
-            self._num_episodes = self._configs_rl['test']['num_episodes']
+            self._num_episodes = self._config_rl['test']['num_episodes']
             self._num_steps = self._env.num_steps
             # Load the model
             self._model = PPO.load(self._loaded_model_path, self._env)
         # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
         elif self._mode == _MODES['debug']:
-            self._num_episodes = self._configs_rl['test']['num_episodes']
+            self._num_episodes = self._config_rl['test']['num_episodes']
             self._num_steps = self._env.num_steps
         # The MuJoCo environment demo display with user interactions, such as mouse interactions.
         elif self._mode == _MODES['interact']:
@@ -147,8 +154,8 @@ class RLPipeline:
         # Save a checkpoint every certain steps, which is specified by the configuration file.
         # Ref: https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html
         # To account for the multi-envs' steps, save_freq = max(save_freq // n_envs, 1).
-        save_freq = self._configs_rl['train']['save_freq']
-        n_envs = self._configs_rl['train']['num_workers']
+        save_freq = self._config_rl['train']['save_freq']
+        n_envs = self._config_rl['train']['num_workers']
         save_freq = max(save_freq // n_envs, 1)
         checkpoint_callback = CheckpointCallback(
             save_freq=save_freq,
