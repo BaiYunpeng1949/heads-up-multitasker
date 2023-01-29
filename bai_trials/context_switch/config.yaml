@@ -1,4 +1,4 @@
-simulator_name: 'glass_switch'
+simulator_name: 'context_switch'
 
 rl:
   mode: debug    # Select from train, test, debug, and interact.
@@ -28,7 +28,7 @@ rl:
     loaded_model_name: 'rl_model_699888_steps'
 
 mj_env:
-  model_path: 'glass-switch-env-v1224.xml'
+  model_path: 'context-switch-v1224.xml'
   render:
     is_window_visible: 0        # Set to 0, use off-screen buffer provided by OpenGL, enable the headless rendering, and disable all the GUI interactions.
                                 # Set to 1, use the default window buffer provided by the operating system, enable the GUI interactions.

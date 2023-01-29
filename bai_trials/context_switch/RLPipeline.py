@@ -18,7 +18,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from deprecatedShowerTemp import ShowerTemp
-from GlassSwitch import GlassSwitch
+from ContextSwitch import GlassSwitch
 
 _MODES = {
     'train': 'train',
