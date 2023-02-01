@@ -17,8 +17,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from deprecatedShowerTemp import ShowerTemp
-from ContextSwitchEnv import GlassSwitchEnv
+from ZigzagReadingEnv import ZigzagReadingEnv
 
 _MODES = {
     'train': 'train',
@@ -42,7 +41,7 @@ class CustomCNN(BaseFeaturesExtractor):
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
         # n_input_channels = observation_space.shape[0]  # TODO specify
-        n_input_channels = observation_space.shape[0]   # TODO change to the multi-input later.
+        n_input_channels = observation_space.shape[0]  # TODO change to the multi-input later.
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels=n_input_channels, out_channels=8, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
@@ -55,7 +54,8 @@ class CustomCNN(BaseFeaturesExtractor):
 
         # Compute shape by doing one forward pass
         with th.no_grad():
-            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]    # TODO change to the multi-input mode later.
+            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[
+                1]  # TODO change to the multi-input mode later.
 
         self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
 
@@ -63,10 +63,11 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.linear(self.cnn(observations))
 
 
-class RLPipeline:
+class RL:
     def __init__(self, config_file):
         """
-        This is the reinforcement learning pipeline where mujoco environments are created, models are trained and tested.
+        This is the reinforcement learning pipeline where MuJoCo environments are created, and models are trained and tested.
+        This pipeline is derived from my trials: context_switch.
 
         Args:
             config_file: the YAML configuration file that records the configurations.
@@ -81,7 +82,7 @@ class RLPipeline:
         self._mode = self._config_rl['mode']
 
         # Get an env instance for further constructing parallel environments.
-        self._env = GlassSwitchEnv(config=config)
+        self._env = ZigzagReadingEnv(config=config)
 
         # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
@@ -94,15 +95,6 @@ class RLPipeline:
                 n_envs=self._config_rl['train']["num_workers"],
                 seed=None,
                 vec_env_cls=SubprocVecEnv,
-                # DummyVecEnv: https://stable-baselines.readthedocs.io/en/master/guide/vec_envs.html#dummyvecenv - runs in the same process, separate threads.
-                # Creates a simple vectorized wrapper for multiple environments,
-                #  calling each environment in sequence on the current Python process.
-                #  This is useful for computationally simple environment.
-
-                # SubprocVecEnv: https://stable-baselines.readthedocs.io/en/master/guide/vec_envs.html#subprocvecenv - runs in separate process.
-                # Creates a multiprocess vectorized wrapper for multiple environments,
-                #  distributing each environment to its own process,
-                #  allowing significant speed up when the environment is computationally complex.
             )
             # Pipeline related variables.
             self._training_logs_path = os.path.join('training', 'logs')
@@ -112,7 +104,8 @@ class RLPipeline:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
             # Initialise model that is run with multiple threads. TODO finalise this later
-            policy_kwargs = dict(  # TODO regulate later
+            policy_kwargs = dict(
+                # TODO regulate later, need to change if the observation space is not a single Box (MultipleInput).
                 features_extractor_class=CustomCNN,
                 features_extractor_kwargs=dict(features_dim=128),
             )
@@ -120,7 +113,7 @@ class RLPipeline:
                 policy=self._config_rl['train']["policy_type"],
                 env=self._parallel_envs,
                 verbose=1,
-                # policy_kwargs=policy_kwargs,
+                # policy_kwargs=policy_kwargs,  # TODO uncomment this later when dealing with the MultipleInput is set.
                 # self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
                 tensorboard_log=self._training_logs_path,
                 n_steps=self._config_rl['train']["num_steps"],
@@ -197,20 +190,11 @@ class RLPipeline:
                 obs, reward, done, info = self._env.step(action)
                 score += reward
                 progress_bar.update(1)
-            progress_bar.close()    # Tip: this line's better before any update. Or it would be split.
-            print('Episode:{}   Score:{}    Score Pct: {}%   '
-                  '\nInfo details: '
-                  '\n   optimal score: {}    num_on_glass: {}     num_on_env: {}'
-                  '\n   glass B:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'
-                  '\n   env red:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'    
-                  '\n   glass X:   total time: {}     on time: {}     miss time: {}     on/miss pct: {}%'
-                  '\n   total intermediate time: {}'
-                  .format(episode, score, np.round(100*score/info['optimal_score'], 2),
-                          info['optimal_score'], info['num_on_glass'], info['num_on_env'],
-                          info['total_time_glass_B'], info['total_time_on_glass_B'], info['total_time_miss_glass_B'], np.round(100*info['total_time_miss_glass_B']/info['total_time_on_glass_B'], 2),
-                          info['total_time_env_red'], info['total_time_on_env_red'], info['total_time_miss_env_red'], np.round(100*info['total_time_miss_env_red']/info['total_time_on_env_red'], 2),
-                          info['total_time_glass_X'], info['total_time_on_glass_X'], info['total_time_miss_glass_X'], np.round(100*info['total_time_miss_glass_X']/info['total_time_on_glass_X'], 2),
-                          info['total_time_intermediate']))
+            progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
+            print(
+                'Episode:{}   Score:{}    Score Pct: {}%   '
+                '\nInfo details: '
+            )  # TODO print responding contents.
 
         # if self._mode == _MODES['test']:
         #     # Use the official evaluation tool.
@@ -222,7 +206,10 @@ class RLPipeline:
         This method helps run the RL pipeline.
         Call it.
         """
-        print('\n\n***************************** RL Pipeline starts with the mode {} *************************************'.format(self._mode))
+        print(
+            '\n\n***************************** RL Pipeline starts with the mode {} *************************************'
+                .format(self._mode)
+        )
         # Check train or not.
         if self._mode == _MODES['train']:
             self._train()
@@ -248,4 +235,6 @@ class RLPipeline:
         self._env.close()
 
         # Visualize the destructor.
-        print('\n\n***************************** RL pipeline ends. The MuJoCo environment of the pipeline has been destructed *************************************')
+        print(
+            '\n\n***************************** RL pipeline ends. The MuJoCo environment of the pipeline has been destructed *************************************'
+        )

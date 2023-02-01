@@ -1,0 +1,34 @@
+<!-- Reference: context-switch-v1224 -->
+<mujoco model="ZigzagReading">
+  <option timestep="0.005"/>
+  <option gravity="0 0 0"/>
+
+  <visual>
+    <map force="0.1" zfar="30"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global offwidth="80" offheight="80"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1=".3 .5 .7" rgb2="0 0 0" width="32" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true"/>
+  </asset>
+
+  <worldbody>
+    <camera name="single-eye" pos="0 0 4.5" euler="0 0 0"/>
+    <light name="top" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" pos="0 0 20" dir="0 0 -1"/>
+
+    <geom name="floor" size="0 0 .05" type="plane" material="grid" condim="3"/>
+
+    <geom name="grid-1" type="box" pos="-1.5 0 1" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-2" type="box" pos="-0.5 0 1" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-3" type="box" pos="0.5 0 1" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-4" type="box" pos="1.5 0 1" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+
+    <body name="focus" pos="0 0 1">
+      <freejoint/>
+      <geom name="focus" type="sphere" size="0.05" rgba="1 1 0 0.5"/>  # The diameter was 0.1.
+    </body>
+  </worldbody>
+</mujoco>

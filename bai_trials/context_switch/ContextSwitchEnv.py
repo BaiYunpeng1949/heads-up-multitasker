@@ -15,7 +15,7 @@ import torch
 from Task import Task
 
 
-class GlassSwitch(Env):
+class GlassSwitchEnv(Env):
 
     def _load_config(self, config):
         """
@@ -242,7 +242,11 @@ class GlassSwitch(Env):
         offset = int(self._width / 4)       # TODO generalize it later
         self._obs_idx_h = [int(self._height / 2 - offset), int(self._height / 2 + offset)]
         self._obs_idx_w = [int(self._width / 2 - offset), int(self._width / 2 + offset)]
-        self.observation_space = Box(low=np.uint8(0), high=np.uint8(255), shape=(offset * 2, offset * 2, 3))
+        # self.observation_space = Box(low=np.uint8(0), high=np.uint8(255), shape=(offset * 2, offset * 2, 3))
+        self.observation_space = Dict({
+            'rgb': Box(low=np.uint8(0), high=np.uint8(255), shape=(offset * 2, offset * 2, 3)),
+            'steps': Discrete(self._num_steps+1),
+        })
 
         # --------------------------------------- Visual perception camera and rendering initialization -------------------------------------------------------------
         # TODO the rendering structure can be further enhanced following the
@@ -272,8 +276,9 @@ class GlassSwitch(Env):
             width=self._width,
             height=self._height,
             title="Bai Yunpeng's Window",
-            monitor=None,
-            share=None
+            monitor=None,   # The monitor was used for the full screen mode. Null for the windowed mode.
+                            #  Ref: https://www.glfw.org/docs/3.3/group__window.html#ga3555a418df92ad53f917597fe2f64aeb
+            share=None      # The window whose context to share resources with, or NULL to not share resources.
         )
         glfw.make_context_current(self._window)
         # Ref: https://www.glfw.org/docs/3.3/group__context.html#ga6d4e0cdf151b5e579bd67f13202994ed
@@ -445,7 +450,11 @@ class GlassSwitch(Env):
             obs: observations.
         """
         rgb = self._rgb_buffer.copy()[self._obs_idx_h[0]:self._obs_idx_h[1], self._obs_idx_w[0]:self._obs_idx_w[1], :]
-        obs = rgb
+        obs = {
+            'rgb': rgb,
+            'steps': self._steps,
+        }
+
         return obs
 
     def _reward_function(self):
