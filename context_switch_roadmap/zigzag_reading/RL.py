@@ -179,6 +179,7 @@ class RL:
             obs = self._env.reset()
             done = False
             score = 0
+            info = None
             progress_bar = tqdm(total=self._num_steps)
             while not done:
                 if self._mode == _MODES['debug']:
@@ -193,7 +194,8 @@ class RL:
             progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
             print(
                 'Episode:{}   Score:{}    Score Pct: {}%   '
-                '\nInfo details: '
+                '\nInfo details: {}'
+                .format(episode, score, 0, info)
             )  # TODO print responding contents.
 
         # if self._mode == _MODES['test']:
@@ -221,7 +223,7 @@ class RL:
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
-            self._env.write_video(filepath=video_path)
+            # self._env.write_video(filepath=video_path)    # TODO uncomment later.
         elif self._mode == _MODES['debug']:
             # Generate the baseline.
             self._test()

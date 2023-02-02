@@ -15,12 +15,15 @@ _DEBUG = {
     'num_actions': 3,   # 2 actions: 0 for west, 1 for still, and 2 for east.
     'seed': 1997,
     'grids': ['grid-1', 'grid-2', 'grid-3', 'grid-4'],
+    'grid_ids': [0, 1, 2, 3],
     'cam_name': 'single-eye',
-    'fix_steps': 50,     # The step periods that a fixation action takes.
-    'obs_width': 20,   # The observations' portion pixels width.
-    'obs_height': 20,  # The observations' portion pixels height.
+    'ball_name': 'focus',
+    'fix_steps': 1,     # The step periods that a fixation action takes.
+    'obs_width': 80,   # The observations' portion pixels width.
+    'obs_height': 80,  # The observations' portion pixels height.
     'explored_grids': [],
     'grey': [0.2, 0.2, 0.2],
+    'num_loops': 2000,
 }
 
 
@@ -81,8 +84,13 @@ class ZigzagReadingEnv(Env):
         # Initialize RL.
         self.action_space = Discrete(n=_DEBUG['num_actions'], seed=_DEBUG['seed'])
         self.observation_space = Dict({
-            'visual_rgb': Box(low=0, high=255, shape=(_DEBUG['obs_height'], _DEBUG['obs_width'], 3)),
-            'focus': Discrete(n=len(_DEBUG['grids']), seed=_DEBUG['seed']),   # Where is the focus at, 0 for grid-1.
+            # 'visual_rgb': Box(low=0, high=255, shape=(_DEBUG['obs_height'], _DEBUG['obs_width'], 3)),   # TODO include the visual later.
+            # 'focus': Discrete(n=len(_DEBUG['grids'])),   # Where is the focus at, 0 for grid-1.
+            # 'pre_focus': Discrete(n=len(_DEBUG['grids'])),
+            # 'fixing_steps': Discrete(n=(self._num_steps+1), seed=_DEBUG['seed']),
+            # 'wasted_steps': Discrete(n=(self._num_steps+1), seed=_DEBUG['seed']),
+            'pre_now_focus': MultiDiscrete([len(_DEBUG['grids']), len(_DEBUG['grids'])]),
+            'unexplored_grids_binary': MultiBinary(len(_DEBUG['grids'])),
         })
 
         # Initialize MuJoCo.
@@ -108,6 +116,11 @@ class ZigzagReadingEnv(Env):
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         else:
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+        self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE  # TODO debug here.
+        self._cam.lookat = [0, 0, 0]
+        self._cam.distance = 8
+        self._cam.azimuth = 90.0
+        self._cam.elevation = -8
 
         self._opt = mujoco.MjvOption()  # Visualization options.
         mujoco.mjv_defaultOption(opt=self._opt)
@@ -195,10 +208,7 @@ class ZigzagReadingEnv(Env):
         done = False
 
         # ---------------------- Task: Update ----------------------
-        self._task.update(action=action)
-
-        # ---------------------- Task: Make Decisions ----------------------
-        self._task.make_decisions(fix_steps=_DEBUG['fix_steps'])
+        self._task.step(action=action, fix_steps=_DEBUG['fix_steps'])
 
         # ---------------------- MuJoCo Render: Update ----------------------
         # Update the MuJoCo model - change the color of explored/traversed grid.
@@ -210,8 +220,13 @@ class ZigzagReadingEnv(Env):
             for grid_name_str in _DEBUG['grids']:
                 if str(new_grid) in grid_name_str:
                     self._m.geom(grid_name_str).rgba[0:3] = _DEBUG['grey']
-
-        _DEBUG['explored_grids'] = explored_grids
+            # Update the explored_grids buffer.
+            _DEBUG['explored_grids'] = explored_grids
+        # Update the focus-ball's movement.
+        grid_id = self._task.states['grid_id']
+        for grid_name_str in _DEBUG['grids']:
+            if str(grid_id) in grid_name_str:
+                self._d.qpos[0:3] = self._m.geom(grid_name_str).pos[0:3]
         # Render.
         self._update_render()
 
@@ -222,14 +237,22 @@ class ZigzagReadingEnv(Env):
         reward = self._reward_function()
 
         # ---------------------- Info ----------------------
-        info = self._task.states
+        info = self._task.ground_truth.copy()
+        info['elp_steps'] = self._elp_steps
 
-        # ---------------------- Done ----------------------
-        # TODO a simple task: when the agent traverses the 4 planes in a correct order, the task ends in advance.
+        # ---------------------- Done -------- --------------
         if self._elp_steps >= self._num_steps:
             done = True
-        if len(self._task.ground_truth['unexplored_grids']) <= 0:
-            done = True
+
+        # TODO debug area
+        if self._conf_rl['mode'] == 'test':
+            print('\nThe action is: {}; the previous grid id is: {}'
+                  '\nThe current grid is: {}, the current reward is: {}.'
+                  '\nThe unexplored grids are: {}, the explored grids are: {}'
+                  ''.
+                  format(action, self._task.states['pre_grid_id'],
+                         grid_id, reward,
+                         self._task.ground_truth['unexplored_grids'], self._task.ground_truth['explored_grids']))
 
         return obs, reward, done, info
 
@@ -244,18 +267,35 @@ class ZigzagReadingEnv(Env):
         fixing_steps = self._task.ground_truth['fixing_steps']
         wasted_steps = self._task.ground_truth['wasted_steps']
 
+        # Get the unexplored grids.
+        ref = _DEBUG['grid_ids']
+        unexplored_grids = self._task.ground_truth['unexplored_grids']
+        unexplored_grids_binary = [1 if grid_id in unexplored_grids else 0 for grid_id in ref]
+
         obs = {
-            'visual_rgb': visual_rgb,
-            'focus': focus,
-            'pre_focus': pre_focus,
-            'fixing_steps': fixing_steps,
-            'wasted_steps': wasted_steps,
+            # 'visual_rgb': visual_rgb,
+            # 'focus': focus,
+            # 'pre_focus': pre_focus,
+            # 'fixing_steps': fixing_steps,
+            # 'wasted_steps': wasted_steps,
+            'pre_now_focus': [pre_focus, focus],
+            'unexplored_grids_binary': unexplored_grids_binary
         }
 
         return obs
 
     def _reward_function(self):
-        reward = 0  # TODO specify later.
+        g_t = self._task.ground_truth
+        f_s = g_t['fixing_steps']
+        w_s = g_t['wasted_steps']
+
+        if self._task.states['finished_one_grid']:
+            if self._task.states['finished_one_loop']:
+                reward = 20
+            else:
+                reward = 5
+        else:
+            reward = 1 * f_s - 1 * min(1, w_s)
 
         return reward
 

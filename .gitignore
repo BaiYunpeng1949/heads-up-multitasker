@@ -5,3 +5,4 @@ simulators/mobl_arms_index_pointing
 simulators/mobl_arms_index_remote_driving
 simulators/mobl_arms_index_tracking
 /bai_trials/context_switch/training
+/context_switch_roadmap/zigzag_reading/training

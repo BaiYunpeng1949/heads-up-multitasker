@@ -4,8 +4,8 @@ rl:
   mode: test    # Select from: train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 720000
-    checkpoints_folder_name: 'checkpoints_0201_trail'
+    total_timesteps: 2000000
+    checkpoints_folder_name: 'checkpoints_0201_2M'
     num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 3600
     algorithm: 'PPO'
