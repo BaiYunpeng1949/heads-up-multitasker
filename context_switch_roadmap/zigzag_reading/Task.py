@@ -7,10 +7,12 @@ class Task:
         except ValueError:
             print('Invalid configurations. Check your config.yaml file.')
 
-    def _init_data(self):
-        # Ground truth: the task status.
-        self._ground_truth = {  # TODO I found teaching agent to learn to focus is very hard, maybe I should first teach him traverse.
-                                #  The dynamic reading fixation should be coupled with some event, like comprehending a letter, only when more fixing time, more information will be disclosed.
+    def _init_data(self, **kwargs):
+        # Ground truth: the task status. Most are local variables.
+        self._ground_truth = {
+            # TODO I found teaching agent to learn to focus is very hard, maybe I should first teach him traverse.
+            #  The dynamic reading fixation should be coupled with some event, like comprehending a letter,
+            #  only when more fixing time, more information will be disclosed.
             'unexplored_grids': [0, 1, 2, 3],
             'explored_grids': [],
             'fixing_steps': 0,
@@ -18,13 +20,13 @@ class Task:
             'grids_steps':  [0, 0, 0, 0],
             'move_to_unexp': 0,
             'move_to_exp': 0,
-            'num_loops': 0,
+            'num_loops': 0 if 'num_loops' not in kwargs else kwargs['num_loops'],
         }
 
         # States.
         self._states = {
-            'grid_id': 0,   # The grid that the focus is currently on.
-            'pre_grid_id': 0,    # The previous grid that the focus was on.
+            'grid_id': 0 if 'grid_id' not in kwargs else kwargs['grid_id'],   # The grid that the focus is currently on.
+            'pre_grid_id': 0 if 'pre_grid_id' not in kwargs else kwargs['pre_grid_id'],    # The previous grid that the focus was on.
             'finished_one_grid': False,
             'finished_one_loop': False,
         }
@@ -49,6 +51,17 @@ class Task:
         pre_grid_id = self._states['grid_id']
         self._states['pre_grid_id'] = pre_grid_id
 
+        # Data initialization.
+        self._states['finished_one_grid'] = False
+        self._states['finished_one_loop'] = False
+        if len(self._ground_truth['unexplored_grids']) <= 0:
+            # If in the last round the loop has been finished. Refresh everything except for a global counter num_loops.
+            self._init_data(
+                num_loops=self._ground_truth['num_loops'],
+                grid_id=self._states['grid_id'],
+                pre_grid_id=self._states['pre_grid_id'],
+            )
+
         # Update the current grid.
         if action == 0:     # Move the focus west.
             if pre_grid_id <= 0:    # Already on the westest grid.
@@ -70,16 +83,13 @@ class Task:
         pre_grid_id = self._states['pre_grid_id']
         explored_grids = self._ground_truth['explored_grids']
 
-        # TODO dynamically initializations.
-        self._states['finished_one_grid'] = False
-        self._states['finished_one_loop'] = False
-        if len(self._ground_truth['unexplored_grids']) <= 0:
-            self._ground_truth['unexplored_grids'] = [0, 1, 2, 3]
-
         # Update the wasted steps and fixing steps. The wasted_steps and fixing_steps should be orthogonal.
         if grid_id == len(explored_grids):
             self._ground_truth['wasted_steps'] = 0
-            self._ground_truth['fixing_steps'] += 1
+            if pre_grid_id != grid_id:
+                self._ground_truth['fixing_steps'] = 1
+            else:
+                self._ground_truth['fixing_steps'] += 1
         else:
             self._ground_truth['wasted_steps'] += 1
             self._ground_truth['fixing_steps'] = 0
@@ -102,18 +112,11 @@ class Task:
         # Update the loop.
         if len(self._ground_truth['unexplored_grids']) <= 0:    # All grids are traversed.
             # print('TODO oh one look is over!')  # TODO debug delete later.
-            num_loops = self._ground_truth['num_loops']
-            num_loops += 1
-            unexplored_grids = self._ground_truth['unexplored_grids']
-
-            # Refresh the useless buffers.
-            self._init_data()   # Reset the scene and read from the 1st grid.
+            self._ground_truth['num_loops'] += 1
 
             # Reserve the useful buffers.
             self._states['finished_one_loop'] = True
             self._states['finished_one_grid'] = True
-            self._ground_truth['num_loops'] = num_loops
-            self._ground_truth['unexplored_grids'] = unexplored_grids
 
     @property
     def states(self):

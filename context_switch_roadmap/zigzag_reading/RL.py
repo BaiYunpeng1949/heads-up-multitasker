@@ -193,10 +193,11 @@ class RL:
                 progress_bar.update(1)
             progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
             print(
-                'Episode:{}   Score:{}    Score Pct: {}%   '
-                '\nInfo details: {}'
-                .format(episode, score, 0, info)
-            )  # TODO print responding contents.
+                '\nEpisode:{}     Score:{}    '
+                '\nLoops Pct: {}%     Optimal Loops: {}     Actual Loops: {}'
+                .format(episode, score,
+                        info['achievement']*100, info['optimal_loops'], info['num_loops'])
+            )
 
         # if self._mode == _MODES['test']:
         #     # Use the official evaluation tool.

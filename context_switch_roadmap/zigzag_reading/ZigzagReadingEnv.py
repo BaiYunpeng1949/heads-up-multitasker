@@ -15,10 +15,9 @@ _DEBUG = {
     'num_actions': 3,   # 2 actions: 0 for west, 1 for still, and 2 for east.
     'seed': 1997,
     'grids': ['grid-1', 'grid-2', 'grid-3', 'grid-4'],
-    'grid_ids': [0, 1, 2, 3],
     'cam_name': 'single-eye',
     'ball_name': 'focus',
-    'fix_steps': 1,     # The step periods that a fixation action takes.
+    'fix_steps': 50,     # The step periods that a fixation action takes.
     'obs_width': 80,   # The observations' portion pixels width.
     'obs_height': 80,  # The observations' portion pixels height.
     'explored_grids': [],
@@ -116,7 +115,7 @@ class ZigzagReadingEnv(Env):
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         else:
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-        self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE  # TODO debug here.
+        self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE  # TODO debug here. Generalize this part later along with the implementation of the visual perception.
         self._cam.lookat = [0, 0, 0]
         self._cam.distance = 8
         self._cam.azimuth = 90.0
@@ -239,6 +238,8 @@ class ZigzagReadingEnv(Env):
         # ---------------------- Info ----------------------
         info = self._task.ground_truth.copy()
         info['elp_steps'] = self._elp_steps
+        info['optimal_loops'] = int(self._num_steps / (_DEBUG['fix_steps'] * len(_DEBUG['grids']) + (len(_DEBUG['grids']) - 2)))
+        info['achievement'] = np.round(info['num_loops'] / info['optimal_loops'], 4)
 
         # ---------------------- Done -------- --------------
         if self._elp_steps >= self._num_steps:
@@ -247,11 +248,11 @@ class ZigzagReadingEnv(Env):
         # TODO debug area
         if self._conf_rl['mode'] == 'test':
             print('\nThe action is: {}; the previous grid id is: {}'
-                  '\nThe current grid is: {}, the current reward is: {}.'
+                  '\nThe current grid is: {}, the fixing steps is: {}, the current reward is: {}.'
                   '\nThe unexplored grids are: {}, the explored grids are: {}'
                   ''.
                   format(action, self._task.states['pre_grid_id'],
-                         grid_id, reward,
+                         grid_id, self._task.ground_truth['fixing_steps'], reward,
                          self._task.ground_truth['unexplored_grids'], self._task.ground_truth['explored_grids']))
 
         return obs, reward, done, info
@@ -268,18 +269,18 @@ class ZigzagReadingEnv(Env):
         wasted_steps = self._task.ground_truth['wasted_steps']
 
         # Get the unexplored grids.
-        ref = _DEBUG['grid_ids']
+        ref = np.arange(len(_DEBUG['grids'])).tolist()
         unexplored_grids = self._task.ground_truth['unexplored_grids']
-        unexplored_grids_binary = [1 if grid_id in unexplored_grids else 0 for grid_id in ref]
+        unexplored_grids_binaries = [1 if grid_id in unexplored_grids else 0 for grid_id in ref]
 
         obs = {
-            # 'visual_rgb': visual_rgb,
+            # 'visual_rgb': visual_rgb, # TODO add the visual perception back later.
             # 'focus': focus,
             # 'pre_focus': pre_focus,
             # 'fixing_steps': fixing_steps,
             # 'wasted_steps': wasted_steps,
             'pre_now_focus': [pre_focus, focus],
-            'unexplored_grids_binary': unexplored_grids_binary
+            'unexplored_grids_binary': unexplored_grids_binaries,
         }
 
         return obs
@@ -289,13 +290,19 @@ class ZigzagReadingEnv(Env):
         f_s = g_t['fixing_steps']
         w_s = g_t['wasted_steps']
 
+        basic_reward = 1
+        gain_fixing = 1
+        gain_wasting = -1
+        gain_finish_grid = _DEBUG['fix_steps'] + 2
+        gain_finish_loop = len(_DEBUG['grids']) + 2
+
         if self._task.states['finished_one_grid']:
             if self._task.states['finished_one_loop']:
-                reward = 20
+                reward = basic_reward * gain_finish_grid * gain_finish_loop
             else:
-                reward = 5
+                reward = basic_reward * gain_finish_grid
         else:
-            reward = 1 * f_s - 1 * min(1, w_s)
+            reward = gain_fixing * min(basic_reward, f_s) + gain_wasting * min(basic_reward, w_s)
 
         return reward
 
