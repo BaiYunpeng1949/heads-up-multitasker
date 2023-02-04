@@ -1,4 +1,3 @@
-import cv2
 import numpy as np
 import math
 
@@ -10,20 +9,7 @@ from gym.spaces import Discrete, Box, Dict, Tuple, MultiBinary, MultiDiscrete
 
 
 from Task import Task
-
-_DEBUG = {
-    'num_actions': 3,   # 2 actions: 0 for west, 1 for still, and 2 for east.
-    'seed': 1997,
-    'grids': ['grid-1', 'grid-2', 'grid-3', 'grid-4'],
-    'cam_name': 'single-eye',
-    'ball_name': 'focus',
-    'fix_steps': 50,     # The step periods that a fixation action takes.
-    'obs_width': 80,   # The observations' portion pixels width.
-    'obs_height': 80,  # The observations' portion pixels height.
-    'explored_grids': [],
-    'grey': [0.2, 0.2, 0.2],
-    'num_loops': 2000,
-}
+from utils import debug
 
 
 class ZigzagReadingEnv(Env):
@@ -56,6 +42,18 @@ class ZigzagReadingEnv(Env):
         else:
             self._framebuffer = mujoco.mjtFramebuffer.mjFB_OFFSCREEN.value
 
+        # Env.
+        grids = debug.DEBUG['grids']
+        self._vacant_grid_ids = []
+        for row in grids:
+            for grid in row:
+                if debug.DEBUG['keyword'] in grid:
+                    self._vacant_grid_ids.append(int(grid.split('-')[-1]))
+        grids_layout_shape = np.array(debug.DEBUG['grids'].copy()).shape
+        self._num_grids = np.prod(grids_layout_shape)
+        self._h_grids, self._w_grids = grids_layout_shape[0], grids_layout_shape[1]
+        self._ref_grids = np.arange(self._num_grids).tolist()
+
         # RL.
         self._num_steps = self._conf_rl['train']['num_steps']
 
@@ -81,15 +79,14 @@ class ZigzagReadingEnv(Env):
         self._load_config()
 
         # Initialize RL.
-        self.action_space = Discrete(n=_DEBUG['num_actions'], seed=_DEBUG['seed'])
+        self.action_space = MultiDiscrete(nvec=[debug.DEBUG['dim_actions'], debug.DEBUG['dim_actions']])
         self.observation_space = Dict({
             # 'visual_rgb': Box(low=0, high=255, shape=(_DEBUG['obs_height'], _DEBUG['obs_width'], 3)),   # TODO include the visual later.
             # 'focus': Discrete(n=len(_DEBUG['grids'])),   # Where is the focus at, 0 for grid-1.
             # 'pre_focus': Discrete(n=len(_DEBUG['grids'])),
-            # 'fixing_steps': Discrete(n=(self._num_steps+1), seed=_DEBUG['seed']),
-            # 'wasted_steps': Discrete(n=(self._num_steps+1), seed=_DEBUG['seed']),
-            'pre_now_focus': MultiDiscrete([len(_DEBUG['grids']), len(_DEBUG['grids'])]),
-            'unexplored_grids_binary': MultiBinary(len(_DEBUG['grids'])),
+            'fix_waste_steps': MultiDiscrete([self._num_steps, self._num_steps]),
+            'pre_now_focus': MultiDiscrete([self._num_grids, self._num_grids]),
+            'unexplored_grid_ids_binaries': MultiBinary(self._num_grids),
         })
 
         # Initialize MuJoCo.
@@ -98,8 +95,8 @@ class ZigzagReadingEnv(Env):
 
         # Initialize the visual perception in MuJoCo.
         self._cam = mujoco.MjvCamera()  # The abstract camera.
-        cam_name = _DEBUG['cam_name']
-        if isinstance(_DEBUG['cam_name'], str):
+        cam_name = debug.DEBUG['cam_name']
+        if isinstance(debug.DEBUG['cam_name'], str):
             cam_id = mujoco.mj_name2id(
                 m=self._m,
                 type=mujoco.mjtObj.mjOBJ_CAMERA,
@@ -115,7 +112,9 @@ class ZigzagReadingEnv(Env):
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         else:
             self._cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-        self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE  # TODO debug here. Generalize this part later along with the implementation of the visual perception.
+
+        # TODO debug here. Generalize this part later along with the implementation of the visual perception.
+        self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         self._cam.lookat = [0, 0, 0]
         self._cam.distance = 8
         self._cam.azimuth = 90.0
@@ -207,23 +206,24 @@ class ZigzagReadingEnv(Env):
         done = False
 
         # ---------------------- Task: Update ----------------------
-        self._task.step(action=action, fix_steps=_DEBUG['fix_steps'])
+        self._task.step(action=action, fix_steps_threshold=debug.DEBUG['fix_steps_threshold'])
 
         # ---------------------- MuJoCo Render: Update ----------------------
         # Update the MuJoCo model - change the color of explored/traversed grid.
-        explored_grids = self._task.ground_truth['explored_grids']
-        if len(explored_grids) > len(_DEBUG['explored_grids']):
-            new_grids = [grid_id for grid_id in explored_grids if grid_id not in _DEBUG['explored_grids']]
+        # TODO finalize this part later to facilitate video making.
+        explored_grid_ids = self._task.ground_truth['explored_grid_ids']
+        if len(explored_grid_ids) > len(debug.DEBUG['explored_grid_ids']):
+            new_grids = [grid_id for grid_id in explored_grid_ids if grid_id not in debug.DEBUG['explored_grid_ids']]
             new_grid = new_grids[0]
             # Change the color of that.
-            for grid_name_str in _DEBUG['grids']:
+            for grid_name_str in debug.DEBUG['grids']:
                 if str(new_grid) in grid_name_str:
-                    self._m.geom(grid_name_str).rgba[0:3] = _DEBUG['grey']
-            # Update the explored_grids buffer.
-            _DEBUG['explored_grids'] = explored_grids
+                    self._m.geom(grid_name_str).rgba[0:3] = debug.DEBUG['grey']
+            # Update the explored_grid_ids buffer.
+            debug.DEBUG['explored_grid_ids'] = explored_grid_ids
         # Update the focus-ball's movement.
         grid_id = self._task.states['grid_id']
-        for grid_name_str in _DEBUG['grids']:
+        for grid_name_str in debug.DEBUG['grids']:
             if str(grid_id) in grid_name_str:
                 self._d.qpos[0:3] = self._m.geom(grid_name_str).pos[0:3]
         # Render.
@@ -238,49 +238,56 @@ class ZigzagReadingEnv(Env):
         # ---------------------- Info ----------------------
         info = self._task.ground_truth.copy()
         info['elp_steps'] = self._elp_steps
-        info['optimal_loops'] = int(self._num_steps / (_DEBUG['fix_steps'] * len(_DEBUG['grids']) + (len(_DEBUG['grids']) - 2)))
+        num_vacant_grids = len(self._vacant_grid_ids)
+        num_non_vacant_grids = self._num_grids - num_vacant_grids
+        forward_steps = debug.DEBUG['fix_steps_threshold'] * num_non_vacant_grids + (self._h_grids // 2) * (self._w_grids - 1)
+        back_steps = (min(self._h_grids, self._w_grids) - 1) + np.abs(self._h_grids - self._w_grids)
+        info['optimal_loops'] = (self._num_steps - 1) // (forward_steps + back_steps)
+
         info['achievement'] = np.round(info['num_loops'] / info['optimal_loops'], 4)
 
-        # ---------------------- Done -------- --------------
+        # ---------------------- Done -----------------------
         if self._elp_steps >= self._num_steps:
             done = True
 
-        # TODO debug area
-        if self._conf_rl['mode'] == 'test':
-            print('\nThe action is: {}; the previous grid id is: {}'
+        # ---------------------- Debug -----------------------
+        # TODO THE DEBUG AREA.
+        if self._conf_rl['mode'] == 'debug' or self._conf_rl['mode'] == 'test':
+            print('\nThe action is: {}; the previous grid id is: {}; the previous fixing steps is: {}'
                   '\nThe current grid is: {}, the fixing steps is: {}, the current reward is: {}.'
                   '\nThe unexplored grids are: {}, the explored grids are: {}'
                   ''.
-                  format(action, self._task.states['pre_grid_id'],
+                  format(action - debug.DEBUG['dim_actions'] // 2, self._task.states['pre_grid_id'], self._task.ground_truth['pre_fixing_steps'],
                          grid_id, self._task.ground_truth['fixing_steps'], reward,
-                         self._task.ground_truth['unexplored_grids'], self._task.ground_truth['explored_grids']))
+                         self._task.ground_truth['unexplored_grid_ids'], self._task.ground_truth['explored_grid_ids']))
 
         return obs, reward, done, info
 
     def _get_obs(self):
-        offset_h = _DEBUG['obs_height'] / 2
-        offset_w = _DEBUG['obs_width'] / 2
+        # Implicit visual perceptions.
+        offset_h = debug.DEBUG['obs_height'] / 2
+        offset_w = debug.DEBUG['obs_width'] / 2
         obs_idx_h = [int(self._height / 2 - offset_h), int(self._height / 2 + offset_h)]
         obs_idx_w = [int(self._width / 2 - offset_w), int(self._width / 2 + offset_w)]
         visual_rgb = self._rgb_buffer.copy()[obs_idx_h[0]:obs_idx_h[1], obs_idx_w[0]:obs_idx_w[1], :]
-        focus = self._task.states['grid_id']
-        pre_focus = self._task.states['pre_grid_id']
-        fixing_steps = self._task.ground_truth['fixing_steps']
-        wasted_steps = self._task.ground_truth['wasted_steps']
+
+        # Explicit task ground truth observations.
+        fixing_steps = np.clip(self._task.ground_truth['fixing_steps'], 0, self._num_steps-1)
+        wasted_steps = np.clip(self._task.ground_truth['wasted_steps'], 0, self._num_steps-1)
+        pre_focus = np.clip(self._task.states['pre_grid_id'], 0, self._num_grids - 1)
+        focus = np.clip(self._task.states['grid_id'], 0, self._num_grids - 1)
 
         # Get the unexplored grids.
-        ref = np.arange(len(_DEBUG['grids'])).tolist()
-        unexplored_grids = self._task.ground_truth['unexplored_grids']
-        unexplored_grids_binaries = [1 if grid_id in unexplored_grids else 0 for grid_id in ref]
+        unexplored_grid_ids = self._task.ground_truth['unexplored_grid_ids'].copy()
+        unexplored_grid_ids_binaries = [1 if grid_id in unexplored_grid_ids else 0 for grid_id in self._ref_grids]
 
         obs = {
             # 'visual_rgb': visual_rgb, # TODO add the visual perception back later.
             # 'focus': focus,
             # 'pre_focus': pre_focus,
-            # 'fixing_steps': fixing_steps,
-            # 'wasted_steps': wasted_steps,
+            'fix_waste_steps': [fixing_steps, wasted_steps],
             'pre_now_focus': [pre_focus, focus],
-            'unexplored_grids_binary': unexplored_grids_binaries,
+            'unexplored_grid_ids_binaries': unexplored_grid_ids_binaries,
         }
 
         return obs
@@ -293,8 +300,8 @@ class ZigzagReadingEnv(Env):
         basic_reward = 1
         gain_fixing = 1
         gain_wasting = -1
-        gain_finish_grid = _DEBUG['fix_steps'] + 2
-        gain_finish_loop = len(_DEBUG['grids']) + 2
+        gain_finish_grid = debug.DEBUG['fix_steps_threshold'] + 2
+        gain_finish_loop = self._num_grids + 2
 
         if self._task.states['finished_one_grid']:
             if self._task.states['finished_one_loop']:
@@ -340,6 +347,9 @@ class ZigzagReadingEnv(Env):
             con=self._con
         )
 
+        # Save rgb buffers for potential video writing.
+        self._append_rgb_images()
+
         # Manage the buffers in the non-headless mode.
         if self._window_visible == 1:
             glfw.swap_buffers(self._window)
@@ -347,9 +357,25 @@ class ZigzagReadingEnv(Env):
         else:
             pass
 
+    def _append_rgb_images(self):
+        """
+        This internal method generates the rgb images buffer by appending rbg_buffer step by step (1 step 1 frame).
+        """
+        rl = self._conf_rl
+        buffer_size = 30000
+        if rl['mode'] == 'test':
+            if rl['train']['num_steps'] <= buffer_size:
+                self._rgb_images.append(np.flipud(self._rgb_buffer).copy())
+            else:
+                raise ValueError('Episode length - the number of steps has exceeded the rgb images buffer size of: {}.'.format(buffer_size))
+
     @property
     def num_steps(self):
         """
         This property gets the number of steps assigned in the environment.
         """
         return self._num_steps
+
+    @property
+    def rgb_images(self):
+        return self._rgb_images

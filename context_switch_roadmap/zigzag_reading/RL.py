@@ -18,6 +18,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from ZigzagReadingEnv import ZigzagReadingEnv
+from utils import write_video
 
 _MODES = {
     'train': 'train',
@@ -54,8 +55,8 @@ class CustomCNN(BaseFeaturesExtractor):
 
         # Compute shape by doing one forward pass
         with th.no_grad():
-            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[
-                1]  # TODO change to the multi-input mode later.
+            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
+            # TODO change to the multi-input mode later.
 
         self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
 
@@ -76,7 +77,12 @@ class RL:
         with open(config_file) as f:
             config = yaml.load(f, Loader=yaml.FullLoader)
 
-        self._config_rl = config['rl']
+        try:
+            self._config_rl = config['rl']
+            self._config_mj_env = config['mj_env']
+            self._config_utils = config['utils']
+        except ValueError:
+            print('Invalid configurations. Check your config.yaml file.')
 
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
@@ -196,7 +202,7 @@ class RL:
                 '\nEpisode:{}     Score:{}    '
                 '\nLoops Pct: {}%     Optimal Loops: {}     Actual Loops: {}'
                 .format(episode, score,
-                        info['achievement']*100, info['optimal_loops'], info['num_loops'])
+                        np.round(info['achievement']*100, 2), info['optimal_loops'], info['num_loops'])
             )
 
         # if self._mode == _MODES['test']:
@@ -219,12 +225,18 @@ class RL:
         elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
             self._test()
-            # Write a video.
+            # Write a video. First get the rgb images, then identify the path.
             video_folder_path = os.path.join('training', 'videos')
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
-            # self._env.write_video(filepath=video_path)    # TODO uncomment later.
+            write_video.write_video(
+                filepath=video_path,
+                fps=self._config_utils['write_video']['fps'],
+                rgb_images=self._env.rgb_images,
+                width=self._config_mj_env['render']['width'],
+                height=self._config_mj_env['render']['height'],
+            )
         elif self._mode == _MODES['debug']:
             # Generate the baseline.
             self._test()
