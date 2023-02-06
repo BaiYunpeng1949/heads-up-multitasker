@@ -225,8 +225,9 @@ class RL:
         elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
             self._test()
+
             # Write a video. First get the rgb images, then identify the path.
-            video_folder_path = os.path.join('training', 'videos')
+            video_folder_path = os.path.join('training', 'videos')  # TODO the resolution needs bigger, the visual actions needs to match. And maybe lower fps.
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')

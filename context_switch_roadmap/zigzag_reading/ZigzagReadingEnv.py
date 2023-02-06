@@ -86,7 +86,7 @@ class ZigzagReadingEnv(Env):
             # 'pre_focus': Discrete(n=len(_DEBUG['grids'])),
             'fix_waste_steps': MultiDiscrete([self._num_steps, self._num_steps]),
             'pre_now_focus': MultiDiscrete([self._num_grids, self._num_grids]),
-            'unexplored_grid_ids_binaries': MultiBinary(self._num_grids),
+            'grids_status': MultiDiscrete([3] * self._num_grids),   # 0 for not traversed, 1 for traversed, 2 for vacant.
         })
 
         # Initialize MuJoCo.
@@ -115,10 +115,10 @@ class ZigzagReadingEnv(Env):
 
         # TODO debug here. Generalize this part later along with the implementation of the visual perception.
         self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self._cam.lookat = [0, 0, 0]
-        self._cam.distance = 8
+        self._cam.lookat = [0, 0, 1]
+        self._cam.distance = 12
         self._cam.azimuth = 90.0
-        self._cam.elevation = -8
+        self._cam.elevation = -10
 
         self._opt = mujoco.MjvOption()  # Visualization options.
         mujoco.mjv_defaultOption(opt=self._opt)
@@ -211,21 +211,32 @@ class ZigzagReadingEnv(Env):
         # ---------------------- MuJoCo Render: Update ----------------------
         # Update the MuJoCo model - change the color of explored/traversed grid.
         # TODO finalize this part later to facilitate video making.
-        explored_grid_ids = self._task.ground_truth['explored_grid_ids']
+        explored_grid_ids = self._task.ground_truth['explored_grid_ids'].copy()
         if len(explored_grid_ids) > len(debug.DEBUG['explored_grid_ids']):
             new_grids = [grid_id for grid_id in explored_grid_ids if grid_id not in debug.DEBUG['explored_grid_ids']]
             new_grid = new_grids[0]
+
             # Change the color of that.
-            for grid_name_str in debug.DEBUG['grids']:
-                if str(new_grid) in grid_name_str:
-                    self._m.geom(grid_name_str).rgba[0:3] = debug.DEBUG['grey']
+            for row in debug.DEBUG['grids']:
+                for grid_name_str in row:
+                    if new_grid == int(grid_name_str.split('-')[-1]):
+                        self._m.geom(grid_name_str).rgba[0:3] = debug.DEBUG['grey']
             # Update the explored_grid_ids buffer.
             debug.DEBUG['explored_grid_ids'] = explored_grid_ids
+        elif len(explored_grid_ids) < len(debug.DEBUG['explored_grid_ids']):    # One loop has been finished.
+            for row in debug.DEBUG['grids']:
+                for grid_name_str in row:
+                    if debug.DEBUG['keyword'] not in grid_name_str:
+                        self._m.geom(grid_name_str).rgba[0:3] = debug.DEBUG['red']
+            # Update the explored_grid_ids buffer.
+            debug.DEBUG['explored_grid_ids'] = explored_grid_ids
+
         # Update the focus-ball's movement.
         grid_id = self._task.states['grid_id']
-        for grid_name_str in debug.DEBUG['grids']:
-            if str(grid_id) in grid_name_str:
-                self._d.qpos[0:3] = self._m.geom(grid_name_str).pos[0:3]
+        for row in debug.DEBUG['grids']:
+            for grid_name_str in row:
+                if grid_id == int(grid_name_str.split('-')[-1]):
+                    self._d.qpos[0:3] = self._m.geom(grid_name_str).pos[0:3]
         # Render.
         self._update_render()
 
@@ -251,7 +262,6 @@ class ZigzagReadingEnv(Env):
             done = True
 
         # ---------------------- Debug -----------------------
-        # TODO THE DEBUG AREA.
         if self._conf_rl['mode'] == 'debug' or self._conf_rl['mode'] == 'test':
             print('\nThe action is: {}; the previous grid id is: {}; the previous fixing steps is: {}'
                   '\nThe current grid is: {}, the fixing steps is: {}, the current reward is: {}.'
@@ -279,7 +289,8 @@ class ZigzagReadingEnv(Env):
 
         # Get the unexplored grids.
         unexplored_grid_ids = self._task.ground_truth['unexplored_grid_ids'].copy()
-        unexplored_grid_ids_binaries = [1 if grid_id in unexplored_grid_ids else 0 for grid_id in self._ref_grids]
+        explored_grid_ids = self._task.ground_truth['explored_grid_ids'].copy()
+        grids_status = [0 if grid_id in unexplored_grid_ids else 1 if grid_id in explored_grid_ids else 2 for grid_id in self._ref_grids]
 
         obs = {
             # 'visual_rgb': visual_rgb, # TODO add the visual perception back later.
@@ -287,7 +298,7 @@ class ZigzagReadingEnv(Env):
             # 'pre_focus': pre_focus,
             'fix_waste_steps': [fixing_steps, wasted_steps],
             'pre_now_focus': [pre_focus, focus],
-            'unexplored_grid_ids_binaries': unexplored_grid_ids_binaries,
+            'grids_status': grids_status,
         }
 
         return obs

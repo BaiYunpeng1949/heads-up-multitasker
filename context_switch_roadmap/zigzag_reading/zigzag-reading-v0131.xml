@@ -21,30 +21,30 @@
 
     <geom name="floor" size="0 0 .05" type="plane" material="grid" condim="3"/>
 
-    <geom name="grid-1" type="box" pos="-1.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-2" type="box" pos="-0.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-3" type="box" pos="0.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-4" type="box" pos="1.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-0" type="box" pos="-1.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-1" type="box" pos="-0.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-2" type="box" pos="0.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-3" type="box" pos="1.5 0 4.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
 
-    <geom name="vacant-grid-5" type="box" pos="-1.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-6" type="box" pos="-0.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-7" type="box" pos="0.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-8" type="box" pos="1.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
+    <geom name="vacant-grid-4" type="box" pos="-1.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-5" type="box" pos="-0.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-6" type="box" pos="0.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-7" type="box" pos="1.5 0 3.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
 
-    <geom name="grid-9" type="box" pos="-1.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-10" type="box" pos="-0.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-11" type="box" pos="0.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-12" type="box" pos="1.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-8" type="box" pos="-1.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-9" type="box" pos="-0.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-10" type="box" pos="0.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-11" type="box" pos="1.5 0 2.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
 
-    <geom name="vacant-grid-13" type="box" pos="-1.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-14" type="box" pos="-0.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-15" type="box" pos="0.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
-    <geom name="vacant-grid-16" type="box" pos="1.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.85"/>
+    <geom name="vacant-grid-12" type="box" pos="-1.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-13" type="box" pos="-0.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-14" type="box" pos="0.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
+    <geom name="vacant-grid-15" type="box" pos="1.5 0 1.5" size="0.25 0.0001 0.25" rgba="0.5 0.5 0.5 0.15"/>
 
-    <geom name="grid-17" type="box" pos="-1.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-18" type="box" pos="-0.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-19" type="box" pos="0.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
-    <geom name="grid-20" type="box" pos="1.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-16" type="box" pos="-1.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-17" type="box" pos="-0.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-18" type="box" pos="0.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
+    <geom name="grid-19" type="box" pos="1.5 0 0.5" size="0.25 0.0001 0.25" rgba="0.5 0 0 0.85"/>
 
     <body name="focus" pos="0 0 1">
       <freejoint/>

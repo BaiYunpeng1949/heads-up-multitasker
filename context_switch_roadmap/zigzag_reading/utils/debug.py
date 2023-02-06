@@ -14,7 +14,7 @@ DEBUG = {
 
     'cam_name': 'single-eye',
     'ball_name': 'focus',
-    'fix_steps_threshold': 25,      # The step periods that a fixation action takes.
+    'fix_steps_threshold': 50,      # The step periods that a fixation action takes.
 
     'obs_width': 80,                # The observations' portion pixels width.
     'obs_height': 80,               # The observations' portion pixels height.

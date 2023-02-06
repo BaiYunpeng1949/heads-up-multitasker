@@ -13,7 +13,6 @@ def write_video(filepath, fps, rgb_images, width, height):
     Raises:
       ValueError: If frames per second (fps) is not set (set_fps is not called)
     """
-
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     out = cv2.VideoWriter(filepath, fourcc, fps, tuple([width, height]))
     for img in rgb_images:
