@@ -4,8 +4,8 @@ rl:
   mode: train    # Select from: train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 15000000
-    checkpoints_folder_name: 'checkpoints_0206_15M_50stps'
+    total_timesteps: 5000000
+    checkpoints_folder_name: 'checkpoints_0207_5M_5stps_visual'
     num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 3600
     algorithm: 'PPO'
@@ -25,7 +25,7 @@ rl:
   # Note, before starting the pipeline, make sure the testing and training environment settings are consistent.
   test:
     num_episodes: 1
-    loaded_model_name: 'rl_model_99984_steps'
+    loaded_model_name: 'rl_model_5999040_steps'
 
 mj_env:
   filename: 'zigzag-reading-v0131.xml'

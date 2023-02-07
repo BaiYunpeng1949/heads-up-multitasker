@@ -81,12 +81,10 @@ class ZigzagReadingEnv(Env):
         # Initialize RL.
         self.action_space = MultiDiscrete(nvec=[debug.DEBUG['dim_actions'], debug.DEBUG['dim_actions']])
         self.observation_space = Dict({
-            # 'visual_rgb': Box(low=0, high=255, shape=(_DEBUG['obs_height'], _DEBUG['obs_width'], 3)),   # TODO include the visual later.
-            # 'focus': Discrete(n=len(_DEBUG['grids'])),   # Where is the focus at, 0 for grid-1.
-            # 'pre_focus': Discrete(n=len(_DEBUG['grids'])),
+            'visual_rgb': Box(low=0, high=255, shape=(debug.DEBUG['obs_height'], debug.DEBUG['obs_width'], 3)),
             'fix_waste_steps': MultiDiscrete([self._num_steps, self._num_steps]),
             'pre_now_focus': MultiDiscrete([self._num_grids, self._num_grids]),
-            'grids_status': MultiDiscrete([3] * self._num_grids),   # 0 for not traversed, 1 for traversed, 2 for vacant.
+            # 'grids_status': MultiDiscrete([3] * self._num_grids),   # 0 for not traversed, 1 for traversed, 2 for vacant.
         })
 
         # Initialize MuJoCo.
@@ -115,10 +113,10 @@ class ZigzagReadingEnv(Env):
 
         # TODO debug here. Generalize this part later along with the implementation of the visual perception.
         self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self._cam.lookat = [0, 0, 1]
-        self._cam.distance = 12
+        self._cam.lookat = [0, 0, 2.5]
+        self._cam.distance = 6
         self._cam.azimuth = 90.0
-        self._cam.elevation = -10
+        self._cam.elevation = 0
 
         self._opt = mujoco.MjvOption()  # Visualization options.
         mujoco.mjv_defaultOption(opt=self._opt)
@@ -293,12 +291,10 @@ class ZigzagReadingEnv(Env):
         grids_status = [0 if grid_id in unexplored_grid_ids else 1 if grid_id in explored_grid_ids else 2 for grid_id in self._ref_grids]
 
         obs = {
-            # 'visual_rgb': visual_rgb, # TODO add the visual perception back later.
-            # 'focus': focus,
-            # 'pre_focus': pre_focus,
+            'visual_rgb': visual_rgb,
             'fix_waste_steps': [fixing_steps, wasted_steps],
             'pre_now_focus': [pre_focus, focus],
-            'grids_status': grids_status,
+            # 'grids_status': grids_status,
         }
 
         return obs
