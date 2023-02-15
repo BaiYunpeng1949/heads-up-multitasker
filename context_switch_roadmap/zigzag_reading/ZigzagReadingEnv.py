@@ -81,7 +81,7 @@ class ZigzagReadingEnv(Env):
         # Initialize RL.
         self.action_space = MultiDiscrete(nvec=[debug.DEBUG['dim_actions'], debug.DEBUG['dim_actions']])
         self.observation_space = Dict({
-            'visual_rgb': Box(low=0, high=255, shape=(debug.DEBUG['obs_height'], debug.DEBUG['obs_width'], 3)),
+            'rgb': Box(low=-1.0, high=1.0, shape=(3, debug.DEBUG['obs_height'], debug.DEBUG['obs_width'])),
             'fix_waste_steps': MultiDiscrete([self._num_steps, self._num_steps]),
             'pre_now_focus': MultiDiscrete([self._num_grids, self._num_grids]),
             # 'grids_status': MultiDiscrete([3] * self._num_grids),   # 0 for not traversed, 1 for traversed, 2 for vacant.
@@ -277,7 +277,9 @@ class ZigzagReadingEnv(Env):
         offset_w = debug.DEBUG['obs_width'] / 2
         obs_idx_h = [int(self._height / 2 - offset_h), int(self._height / 2 + offset_h)]
         obs_idx_w = [int(self._width / 2 - offset_w), int(self._width / 2 + offset_w)]
-        visual_rgb = self._rgb_buffer.copy()[obs_idx_h[0]:obs_idx_h[1], obs_idx_w[0]:obs_idx_w[1], :]
+        rgb = self._rgb_buffer.copy()[obs_idx_h[0]:obs_idx_h[1], obs_idx_w[0]:obs_idx_w[1], :]
+        rgb_norm = (rgb.astype(float) / 255.0) * 2.0 - 1.0
+        rgb_norm_transposed = np.transpose(rgb_norm, (2, 0, 1))   # Transpose from H*W*C to C*H*W.
 
         # Explicit task ground truth observations.
         fixing_steps = np.clip(self._task.ground_truth['fixing_steps'], 0, self._num_steps-1)
@@ -291,7 +293,7 @@ class ZigzagReadingEnv(Env):
         grids_status = [0 if grid_id in unexplored_grid_ids else 1 if grid_id in explored_grid_ids else 2 for grid_id in self._ref_grids]
 
         obs = {
-            'visual_rgb': visual_rgb,
+            'rgb': rgb_norm_transposed,
             'fix_waste_steps': [fixing_steps, wasted_steps],
             'pre_now_focus': [pre_focus, focus],
             # 'grids_status': grids_status,

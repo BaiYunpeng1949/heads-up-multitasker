@@ -16,6 +16,8 @@ from stable_baselines3.common.vec_env import VecFrameStack
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.type_aliases import TensorDict
+from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 
 from ZigzagReadingEnv import ZigzagReadingEnv
 from utils import write_video
@@ -30,7 +32,7 @@ _MODES = {
 
 class CustomCNN(BaseFeaturesExtractor):
 
-    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 128):
         """
         The custom cnn feature extractor.
         Ref: https://stable-baselines3.readthedocs.io/en/master/guide/custom_policy.html#custom-feature-extractor
@@ -41,27 +43,81 @@ class CustomCNN(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim)
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
-        # n_input_channels = observation_space.shape[0]  # TODO specify
-        n_input_channels = observation_space.shape[0]  # TODO change to the multi-input later.
+        n_input_channels = observation_space.shape[0]
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=n_input_channels, out_channels=8, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            # 3*80*80 -> (80+2*1-4)/2+1=40 8*40*40
+            nn.Conv2d(in_channels=n_input_channels, out_channels=8, kernel_size=(4, 4), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            # 8*40*40 -> (40+2*1-4)/2+1=20 16*20*20
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(4, 4), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            # 16*20*20 -> (20+2*1-4)/2+1=10 32*10*10
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(4, 4), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
+            # 32*10*10 -> (10+2*1-4)/2+1=5 64*5*5
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(4, 4), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
+            # If the original input was 1*3*80*80; now the output is 1*64*5*5.
             nn.Flatten(),
+            # After flatten, the dimension is 1*1600.
         )
 
-        # Compute shape by doing one forward pass
+        # Compute shape by doing one forward pass。
         with th.no_grad():
             n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
-            # TODO change to the multi-input mode later.
 
-        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.LeakyReLU())
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         return self.linear(self.cnn(observations))
+
+
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Dict, cnn_output_dim: int = 128):
+        """
+        Custom multi-input features extractor.
+        Ref: https://stable-baselines3.readthedocs.io/en/master/guide/custom_policy.html#multiple-inputs-and-dictionary-observations
+        Ref: CombinedExtractor
+        """
+        super().__init__(observation_space, features_dim=1)
+
+        extractors = {}
+
+        total_concat_size = 0
+
+        for key, subspace in observation_space.spaces.items():
+            if key == 'rgb':
+                # Assume that the input observation rgb pixels' shape is 3, 80, 80
+                extractors[key] = CustomCNN(subspace, features_dim=cnn_output_dim)
+                total_concat_size += cnn_output_dim
+            elif key == 'fix_waste_steps' or key == 'pre_now_focus':
+                # Run through a simple MLP.
+                out_features = 16
+                if isinstance(subspace, gym.spaces.box.Box):
+                    in_features = subspace.shape[0]
+                elif isinstance(subspace, gym.spaces.multi_discrete.MultiDiscrete):
+                    in_features = np.sum(subspace.nvec)
+                else:
+                    in_features = 0
+                    raise ValueError('The in_features needs to be specified - noted by BYP')
+                extractors[key] = nn.Linear(in_features=in_features, out_features=out_features)
+                total_concat_size += out_features
+
+                # The observation key is a vector, flatten it if needed.
+                # extractors[key] = nn.Flatten()
+                # total_concat_size += get_flattened_obs_dim(subspace)
+
+        self.extractors = nn.ModuleDict(extractors)
+
+        # Update the features dim manually. self._features_dim is used to initialize the features dimension of the base class BaseFeaturesExtractor.
+        self._features_dim = total_concat_size
+
+    def forward(self, observations: TensorDict) -> th.Tensor:
+        encoded_tensor_list = []
+
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        return th.cat(encoded_tensor_list, dim=1)
 
 
 class RL:
@@ -109,18 +165,19 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
-            # Initialise model that is run with multiple threads. TODO finalise this later
+            # Initialise model that is run with multiple threads.
             policy_kwargs = dict(
-                # TODO regulate later, need to change if the observation space is not a single Box (MultipleInput).
-                features_extractor_class=CustomCNN,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                # features_extractor_kwargs=dict(features_dim=128),
+                activation_fn=th.nn.LeakyReLU,
+                net_arch=[128, 128],
             )
             self._model = PPO(
                 policy=self._config_rl['train']["policy_type"],
                 env=self._parallel_envs,
                 verbose=1,
-                # policy_kwargs=policy_kwargs,  # TODO uncomment this later when dealing with the MultipleInput is set.
-                # self._config_rl_pipeline["policy_kwargs"], # TODO maybe use it later.
+                policy_kwargs=policy_kwargs,
+                # self._config_rl_pipeline["policy_kwargs"],    # TODO insert into the config file later.
                 tensorboard_log=self._training_logs_path,
                 n_steps=self._config_rl['train']["num_steps"],
                 batch_size=self._config_rl['train']["batch_size"],
@@ -205,10 +262,10 @@ class RL:
                         np.round(info['achievement']*100, 2), info['optimal_loops'], info['num_loops'])
             )
 
-        # if self._mode == _MODES['test']:
-        #     # Use the official evaluation tool.
-        #     evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
-        #     print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
+        if self._mode == _MODES['test']:
+            # Use the official evaluation tool. | TODO check if needs to make a registered env instead of using the parallel envs.
+            evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
+            print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
 
     def run(self):
         """

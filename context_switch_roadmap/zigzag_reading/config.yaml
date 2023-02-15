@@ -4,10 +4,10 @@ rl:
   mode: train    # Select from: train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 5000000
-    checkpoints_folder_name: 'checkpoints_0207_5M_5stps_visual'
+    total_timesteps: 5000
+    checkpoints_folder_name: 'checkpoints_0214_trial'
     num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
-    num_steps: 3600
+    num_steps: 3600   # The length of episode.
     algorithm: 'PPO'
     policy_type: 'MultiInputPolicy'
     policy_kwargs:
