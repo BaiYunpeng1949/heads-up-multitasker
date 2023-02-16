@@ -24,6 +24,7 @@ from utils import write_video
 
 _MODES = {
     'train': 'train',
+    'continual_train': 'continual_train',
     'test': 'test',
     'debug': 'debug',
     'interact': 'interact'
@@ -146,22 +147,23 @@ class RL:
         # Get an env instance for further constructing parallel environments.
         self._env = ZigzagReadingEnv(config=config)
 
-        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
+        # Initialise parallel environments.
+        self._parallel_envs = make_vec_env(
+            env_id=self._env.__class__,
+            env_kwargs={'config': config},
+            n_envs=self._config_rl['train']["num_workers"],
+            seed=None,
+            vec_env_cls=SubprocVecEnv,
+        )
+
+        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance + refine this part later
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
-            # MuJoCo environment related variables.
-            # Initialise parallel environments.
-            self._parallel_envs = make_vec_env(
-                env_id=self._env.__class__,
-                env_kwargs={'config': config},
-                n_envs=self._config_rl['train']["num_workers"],
-                seed=None,
-                vec_env_cls=SubprocVecEnv,
-            )
             # Pipeline related variables.
             self._training_logs_path = os.path.join('training', 'logs')
             self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
             self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+            self._models_save_file_final = os.path.join(self._models_save_path, self._config_rl['train']['checkpoints_folder_name'])
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
@@ -183,8 +185,8 @@ class RL:
                 batch_size=self._config_rl['train']["batch_size"],
                 device=self._config_rl['train']["device"]
             )
-        # Load the pre-trained models and test.
-        elif self._mode == _MODES['test']:
+        # Load the pre-trained models and test. Load the pre-trained models and test.
+        elif self._mode == _MODES['test'] or self._mode == _MODES['continual_train']:
             # Pipeline related variables.
             self._loaded_model_name = self._config_rl['test']['loaded_model_name']
             self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
@@ -194,7 +196,21 @@ class RL:
             self._num_episodes = self._config_rl['test']['num_episodes']
             self._num_steps = self._env.num_steps
             # Load the model
-            self._model = PPO.load(self._loaded_model_path, self._env)
+            if self._mode == _MODES['test']:
+                self._model = PPO.load(self._loaded_model_path, self._env)
+            elif self._mode == _MODES['continual_train']:
+                # Logistics.
+                # Pipeline related variables.
+                self._training_logs_path = os.path.join('training', 'logs')
+                self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
+                self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+                self._models_save_file_final = os.path.join(self._models_save_path,
+                                                            self._config_rl['train']['checkpoints_folder_name'])
+                # RL training related variable: total time-steps.
+                self._total_timesteps = self._config_rl['train']['total_timesteps']
+                # Model loading and register.
+                self._model = PPO.load(self._loaded_model_path)
+                self._model.set_env(self._parallel_envs)
         # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
         elif self._mode == _MODES['debug']:
             self._num_episodes = self._config_rl['test']['num_episodes']
@@ -226,8 +242,39 @@ class RL:
         self._model.learn(
             total_timesteps=self._total_timesteps,
             callback=checkpoint_callback,
-            progress_bar=True
+            # progress_bar=True
         )
+
+        # Save the model as the rear guard.
+        self._model.save(self._models_save_file_final)
+
+    def _continual_train(self):
+        """
+        This method perform the continual trainings.
+        Ref: https://github.com/hill-a/stable-baselines/issues/599#issuecomment-569393193
+        """
+        save_freq = self._config_rl['train']['save_freq']
+        n_envs = self._config_rl['train']['num_workers']
+        save_freq = max(save_freq // n_envs, 1)
+        checkpoint_callback = CheckpointCallback(
+            save_freq=save_freq,
+            save_path=self._models_save_path,
+            name_prefix='rl_model_continual',
+            save_replay_buffer=True,
+            save_vecnormalize=True,
+        )
+
+        self._model.learn(
+            total_timesteps=self._total_timesteps,
+            callback=checkpoint_callback,
+            log_interval=1,
+            tb_log_name=self._config_rl['test']['continual_logs_name'],
+            reset_num_timesteps=False,
+        )
+        print(os.path.join(self._training_logs_path, self._config_rl['test']['continual_logs_name']))   # TODO debug, delete later.
+
+        # Save the model as the rear guard.
+        self._model.save(self._models_save_file_final)
 
     def _test(self):
         """
@@ -279,6 +326,8 @@ class RL:
         # Check train or not.
         if self._mode == _MODES['train']:
             self._train()
+        elif self._mode == _MODES['continual_train']:
+            self._continual_train()
         elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
             self._test()

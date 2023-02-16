@@ -1,11 +1,11 @@
 simulator_name: 'zigzag_reading'
 
 rl:
-  mode: train    # Select from: train, test, debug (check_env many times for the baseline), and interact.
+  mode: continual_train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 5000
-    checkpoints_folder_name: 'checkpoints_0214_trial'
+    total_timesteps: 500000
+    checkpoints_folder_name: 'checkpoints_0216_2M'
     num_workers: 12   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 3600   # The length of episode.
     algorithm: 'PPO'
@@ -14,7 +14,7 @@ rl:
       activation_fn: 'torch.nn.LeakyReLU'
       net_arch: [256, 256]
       log_std_init: 0.0
-      features_extractor_class: 'RLPipeline.CustomCNN'
+      features_extractor_class: 'RL.CustomCombinedExtractor'
       features_extractor_kwargs: dict(features_dim=128)
       normalize_images: False
     batch_size: 300   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`.
@@ -25,7 +25,8 @@ rl:
   # Note, before starting the pipeline, make sure the testing and training environment settings are consistent.
   test:
     num_episodes: 1
-    loaded_model_name: 'rl_model_5999040_steps'
+    loaded_model_name: 'rl_model_19996800_steps'
+    continual_logs_name: 'PPO_1'
 
 mj_env:
   filename: 'zigzag-reading-v0131.xml'
