@@ -136,13 +136,13 @@ class RL:
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
             self._num_episodes = self._config_rl['test']['num_episodes']
-            #self._num_steps = self._env.num_steps
+            self._num_steps = self._env._ep_len
             # Load the model
             self._model = PPO.load(self._loaded_model_path, self._env)
         # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
         elif self._mode == _MODES['debug']:
             self._num_episodes = self._config_rl['test']['num_episodes']
-            self._num_steps = self._env.num_steps
+            # self._num_steps = self._env.num_steps
         # The MuJoCo environment demo display with user interactions, such as mouse interactions.
         elif self._mode == _MODES['interact']:
             pass
@@ -180,9 +180,11 @@ class RL:
             print('\nThe pre-trained RL model testing: ')
 
         imgs = []
+        imgs_eye = []
         for episode in range(1, self._num_episodes + 1):
             obs = self._env.reset()
-            imgs.append(self._env.render())
+            imgs.append(self._env.render()[0])
+            imgs_eye.append(self._env.render()[1])
             done = False
             score = 0
             info = None
@@ -195,7 +197,8 @@ class RL:
                 else:
                     action = 0
                 obs, reward, done, info = self._env.step(action)
-                imgs.append(self._env.render())
+                imgs.append(self._env.render()[0])
+                imgs_eye.append(self._env.render()[1])
                 score += reward
                 # progress_bar.update(1)
             # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
@@ -204,7 +207,7 @@ class RL:
                 .format(episode, score)
             )
 
-        return imgs
+        return imgs, imgs_eye
 
         # if self._mode == _MODES['test']:
         #     # Use the official evaluation tool.
@@ -225,10 +228,9 @@ class RL:
             self._train()
         elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
-            rgb_images = self._test()
-
+            rgb_images, rgb_eye_images = self._test()
             # Write a video. First get the rgb images, then identify the path.
-            video_folder_path = os.path.join('training', 'videos')  # TODO the resolution needs bigger, the visual actions needs to match. And maybe lower fps.
+            video_folder_path = os.path.join('training', 'videos')
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
@@ -238,6 +240,15 @@ class RL:
                 rgb_images=rgb_images,
                 width=rgb_images[0].shape[1],
                 height=rgb_images[0].shape[0],
+            )
+            # Write the agent's visual perception
+            video_path_eye = os.path.join(video_folder_path, self._loaded_model_name + '_eye.avi')
+            write_video(
+                filepath=video_path_eye,
+                fps=int(self._env._action_sample_freq),
+                rgb_images=rgb_eye_images,
+                width=rgb_eye_images[0].shape[1],
+                height=rgb_eye_images[0].shape[0],
             )
         elif self._mode == _MODES['debug']:
             # Generate the baseline.
