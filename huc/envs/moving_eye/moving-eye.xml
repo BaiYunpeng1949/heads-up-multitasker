@@ -9,7 +9,7 @@
             <joint type="hinge" stiffness="0.0" damping="0.5" armature="0.0" limited="true"/>
         </default>
         <default class="grid">
-            <geom type="box" size="0.0025 0.0001 0.0025" rgba="0.5 0.5 0.5 0.85"/>
+            <geom type="box" size="0.0025 0.0001 0.0025" rgba="0.5 0.5 0.5 0.85" friction="1.0"/>
         </default>
     </default>
     <asset>
@@ -22,20 +22,17 @@
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
 
-        <camera name="env" pos="-0.1 -0.05 0.05" euler="1.0 -0.85 -0.37"/>
+        <camera name="env" pos="-0.1 -0.05 0.065" euler="1.0 -0.85 -0.37"/>
 
         <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
             <geom name="eye" type="sphere" size="0.025" material="blue-eye" rgba="1 1 1 1" quat="0.6625191 0.0130711 0.7488417 0.0115643"/>
             <camera name="eye" fovy="90"/>
             <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-0.6 0.6"/>
-            <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-0.8 0.8"/>
+            <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-0.6 0.6"/>
             <site name="rangefinder-site" quat="0 0 1 0"/>
-
             <geom name="fixate-point" pos="0 0 -0.05" type="sphere" size="0.001" rgba="0.8 0.8 0 0.5"/>
-
         </body>
 
-<!--        &lt;!&ndash;            change pos from 0.015 to 15&ndash;&gt;-->
 <!--        <body name="target" pos="-0.015 0.05 0.015">-->
 <!--            <geom name="target" type="box" size="0.004 0.00001 0.004" rgba="0.8 0.8 0.1 1"/>-->
 <!--        </body>-->
@@ -65,12 +62,13 @@
     </worldbody>
     <actuator>
         <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-0.6 0.6"/>
-        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.8 0.8"/>
+        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.6 0.6"/>
     </actuator>
     <sensor>
         <rangefinder name="rangefinder" site="rangefinder-site"/>
     </sensor>
-<!--    <contact>-->
+    <contact>
 <!--        <exclude body1="eye" body2="target"/>-->
-<!--    </contact>-->
+        <exclude body1="eye" body2="smart-glass-pane"/>
+    </contact>
 </mujoco>

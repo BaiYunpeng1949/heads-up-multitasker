@@ -19,6 +19,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
 from huc.envs.moving_eye.MovingEye import MovingEye
+from huc.envs.tracking_eye.TrackingEye import TrackingEye
 
 _MODES = {
     'train': 'train',
@@ -86,8 +87,9 @@ class RL:
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
 
-        # Get an env instance for further constructing parallel environments.
-        self._env = MovingEye()
+        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
+        # self._env = MovingEye()
+        self._env = TrackingEye()
 
         # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
