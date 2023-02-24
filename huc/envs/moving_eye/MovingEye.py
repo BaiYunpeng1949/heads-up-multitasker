@@ -162,14 +162,14 @@ class MovingEye(Env):
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
-        # if self._target_idx == 2:
-        #     action = [0.28, 0.31]   # TODO debug line
-        # elif self._target_idx == 5:
-        #     action = [0.31, -0.27]
-        # elif self._target_idx == 14:
-        #     action = [-0.28, 0.31]
-        # elif self._target_idx == 17:
-        #     action = [-0.3, -0.27]
+        if self._target_idx == 2:
+            action = [0.28, 0.31]   # TODO debug line
+        elif self._target_idx == 5:
+            action = [0.31, -0.27]
+        elif self._target_idx == 14:
+            action = [-0.28, 0.31]
+        elif self._target_idx == 17:
+            action = [-0.3, -0.27]
 
         # Set motor control
         self._data.ctrl[:] = action
@@ -181,12 +181,12 @@ class MovingEye(Env):
         self._steps += 1
 
         # Update fixate point based on rangefinder
-        # x = self._data.sensor("rangefinder").data
-        # x = x if x >= 0 else self._rangefinder_cutoff
+        x = self._data.sensor("rangefinder").data
+        x = x if x >= 0 else self._rangefinder_cutoff
         # self._model.geom("fixate-point").pos[2] = -x
 
         # Do a forward so everything will be set
-        # mujoco.mj_forward(self._model, self._data)
+        mujoco.mj_forward(self._model, self._data)
 
         # Check for collisions, estimate reward
         dwell_indicator = 0

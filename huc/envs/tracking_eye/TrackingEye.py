@@ -242,8 +242,8 @@ class TrackingEye(Env):
         # The reading result buffer - should has the same length
         self._sequence_results_idxs = []
         self._default_idx = -1
-        self._num_targets = 1
-        self._ep_len = 250
+        self._num_targets = 0
+        self._ep_len = 200
 
         # Define observation space
         self._width = 80
@@ -261,7 +261,7 @@ class TrackingEye(Env):
         self._context = Context(self._model, max_resolution=[1280, 960])
         self._eye_cam = Camera(self._context, self._model, self._data, camera_id="eye",
                                resolution=[self._width, self._height], maxgeom=100,
-                               dt=1 / self._action_sample_freq)  # TODO maybe the central vision's resolution is also one aspect of model integration.
+                               dt=1 / self._action_sample_freq)
         self._env_cam = Camera(self._context, self._model, self._data, camera_id="env", maxgeom=100,
                                dt=1 / self._action_sample_freq)
 
@@ -279,10 +279,7 @@ class TrackingEye(Env):
 
         # Reset counters
         self._steps = 0
-        # self._trial_idx = 0
-
-        # Choose one target at random
-        # self._switch_target()
+        self._num_targets = 5
 
         # First reset the scene.
         for idx in self._target_idxs:
@@ -295,22 +292,15 @@ class TrackingEye(Env):
         targets_idxs_list = targets_idxs.tolist()
         self._sequence_target_idxs = targets_idxs_list
         self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
-        # Color and resize all the selected grids
-        for idx in self._sequence_target_idxs:
-            self._model.geom(idx).rgba[0:4] = [0.8, 0.8, 0, 1]
-            self._model.geom(idx).size[0:3] = [0.0045, 0.0001, 0.0045]
+
+        self._switch_target(idx=self._sequence_target_idxs[0])
 
         return self._get_obs()
 
-    def _switch_target(self):
+    def _switch_target(self, idx):
 
-        # Sample a random target
-        idx = np.random.choice(len(self._target_idxs))
-        self._target_idx = self._target_idxs[idx]
-        self._target = self._targets[idx]
-
-        # Set position of target (the yellow border)
-        # self._model.body("target").pos = self._model.body("smart-glass-pane").pos + self._target.pos
+        self._model.geom(idx).rgba[0:4] = [0.8, 0.8, 0, 1]
+        self._model.geom(idx).size[0:3] = [0.0045, 0.0001, 0.0045]
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
@@ -320,7 +310,8 @@ class TrackingEye(Env):
         rgb_eye, _ = self._eye_cam.render()
         return rgb, rgb_eye
 
-    def normalise(self, x, x_min, x_max, a, b):
+    @staticmethod
+    def normalise(x, x_min, x_max, a, b):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
 
@@ -348,9 +339,6 @@ class TrackingEye(Env):
         reward = 0
         if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
             geom2 = self._data.contact.geom2[0]
-
-            # if self._target_idx == geom2:
-            #   reward = 1
             # If the geom2 is in the target idxs array, then the rewards are applied, the environment changes a little bit
             if geom2 in self._sequence_target_idxs and geom2 not in self._sequence_results_idxs:
                 reward = 0.1
@@ -368,15 +356,18 @@ class TrackingEye(Env):
                 # Check whether the grid has been fixated for enough time
                 if (self._model.geom(idx).rgba[2] >= 0.8) and (idx not in self._sequence_results_idxs):
                     # Update the results
-                    for i in range(len(self._sequence_results_idxs)):
+                    for i in range(self._num_targets):
                         if self._sequence_results_idxs[i] == self._default_idx:
                             self._sequence_results_idxs[i] = idx
                             break
                     # Update the reward
-                    reward = 2 * (len(self._sequence_results_idxs) - self._sequence_results_idxs.count(self._default_idx))
+                    reward = 2 * (self._num_targets - self._sequence_results_idxs.count(self._default_idx))
                     # Update the scene - a sharp update
                     self._model.geom(idx).size[0:3] = [0.0025, 0.00001, 0.0025]
-                    # Do a forward so everything will be set
-                    mujoco.mj_forward(self._model, self._data)
+                    # Switch a new target grid
+                    for i in range(self._num_targets):
+                        if self._sequence_results_idxs[i] != self._sequence_target_idxs[i]:
+                            self._switch_target(idx=self._sequence_target_idxs[i])
+                            break
 
         return self._get_obs(), reward, terminate, {}
