@@ -82,11 +82,6 @@ class ReadingEye(Env):
         # self._num_targets = 5
         self._num_targets = 12      # Leave some randoms as opposed of using 16 directly
 
-        # First reset the scene.
-        for idx in self._target_idxs:
-            self._model.geom(idx).rgba[0:4] = [0.5, 0.5, 0.5, 0.85]
-            self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
-
         # Refresh the scene with randomly generated targets.
         # TODO the background task: generate 1 by 1 randomly - this is for training and testing
         targets_idxs = np.random.choice(range(self._target_idxs[0], self._target_idxs[-1]+1), size=self._num_targets, replace=False)
@@ -95,9 +90,15 @@ class ReadingEye(Env):
         self._sequence_target_idxs = targets_idxs_list
 
         # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        self._sequence_target_idxs = [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]
+        self._sequence_target_idxs = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         self._num_targets = len(self._sequence_target_idxs)
+        # raise Warning('Comment me when training!!!')
         # ------------------------------------------------------------------------------------------
+
+        # Reset the scene, visualize the transparent ones
+        for idx in self._sequence_target_idxs:
+            self._model.geom(idx).rgba[0:4] = [0.5, 0.5, 0.5, 0.85]
+            self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
 
         self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
 
@@ -150,7 +151,6 @@ class ReadingEye(Env):
         if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
             geom2 = self._data.contact.geom2[0]
             # If the geom2 is in the target idxs array, then the rewards are applied, the environment changes a little bit
-            # if geom2 in self._sequence_target_idxs and geom2 not in self._sequence_results_idxs:  TODO uncomment later for short trials.
             if geom2 == self._target_idx:
                 reward = 1
                 # Update the environment
