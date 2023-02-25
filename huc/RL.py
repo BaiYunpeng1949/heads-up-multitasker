@@ -19,9 +19,12 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
 from huc.envs.moving_eye.MovingEye import MovingEye
+from huc.envs.reading_eye.ReadingEye import ReadingEye
+from huc.envs.context_switch.ContextSwitch import ContextSwitch
 
 _MODES = {
     'train': 'train',
+    'continual_train': 'continual_train',
     'test': 'test',
     'debug': 'debug',
     'interact': 'interact'
@@ -86,24 +89,36 @@ class RL:
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
 
-        # Get an env instance for further constructing parallel environments.
-        self._env = MovingEye()
+        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
+        # self._env = MovingEye()
+        # self._env = ReadingEye()
+        self._env = ContextSwitch()
+
+        # Initialise parallel environments
+        self._parallel_envs = make_vec_env(
+            env_id=self._env.__class__,
+            n_envs=self._config_rl['train']["num_workers"],
+            seed=None,
+            vec_env_cls=SubprocVecEnv,
+        )
 
         # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
             # MuJoCo environment related variables.
             # Initialise parallel environments.
-            self._parallel_envs = make_vec_env(
-                env_id=self._env.__class__,
-                n_envs=self._config_rl['train']["num_workers"],
-                seed=None,
-                vec_env_cls=SubprocVecEnv,
-            )
+            # self._parallel_envs = make_vec_env(
+            #     env_id=self._env.__class__,
+            #     n_envs=self._config_rl['train']["num_workers"],
+            #     seed=None,
+            #     vec_env_cls=SubprocVecEnv,
+            # )
             # Pipeline related variables.
             self._training_logs_path = os.path.join('training', 'logs')
             self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
             self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+            self._models_save_file_final = os.path.join(self._models_save_path,
+                                                        self._config_rl['train']['checkpoints_folder_name'])
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
@@ -128,7 +143,7 @@ class RL:
                 device=self._config_rl['train']["device"]
             )
         # Load the pre-trained models and test.
-        elif self._mode == _MODES['test']:
+        elif self._mode == _MODES['test'] or self._mode == _MODES['continual_train']:
             # Pipeline related variables.
             self._loaded_model_name = self._config_rl['test']['loaded_model_name']
             self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
@@ -136,13 +151,27 @@ class RL:
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
             self._num_episodes = self._config_rl['test']['num_episodes']
-            #self._num_steps = self._env.num_steps
+            self._num_steps = self._env._ep_len
             # Load the model
-            self._model = PPO.load(self._loaded_model_path, self._env)
+            if self._mode == _MODES['test']:
+                self._model = PPO.load(self._loaded_model_path, self._env)
+            elif self._mode == _MODES['continual_train']:
+                # Logistics.
+                # Pipeline related variables.
+                self._training_logs_path = os.path.join('training', 'logs')
+                self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
+                self._models_save_path = os.path.join('training', 'saved_models', self._checkpoints_folder_name)
+                self._models_save_file_final = os.path.join(self._models_save_path,
+                                                            self._config_rl['train']['checkpoints_folder_name'])
+                # RL training related variable: total time-steps.
+                self._total_timesteps = self._config_rl['train']['total_timesteps']
+                # Model loading and register.
+                self._model = PPO.load(self._loaded_model_path)
+                self._model.set_env(self._parallel_envs)
         # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
         elif self._mode == _MODES['debug']:
             self._num_episodes = self._config_rl['test']['num_episodes']
-            self._num_steps = self._env.num_steps
+            # self._num_steps = self._env.num_steps
         # The MuJoCo environment demo display with user interactions, such as mouse interactions.
         elif self._mode == _MODES['interact']:
             pass
@@ -170,6 +199,31 @@ class RL:
             callback=checkpoint_callback,
         )
 
+    def _continual_train(self):
+        """
+        This method perform the continual trainings.
+        Ref: https://github.com/hill-a/stable-baselines/issues/599#issuecomment-569393193
+        """
+        save_freq = self._config_rl['train']['save_freq']
+        n_envs = self._config_rl['train']['num_workers']
+        save_freq = max(save_freq // n_envs, 1)
+        checkpoint_callback = CheckpointCallback(
+            save_freq=save_freq,
+            save_path=self._models_save_path,
+            name_prefix='rl_model_continual',
+        )
+
+        self._model.learn(
+            total_timesteps=self._total_timesteps,
+            callback=checkpoint_callback,
+            log_interval=1,
+            tb_log_name=self._config_rl['test']['continual_logs_name'],
+            reset_num_timesteps=False,
+        )
+
+        # Save the model as the rear guard.
+        self._model.save(self._models_save_file_final)
+
     def _test(self):
         """
         This method generates the RL env testing results with or without a pre-trained RL model in a manual way.
@@ -180,9 +234,11 @@ class RL:
             print('\nThe pre-trained RL model testing: ')
 
         imgs = []
+        imgs_eye = []
         for episode in range(1, self._num_episodes + 1):
             obs = self._env.reset()
-            imgs.append(self._env.render())
+            imgs.append(self._env.render()[0])
+            imgs_eye.append(self._env.render()[1])
             done = False
             score = 0
             info = None
@@ -195,7 +251,8 @@ class RL:
                 else:
                     action = 0
                 obs, reward, done, info = self._env.step(action)
-                imgs.append(self._env.render())
+                imgs.append(self._env.render()[0])
+                imgs_eye.append(self._env.render()[1])
                 score += reward
                 # progress_bar.update(1)
             # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
@@ -204,7 +261,7 @@ class RL:
                 .format(episode, score)
             )
 
-        return imgs
+        return imgs, imgs_eye
 
         # if self._mode == _MODES['test']:
         #     # Use the official evaluation tool.
@@ -223,12 +280,13 @@ class RL:
         # Check train or not.
         if self._mode == _MODES['train']:
             self._train()
+        elif self._mode == _MODES['continual_train']:
+            self._continual_train()
         elif self._mode == _MODES['test']:
             # Generate the results from the pre-trained model.
-            rgb_images = self._test()
-
+            rgb_images, rgb_eye_images = self._test()
             # Write a video. First get the rgb images, then identify the path.
-            video_folder_path = os.path.join('training', 'videos')  # TODO the resolution needs bigger, the visual actions needs to match. And maybe lower fps.
+            video_folder_path = os.path.join('training', 'videos')
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
@@ -238,6 +296,15 @@ class RL:
                 rgb_images=rgb_images,
                 width=rgb_images[0].shape[1],
                 height=rgb_images[0].shape[0],
+            )
+            # Write the agent's visual perception
+            video_path_eye = os.path.join(video_folder_path, self._loaded_model_name + '_eye.avi')
+            write_video(
+                filepath=video_path_eye,
+                fps=int(self._env._action_sample_freq),
+                rgb_images=rgb_eye_images,
+                width=rgb_eye_images[0].shape[1],
+                height=rgb_eye_images[0].shape[0],
             )
         elif self._mode == _MODES['debug']:
             # Generate the baseline.
