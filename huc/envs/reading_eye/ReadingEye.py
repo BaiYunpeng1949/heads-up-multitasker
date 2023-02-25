@@ -8,7 +8,7 @@ from gym.spaces import Box
 from huc.utils.rendering import Camera, Context
 
 
-class TrackingEye(Env):
+class ReadingEye(Env):
 
     def __init__(self):
 
@@ -16,7 +16,7 @@ class TrackingEye(Env):
         directory = os.path.dirname(os.path.realpath(__file__))
 
         # Open the mujoco model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "tracking-eye.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "reading-eye.xml"))
         self._data = mujoco.MjData(self._model)
 
         # Define how often policy is queried
@@ -43,7 +43,7 @@ class TrackingEye(Env):
         self._sequence_results_idxs = []
         self._default_idx = -1
         self._num_targets = 0
-        self._ep_len = 200
+        self._ep_len = 400
 
         # Define observation space
         self._width = 80
@@ -79,8 +79,8 @@ class TrackingEye(Env):
 
         # Reset counters
         self._steps = 0
-        self._num_targets = 5
-        # self._num_targets = len(self._target_idxs)
+        # self._num_targets = 5
+        self._num_targets = 12      # Leave some randoms as opposed of using 16 directly
 
         # First reset the scene.
         for idx in self._target_idxs:
@@ -95,7 +95,7 @@ class TrackingEye(Env):
         self._sequence_target_idxs = targets_idxs_list
 
         # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        self._sequence_target_idxs = [2, 3, 6, 7, 10, 11, 14, 15]
+        self._sequence_target_idxs = [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]
         self._num_targets = len(self._sequence_target_idxs)
         # ------------------------------------------------------------------------------------------
 
@@ -109,6 +109,8 @@ class TrackingEye(Env):
 
         self._model.geom(idx).rgba[0:4] = [0.8, 0.8, 0, 1]
         self._model.geom(idx).size[0:3] = [0.0045, 0.0001, 0.0045]
+
+        self._target_idx = idx
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
@@ -148,8 +150,9 @@ class TrackingEye(Env):
         if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
             geom2 = self._data.contact.geom2[0]
             # If the geom2 is in the target idxs array, then the rewards are applied, the environment changes a little bit
-            if geom2 in self._sequence_target_idxs and geom2 not in self._sequence_results_idxs:
-                reward = 0.1
+            # if geom2 in self._sequence_target_idxs and geom2 not in self._sequence_results_idxs:  TODO uncomment later for short trials.
+            if geom2 == self._target_idx:
+                reward = 1
                 # Update the environment
                 acc = 0.8 / self._target_switch_interval
                 self._model.geom(geom2).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geom2).rgba[0:3], [0, 0, acc])]
@@ -169,7 +172,7 @@ class TrackingEye(Env):
                             self._sequence_results_idxs[i] = idx
                             break
                     # Update the reward
-                    reward = 2 * (self._num_targets - self._sequence_results_idxs.count(self._default_idx))
+                    reward = self._num_targets - self._sequence_results_idxs.count(self._default_idx)
                     # Update the scene - a sharp update
                     self._model.geom(idx).size[0:3] = [0.0025, 0.00001, 0.0025]
                     # Switch a new target grid
