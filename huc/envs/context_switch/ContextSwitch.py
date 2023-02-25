@@ -16,7 +16,7 @@ class ContextSwitch(Env):
         directory = os.path.dirname(os.path.realpath(__file__))
 
         # Open the mujoco model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "reading-eye.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "context-switch.xml"))
         self._data = mujoco.MjData(self._model)
 
         # Define how often policy is queried
@@ -24,7 +24,7 @@ class ContextSwitch(Env):
         self._frame_skip = int((1 / self._action_sample_freq) / self._model.opt.timestep)  # 0.05/0.002=25
 
         # Initialise thresholds and counters
-        self._target_switch_interval = 1 * self._action_sample_freq
+        self._target_switch_interval = 2 * self._action_sample_freq
         self._steps = 0
         self._max_trials = 5
         self._trial_idx = 0
@@ -50,10 +50,11 @@ class ContextSwitch(Env):
         self._ep_len = 400
 
         # The background grids:
-        self._background_change_interval = 2 * self._action_sample_freq
         self._background_on = False
         self._steps_background_on = 0
-        self._background_on_interval = 2 * self._action_sample_freq
+        self._steps_background_off = 0
+        self._background_on_interval = 1 * self._action_sample_freq
+        self._background_off_interval = 2 * self._action_sample_freq
 
         # Define observation space
         self._width = 80
@@ -99,7 +100,7 @@ class ContextSwitch(Env):
     def _reset_scene(self):
 
         # Leave some randomness by using the number smaller than the total registered grid number 16
-        self._num_targets = 4
+        self._num_targets = len(self._target_idxs)
 
         # First reset the scene.
         for idx in self._target_idxs:
@@ -107,15 +108,15 @@ class ContextSwitch(Env):
             self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
 
         # Refresh the scene with randomly generated targets.
-        # TODO the background task: generate 1 by 1 randomly - this is for training and testing
-        targets_idxs = np.random.choice(range(self._target_idxs[0], self._target_idxs[-1] + 1), size=self._num_targets,
-                                        replace=False)
-        targets_idxs.sort()
-        targets_idxs_list = targets_idxs.tolist()
-        self._sequence_target_idxs = targets_idxs_list
+        # # TODO the background task: generate 1 by 1 randomly - this is for training and testing
+        # targets_idxs = np.random.choice(range(self._target_idxs[0], self._target_idxs[-1] + 1), size=self._num_targets,
+        #                                 replace=False)
+        # targets_idxs.sort()
+        # targets_idxs_list = targets_idxs.tolist()
+        # self._sequence_target_idxs = targets_idxs_list
 
         # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        self._sequence_target_idxs = [2, 3, 4, 5]
+        self._sequence_target_idxs = [2, 3, 4]
         self._num_targets = len(self._sequence_target_idxs)
         # ------------------------------------------------------------------------------------------
 
@@ -142,15 +143,18 @@ class ContextSwitch(Env):
             if self._steps_background_on >= self._background_on_interval:
                 self._model.geom(self._background_idx0).rgba[0:4] = [0.5, 0.5, 0.5, 0.85]
                 self._model.geom(self._background_idx0).size[0:3] = [0.0035, 0.0001, 0.0035]
-                self._steps_background_on = 0
+                self._steps_background_off = 0
                 self._background_on = False
 
         # Start deterministic background change
-        if self._steps % self._background_change_interval == 0 and self._background_on is False:
-            self._model.geom(self._background_idx0).rgba[0:4] = [0.8, 0.8, 0, 1]
-            self._model.geom(self._background_idx0).size[0:3] = [0.0065, 0.0001, 0.0065]
-            self._steps_background_on = 0
-            self._background_on = True
+        if self._background_on is False:
+            self._steps_background_off += 1
+            # Start the background change
+            if self._steps_background_off >= self._background_off_interval:
+                self._model.geom(self._background_idx0).rgba[0:4] = [0.8, 0, 0, 1]
+                self._model.geom(self._background_idx0).size[0:3] = [0.0065, 0.0001, 0.0065]
+                self._steps_background_on = 0
+                self._background_on = True
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
@@ -211,11 +215,19 @@ class ContextSwitch(Env):
                     mujoco.mj_forward(self._model, self._data)
 
         # if self._steps >= self._ep_len or (self._sequence_results_idxs.count(self._default_idx) <= 0):
-        if self._steps >= self._ep_len or (self._sequence_results_idxs.count(self._default_idx) <= 0):
+        if self._steps >= self._ep_len:
             terminate = True
         else:
             terminate = False
             for idx in self._sequence_target_idxs:
+
+                # print('The sequence results are: {}, the sequence targets are: {} \nthe grid-4 b is: {} \nthe action is: {}'.
+                #       format(self._sequence_results_idxs,
+                #              self._sequence_target_idxs,
+                #              self._model.geom(4).rgba[2],
+                #              action,
+                #              ))    # TODO debug delete later
+
                 # Check whether the grid has been fixated for enough time
                 if (self._model.geom(idx).rgba[2] >= 0.8) and (idx not in self._sequence_results_idxs):
                     # Update the results
@@ -223,8 +235,6 @@ class ContextSwitch(Env):
                         if self._sequence_results_idxs[i] == self._default_idx:
                             self._sequence_results_idxs[i] = idx
                             break
-                    # Update the 'bonus' reward
-                    reward = self._num_targets - self._sequence_results_idxs.count(self._default_idx)
                     # Update the scene - a sharp update
                     self._model.geom(idx).size[0:3] = [0.0025, 0.00001, 0.0025]
                     # Switch a new target grid

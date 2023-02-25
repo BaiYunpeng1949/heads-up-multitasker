@@ -20,6 +20,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from huc.utils.write_video import write_video
 from huc.envs.moving_eye.MovingEye import MovingEye
 from huc.envs.reading_eye.ReadingEye import ReadingEye
+from huc.envs.context_switch.ContextSwitch import ContextSwitch
 
 _MODES = {
     'train': 'train',
@@ -90,7 +91,8 @@ class RL:
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
         # self._env = MovingEye()
-        self._env = ReadingEye()
+        # self._env = ReadingEye()
+        self._env = ContextSwitch()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

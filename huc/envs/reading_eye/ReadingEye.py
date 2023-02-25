@@ -90,9 +90,9 @@ class ReadingEye(Env):
         self._sequence_target_idxs = targets_idxs_list
 
         # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        self._sequence_target_idxs = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
-        self._num_targets = len(self._sequence_target_idxs)
-        # raise Warning('Comment me when training!!!')
+        # self._sequence_target_idxs = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        # self._num_targets = len(self._sequence_target_idxs)
+        # print('Comment me when training!!!')
         # ------------------------------------------------------------------------------------------
 
         # Reset the scene, visualize the transparent ones
