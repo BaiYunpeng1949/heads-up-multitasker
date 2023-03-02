@@ -81,7 +81,8 @@ class MovingEye(Env):
 
         # Sample a random target
         idx = np.random.choice(len(self._target_idxs))
-        self._target_idx = self._target_idxs[idx]
+        # self._target_idx = self._target_idxs[idx]
+        self._target_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "target")
         self._target = self._targets[idx]
 
         # Set position of target (the yellow border)
@@ -99,6 +100,18 @@ class MovingEye(Env):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
 
+    def _ray_from_site(self, site_name):
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = site.xmat.reshape((3, 3))[:, 2]
+        # Exclude the body that contains the site, like in the rangefinder sensor
+        bodyexclude = self._model.site_bodyid[site.id]
+        geomid_out = np.array([-1], np.int32)
+        distance = mujoco.mj_ray(
+            self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
+            bodyexclude=bodyexclude, geomid=geomid_out)
+        return distance, geomid_out[0]
+
     def step(self, action):
 
         # Normalise action from [-1, 1] to actuator control range
@@ -112,20 +125,12 @@ class MovingEye(Env):
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
-        # Update fixate point based on rangefinder
-        x = self._data.sensor("rangefinder").data
-        x = x if x >= 0 else self._rangefinder_cutoff
-        self._model.geom("fixate-point").pos[2] = -x
-
-        # Do a forward so everything will be set
-        mujoco.mj_forward(self._model, self._data)
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
 
         # Check for collisions, estimate reward
         reward = 0
-        if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
-            geom2 = self._data.contact.geom2[0]
-            if self._target_idx == geom2:
-                reward = 1
+        if geomid == self._target_idx:
+            reward = 1
 
         # Check whether we should terminate episode (if we have gone through enough trials)
         if self._trial_idx >= self._max_trials:

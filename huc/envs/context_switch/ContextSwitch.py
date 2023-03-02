@@ -47,6 +47,7 @@ class ContextSwitch(Env):
         self._sequence_results_idxs = []
         self._default_idx = -1
         self._num_targets = 0
+        self._b_change = 0.2
         self._ep_len = 400
 
         # The background grids:
@@ -99,24 +100,12 @@ class ContextSwitch(Env):
     # TODO there are some changable variables in this protected method, change it later
     def _reset_scene(self):
 
-        # Leave some randomness by using the number smaller than the total registered grid number 16
-        self._num_targets = len(self._target_idxs)
-
         # First reset the scene.
         for idx in self._target_idxs:
-            self._model.geom(idx).rgba[0:4] = [0.5, 0.5, 0.5, 0.85]
+            self._model.geom(idx).rgba[0:4] = [0.15, 0.15, 0.15, 0.85]
             self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
 
-        # Refresh the scene with randomly generated targets.
-        # # TODO the background task: generate 1 by 1 randomly - this is for training and testing
-        # targets_idxs = np.random.choice(range(self._target_idxs[0], self._target_idxs[-1] + 1), size=self._num_targets,
-        #                                 replace=False)
-        # targets_idxs.sort()
-        # targets_idxs_list = targets_idxs.tolist()
-        # self._sequence_target_idxs = targets_idxs_list
-
-        # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        self._sequence_target_idxs = [2, 3, 4]
+        self._sequence_target_idxs = self._target_idxs.tolist()
         self._num_targets = len(self._sequence_target_idxs)
         # ------------------------------------------------------------------------------------------
 
@@ -125,6 +114,11 @@ class ContextSwitch(Env):
         self._switch_target(idx=self._sequence_target_idxs[0])
 
     def _switch_target(self, idx):
+
+        for _idx in self._target_idxs:
+            if _idx != idx:
+                self._model.geom(_idx).rgba[0:4] = [0.15, 0.15, 0.15, 0.85]
+                self._model.geom(_idx).size[0:3] = [0.0025, 0.0001, 0.0025]
 
         self._model.geom(idx).rgba[0:4] = [0.8, 0.8, 0, 1]
         self._model.geom(idx).size[0:3] = [0.0045, 0.0001, 0.0045]
@@ -159,6 +153,18 @@ class ContextSwitch(Env):
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
 
+    def _ray_from_site(self, site_name):
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = site.xmat.reshape((3, 3))[:, 2]
+        # Exclude the body that contains the site, like in the rangefinder sensor
+        bodyexclude = self._model.site_bodyid[site.id]
+        geomid_out = np.array([-1], np.int32)
+        distance = mujoco.mj_ray(
+            self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
+            bodyexclude=bodyexclude, geomid=geomid_out)
+        return distance, geomid_out[0]
+
     def render(self, mode="rgb_array"):
         rgb, _ = self._env_cam.render()
         rgb_eye, _ = self._eye_cam.render()
@@ -184,67 +190,48 @@ class ContextSwitch(Env):
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
-        # Update fixate point based on rangefinder
-        x = self._data.sensor("rangefinder").data
-        x = x if x >= 0 else self._rangefinder_cutoff
-        self._model.geom("fixate-point").pos[2] = -x
-
-        # Do a forward so everything will be set
-        mujoco.mj_forward(self._model, self._data)
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
 
         # Check for collisions, estimate reward
         reward = 0
-        if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
-            geom2 = self._data.contact.geom2[0]
-            # If the geom2 is in the target idxs array, then the rewards are applied, the environment changes a little bit
-            if self._background_on:
-                if geom2 == self._background_idx0:
-                    reward = 1
-                    # Update the environment
-                    acc = 0.8 / self._background_on_interval
-                    self._model.geom(geom2).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geom2).rgba[0:3], [0, 0, acc])]
-                    # Do a forward so everything will be set
-                    mujoco.mj_forward(self._model, self._data)
-            else:
-                if geom2 == self._target_idx:
-                    reward = 1
-                    # Update the environment
-                    acc = 0.8 / self._target_switch_interval
-                    self._model.geom(geom2).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geom2).rgba[0:3], [0, 0, acc])]
-                    # Do a forward so everything will be set
-                    mujoco.mj_forward(self._model, self._data)
 
-        # if self._steps >= self._ep_len or (self._sequence_results_idxs.count(self._default_idx) <= 0):
+        if self._background_on:
+            if geomid == self._background_idx0:
+                reward = 1
+                # Update the environment
+                acc = self._b_change / self._background_on_interval
+                self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
+                                                     zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
+                # Do a forward so everything will be set
+                mujoco.mj_forward(self._model, self._data)
+        else:
+            if geomid == self._target_idx:
+                reward = 1
+                # Update the environment
+                acc = self._b_change / self._target_switch_interval
+                self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
+                                                     zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
+                # Do a forward so everything will be set
+                mujoco.mj_forward(self._model, self._data)
+
         if self._steps >= self._ep_len:
             terminate = True
         else:
             terminate = False
-            for idx in self._sequence_target_idxs:
 
-                # print('The sequence results are: {}, the sequence targets are: {} \nthe grid-4 b is: {} \nthe action is: {}'.
-                #       format(self._sequence_results_idxs,
-                #              self._sequence_target_idxs,
-                #              self._model.geom(4).rgba[2],
-                #              action,
-                #              ))    # TODO debug delete later
+            # Check whether the grid has been fixated for enough time
+            if (self._model.geom(self._target_idx).rgba[2] >= self._b_change) and (self._target_idx not in self._sequence_results_idxs):
 
-                # Check whether the grid has been fixated for enough time
-                if (self._model.geom(idx).rgba[2] >= 0.8) and (idx not in self._sequence_results_idxs):
-                    # Update the results
-                    for i in range(self._num_targets):
-                        if self._sequence_results_idxs[i] == self._default_idx:
-                            self._sequence_results_idxs[i] = idx
-                            break
-                    # Update the scene - a sharp update
-                    self._model.geom(idx).size[0:3] = [0.0025, 0.00001, 0.0025]
-                    # Switch a new target grid
-                    for i in range(self._num_targets):
-                        if self._sequence_results_idxs[i] != self._sequence_target_idxs[i]:
-                            self._switch_target(idx=self._sequence_target_idxs[i])
-                            break
+                # Update the results
+                for i in range(self._num_targets):
+                    if self._sequence_results_idxs[i] == self._default_idx:
+                        self._sequence_results_idxs[i] = self._target_idx
+                        break
 
-        # Renew the smartglass grids
-        if self._sequence_results_idxs.count(self._default_idx) <= 0:
-            self._reset_scene()
+                # Switch a new target grid, check if one loop has finished
+                if self._target_idx >= self._sequence_target_idxs[-1]:
+                    self._reset_scene()
+                else:
+                    self._switch_target(idx=self._target_idx+1)
 
         return self._get_obs(), reward, terminate, {}

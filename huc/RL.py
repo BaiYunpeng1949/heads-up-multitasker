@@ -105,14 +105,6 @@ class RL:
         # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
-            # MuJoCo environment related variables.
-            # Initialise parallel environments.
-            # self._parallel_envs = make_vec_env(
-            #     env_id=self._env.__class__,
-            #     n_envs=self._config_rl['train']["num_workers"],
-            #     seed=None,
-            #     vec_env_cls=SubprocVecEnv,
-            # )
             # Pipeline related variables.
             self._training_logs_path = os.path.join('training', 'logs')
             self._checkpoints_folder_name = self._config_rl['train']['checkpoints_folder_name']
