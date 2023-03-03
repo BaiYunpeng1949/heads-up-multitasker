@@ -9,7 +9,7 @@
             <joint type="hinge" stiffness="0.0" damping="0.5" armature="0.0" limited="true"/>
         </default>
         <default class="smart-glass-grid">
-            <geom type="box" size="0.0025 0.0001 0.0025" rgba="0.5 0.5 0.5 0.85"/>
+            <geom type="box" size="0.0025 0.0001 0.0025" rgba="0.15 0.15 0.15 0.85"/>
         </default>
         <default class="background-grid">
             <geom type="box" size="0.0035 0.0001 0.0035" rgba="0.5 0.5 0.5 0.85"/>
@@ -33,9 +33,6 @@
             <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-1.0 1.0"/>
             <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-1.0 1.0"/>
             <site name="rangefinder-site" quat="0 0 1 0"/>
-
-            <geom name="fixate-point" pos="0 0 -0.05" type="sphere" size="0.001" rgba="0.8 0.8 0 0.5"/>
-
         </body>
 
         <body name="smart-glass-pane" pos="0 0.05 0">

@@ -90,12 +90,18 @@ class ReadingEye(Env):
         self._sequence_target_idxs = targets_idxs_list
 
         # TODO the sequential reading task: generate 1 by 1 sequentially - this is only for testing.
-        # self._sequence_target_idxs = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        # self._sequence_target_idxs = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+        # # self._sequence_target_idxs = [2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]
         # self._num_targets = len(self._sequence_target_idxs)
         # print('Comment me when training!!!')
         # ------------------------------------------------------------------------------------------
 
-        # Reset the scene, visualize the transparent ones
+        # Reset the scene, hide all grids first
+        for idx in self._target_idxs:
+            self._model.geom(idx).rgba[0:4] = [0.5, 0.5, 0.5, 0]
+            self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
+
+        # Visualize the transparent ones
         for idx in self._sequence_target_idxs:
             self._model.geom(idx).rgba[0:4] = [0.5, 0.5, 0.5, 0.85]
             self._model.geom(idx).size[0:3] = [0.0025, 0.0001, 0.0025]
@@ -115,6 +121,18 @@ class ReadingEye(Env):
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
+
+    def _ray_from_site(self, site_name):
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = site.xmat.reshape((3, 3))[:, 2]
+        # Exclude the body that contains the site, like in the rangefinder sensor
+        bodyexclude = self._model.site_bodyid[site.id]
+        geomid_out = np.array([-1], np.int32)
+        distance = mujoco.mj_ray(
+            self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
+            bodyexclude=bodyexclude, geomid=geomid_out)
+        return distance, geomid_out[0]
 
     def render(self, mode="rgb_array"):
         rgb, _ = self._env_cam.render()
@@ -138,26 +156,17 @@ class ReadingEye(Env):
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
-        # Update fixate point based on rangefinder
-        x = self._data.sensor("rangefinder").data
-        x = x if x >= 0 else self._rangefinder_cutoff
-        self._model.geom("fixate-point").pos[2] = -x
-
-        # Do a forward so everything will be set
-        mujoco.mj_forward(self._model, self._data)
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
 
         # Check for collisions, estimate reward
         reward = 0
-        if x != self._rangefinder_cutoff and len(self._data.contact.geom2) > 0:
-            geom2 = self._data.contact.geom2[0]
-            # If the geom2 is in the target idxs array, then the rewards are applied, the environment changes a little bit
-            if geom2 == self._target_idx:
-                reward = 1
-                # Update the environment
-                acc = 0.8 / self._target_switch_interval
-                self._model.geom(geom2).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geom2).rgba[0:3], [0, 0, acc])]
-                # Do a forward so everything will be set
-                mujoco.mj_forward(self._model, self._data)
+        if geomid == self._target_idx:
+            reward = 1
+            # Update the environment
+            acc = 0.8 / self._target_switch_interval
+            self._model.geom(geomid).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
+            # Do a forward so everything will be set
+            mujoco.mj_forward(self._model, self._data)
 
         if self._steps >= self._ep_len or (self._sequence_results_idxs.count(self._default_idx) <= 0):
             terminate = True
@@ -171,8 +180,6 @@ class ReadingEye(Env):
                         if self._sequence_results_idxs[i] == self._default_idx:
                             self._sequence_results_idxs[i] = idx
                             break
-                    # Update the reward
-                    reward = self._num_targets - self._sequence_results_idxs.count(self._default_idx)
                     # Update the scene - a sharp update
                     self._model.geom(idx).size[0:3] = [0.0025, 0.00001, 0.0025]
                     # Switch a new target grid

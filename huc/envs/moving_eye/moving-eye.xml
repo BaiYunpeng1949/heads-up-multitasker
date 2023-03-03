@@ -31,7 +31,7 @@
             <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-1.0 1.0"/>
             <site name="rangefinder-site" quat="0 0 1 0"/>
 
-            <geom name="fixate-point" pos="0 0 -0.05" type="sphere" size="0.001" rgba="0.8 0.8 0 0.5"/>
+            <geom name="fixate-point" pos="0 0 -0.04" type="sphere" size="0.001" rgba="0.8 0.8 0 0.5"/>
 
         </body>
 
