@@ -90,9 +90,9 @@ class RL:
         self._mode = self._config_rl['mode']
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        # self._env = MovingEye()
+        self._env = MovingEye()
         # self._env = ReadingEye()
-        self._env = ContextSwitch()
+        # self._env = ContextSwitch()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

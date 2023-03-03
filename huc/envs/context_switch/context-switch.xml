@@ -30,8 +30,8 @@
         <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
             <geom name="eye" type="sphere" size="0.025" material="blue-eye" rgba="1 1 1 1" quat="0.6625191 0.0130711 0.7488417 0.0115643"/>
             <camera name="eye" fovy="90"/>
-            <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-1.5 1.5"/>
-            <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-1.5 1.5"/>
+            <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-1.0 1.0"/>
+            <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-1.0 1.0"/>
             <site name="rangefinder-site" quat="0 0 1 0"/>
         </body>
 
@@ -47,8 +47,8 @@
         </body>
     </worldbody>
     <actuator>
-        <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-1.5 1.5"/>
-        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-1.5 1.5"/>
+        <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-1.0 1.0"/>
+        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-1.0 1.0"/>
     </actuator>
     <sensor>
         <rangefinder name="rangefinder" site="rangefinder-site"/>
