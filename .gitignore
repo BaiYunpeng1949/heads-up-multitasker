@@ -4,7 +4,7 @@ simulators/mobl_arms_index_choice_reaction
 simulators/mobl_arms_index_pointing
 simulators/mobl_arms_index_remote_driving
 simulators/mobl_arms_index_tracking
-/bai_trials/context_switch/training
 /context_switch_roadmap/zigzag_reading/training
 /huc/training/
-/bai_trials/ball_switch/training/
+/context_switch_roadmap/bai_trials/ball_switch/training/
+/context_switch_roadmap/bai_trials/context_switch/training/
