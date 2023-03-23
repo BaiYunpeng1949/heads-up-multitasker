@@ -44,6 +44,7 @@ class SwitchBack(Env):
         self._steps = 0
         self._max_trials = 1
         self._trials = 0
+        self._b_change = 0.2
 
         # Get targets (geoms that belong to "smart-glass-pane")  TODO read how to handle nodes under nodes.
         sgp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
@@ -60,6 +61,7 @@ class SwitchBack(Env):
         # Define the default text grid size and rgba from a sample grid idx=0
         self._DEFAULT_TEXT_SIZE = self._model.geom(self._reading_target_idxs[0]).size[0:4].copy()
         self._DEFAULT_TEXT_RGBA = self._model.geom(self._reading_target_idxs[0]).rgba[0:4].copy()
+        self._RUNTIME_TEXT_RGBA = None
         self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 4 / 3, self._DEFAULT_TEXT_SIZE[1],
                            self._DEFAULT_TEXT_SIZE[2] * 4 / 3]
         self._HINT_RGBA = [0.8, 0.8, 0, 1]
@@ -68,13 +70,13 @@ class SwitchBack(Env):
         self._EVENT_RGBA = [0.8, 0, 0, self._model.geom(self._background_idx0).rgba[3].copy()]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
-        self._reading_target_dwell_interval = 1 * self._action_sample_freq
+        self._reading_target_dwell_interval = 2 * self._action_sample_freq
         self._sequence_target_idxs = []
         # The reading result buffer - should has the same length
         self._sequence_results_idxs = []
         self._default_idx = -1
         self._num_targets = 0
-        self._b_change = 0.2
+        self._acc_reading_target = self._b_change / self._reading_target_dwell_interval
 
         # Define the grids on the background pane
         # TODO for the training set
@@ -83,6 +85,7 @@ class SwitchBack(Env):
         self._background_show_timestep = None
         self._background_trials = None
         self._background_max_trials = 1
+        self._acc_background = self._b_change / self._background_dwell_interval
 
         # TODO for the testing set
         self._background_on = None
@@ -166,9 +169,11 @@ class SwitchBack(Env):
 
             # Define the background events
             self._background_show = True
-            self._background_show_timestep = int(0.5 * self._reading_target_dwell_interval)
+            # self._background_show_timestep = int(0.5 * self._reading_target_dwell_interval)
             # self._background_show = np.random.choice([True, False])
-            # self._background_show_timestep = np.random.randint(0, self._target_dwell_interval)
+            # TODO randomize the background content show time
+            self._background_show_timestep = np.random.randint(0, self._reading_target_dwell_interval)
+            print(self._background_show_timestep)
 
         else:
             self._sequence_target_idxs = self._reading_target_idxs.tolist()
@@ -214,6 +219,7 @@ class SwitchBack(Env):
                         self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
                         self._background_on = True
 
+                        self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
                         self._model.geom(self._reading_target_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
                         self._model.geom(self._reading_target_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
             else:
@@ -223,7 +229,7 @@ class SwitchBack(Env):
                     self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
                     self._background_on = False
 
-                    self._model.geom(self._reading_target_idx).rgba[0:4] = self._HINT_RGBA.copy()
+                    self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA
                     self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
 
         else:       # TODO change it later.
@@ -330,10 +336,10 @@ class SwitchBack(Env):
         # Estimate reward for each step
         if self._background_on:
             target_idx = self._background_idx0
-            acc = self._b_change / self._background_dwell_interval
+            acc = self._acc_background
         else:
             target_idx = self._reading_target_idx
-            acc = self._b_change / self._reading_target_dwell_interval
+            acc = self._acc_reading_target
         if geomid == target_idx:
             reward = 1
             # Update the environment
@@ -342,18 +348,19 @@ class SwitchBack(Env):
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 
-        print(geomid, target_idx, self._steps, reward, self._background_on, self._model.geom(self._background_idx0).rgba[0:4])      # TODO debug delete later
+        # print(geomid, target_idx, self._steps, reward, self._background_on, self._model.geom(self._background_idx0).rgba[0:4])      # TODO debug delete later
 
         # Check termination conditions
         if self._steps >= self._ep_len:
             terminate = True
+            print('dududu')
         else:
             terminate = False
 
             if (self._mode == 'train') or (self._mode == 'continual_train') or (self._mode == 'test'):
                 if self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change:
                     self._trials += 1
-                    if self._trials >= self._max_trials:
+                    if self._trials >= self._max_trials and self._background_trials >= self._background_max_trials:
                         terminate = True
             else:
                 # Check whether the grid has been fixated for enough time
