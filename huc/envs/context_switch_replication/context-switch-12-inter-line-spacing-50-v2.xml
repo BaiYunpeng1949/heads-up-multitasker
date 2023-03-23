@@ -12,7 +12,7 @@
             <geom type="box" size="0.0030 0.0001 0.0030" rgba="0 0 0 1"/>
         </default>
         <default class="background-grid">
-            <geom type="box" size="0.008 0.0001 0.008" rgba="0.5 0.5 0.5 0"/>
+            <geom type="box" size="0.008 0.0001 0.008" rgba="0.5 0.5 0.5 0.8"/>
         </default>
     </default>
     <asset>

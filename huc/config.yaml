@@ -4,8 +4,8 @@ rl:
   mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 10000000
-    checkpoints_folder_name: 'checkpoints_contextswitchreplication_0322_10M_12grids_sampletrain_sparse'
+    total_timesteps: 15000000
+    checkpoints_folder_name: 'checkpoints_switchback_0323_5M_12grids_sampletrain_sparse_norelocationissue'
     num_workers: 16   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 5000
     algorithm: 'PPO'
@@ -21,9 +21,9 @@ rl:
 
   # Note, before starting the pipeline, make sure the testing and training environment settings are consistent.
   test:
-    num_episodes: 1
-    loaded_model_name: 'rl_model_10000000_steps'
-    continual_logs_name: 'PPO_42'
+    num_episodes: 5
+    loaded_model_name: 'rl_model_continual_15000000_steps'
+    continual_logs_name: 'PPO_51'
 
 mj_env:
   filename: 'zigzag-reading-v0131.xml'

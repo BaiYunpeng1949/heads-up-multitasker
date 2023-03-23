@@ -12,7 +12,7 @@
             <geom type="box" size="0.0030 0.0001 0.0030" rgba="0 0 0 1"/>
         </default>
         <default class="background-grid">
-            <geom type="box" size="0.005 0.0001 0.025" rgba="0.5 0.5 0.5 0"/>
+            <geom type="box" size="0.008 0.0001 0.008" rgba="0.5 0.5 0.5 0"/>
         </default>
     </default>
     <asset>
@@ -64,7 +64,7 @@
 <!--            </body>-->
         </body>
 
-        <body name="background-pane" pos="0 0.08 0">
+        <body name="background-pane" pos="0 0.12 0">
             <geom name="grid-bgp" pos="-0 0 0" class="background-grid"/>
         </body>
     </worldbody>
