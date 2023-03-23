@@ -26,7 +26,8 @@ class ContextSwitchReplication(Env):
         self._mode = config['rl']['mode']
 
         # Open the mujoco model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "context-switch-16-inter-line-spacing.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory,
+                                                                "context-switch-12-inter-line-spacing-50-v1.xml"))
         self._data = mujoco.MjData(self._model)
 
         # Define how often policy is queried
@@ -34,7 +35,7 @@ class ContextSwitchReplication(Env):
         self._frame_skip = int((1 / self._action_sample_freq) / self._model.opt.timestep)  # 0.05/0.002=25
 
         # Initialise thresholds and counters
-        self._target_switch_interval = 1 * self._action_sample_freq
+        self._target_switch_interval = 2 * self._action_sample_freq
         self._steps = 0
         self._max_trials = 1
         self._trials = 0
@@ -69,7 +70,7 @@ class ContextSwitchReplication(Env):
         self._b_change = 0.2
 
         if (self._mode == 'train') or (self._mode == 'continual_train'):
-            self._ep_len = 100        # TODO train mode
+            self._ep_len = 80        # TODO train mode
         else:
             self._ep_len = 800          # TODO test mode
 
@@ -124,30 +125,30 @@ class ContextSwitchReplication(Env):
 
         return self._get_obs()
 
-    # TODO there are some mutable variables in this protected method, change it later
     def _reset_scene(self):
 
-        # Initialize eye ball rotation angles
-        eye_x_motor_init_range = [-0.5, 0.5]
-        eye_y_motor_init_range = [-0.5, 0.5]
-        action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
-                  np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
-        # TODO try to use data.xmat directly set orientations. The model.quat should not be changed.
-        for i in range(10):
-            # Set motor control
-            self._data.ctrl[:] = action
-            # Advance the simulation
-            mujoco.mj_step(self._model, self._data, self._frame_skip)
+        # Initialize eye ball rotation angles      # TODO change according to the settings
+        if (self._mode == 'train') or (self._mode == 'continual_train'):
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.25, 0.25]
+            action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
+                      np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
+            # TODO try to use data.xmat directly set orientations. The model.quat should not be changed.
+            for i in range(10):
+                # Set motor control
+                self._data.ctrl[:] = action
+                # Advance the simulation
+                mujoco.mj_step(self._model, self._data, self._frame_skip)
 
-        # Reset the scene. TODO specify this is the training mode, just train 1 tracking
+        # Reset the scene.
         for idx in self._target_idxs:
             self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
             self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
         if (self._mode == 'train') or (self._mode == 'continual_train'):
-            self._sequence_target_idxs = np.random.choice(self._target_idxs.tolist(), 3, False)        # TODO train mode
+            self._sequence_target_idxs = np.random.choice(self._target_idxs.tolist(), 3, False)
         else:
-            self._sequence_target_idxs = self._target_idxs.tolist()          # TODO test mode
+            self._sequence_target_idxs = self._target_idxs.tolist()
         self._num_targets = len(self._sequence_target_idxs)
         # ------------------------------------------------------------------------------------------
 
@@ -197,7 +198,6 @@ class ContextSwitchReplication(Env):
             # Start the background change
             if self._steps_background_off >= self._background_off_interval:
                 self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                # self._model.geom(self._background_idx0).size[0:3] = [0.0065, 0.0001, 0.0065]
                 self._steps_background_on = 0
                 self._background_on = True
 
@@ -249,13 +249,6 @@ class ContextSwitchReplication(Env):
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
-        # #  TODO debug delete later
-        # action = [0.265, 0.25]
-        # eye_quat_1 = self._model.body_quat[1]
-        # eye_body = self._data.body("eye")
-        # eye_xmat = eye_body.xmat.reshape((3, 3))[:, 2]
-        # eye_quat_2 = eye_body.xquat
-
         # Set motor control
         self._data.ctrl[:] = action
 
@@ -269,8 +262,6 @@ class ContextSwitchReplication(Env):
         dist, geomid = self._ray_from_site(site_name="rangefinder-site")
 
         # Estimate reward according to the distance change
-        # reward = 0        # TODO previous sparse reward
-        # if self._background_on is False:
         dist_to_target = self._dist_from_target(
             dist_plane=(-self._data.body("smart-glass-pane").xpos[1]),
             ray_site_name="rangefinder-site",
@@ -280,25 +271,17 @@ class ContextSwitchReplication(Env):
         # as long as the focus moves towards the target, positive reward will be applied
         a = 50
         b = 100
-        del_dist = dist_to_target - self._pre_dist_to_target
-        if del_dist >= 0:
-            reward = (math.exp(-a * del_dist) - 1) / b
+        del_dist_pct = (dist_to_target - self._pre_dist_to_target) / self._pre_dist_to_target
+        if del_dist_pct >= 0:
+            reward = (math.exp(-a * del_dist_pct) - 1) / b
         else:
-            reward = - (math.exp(-a * np.abs(del_dist)) - 1) / b
+            reward = - (math.exp(-a * np.abs(del_dist_pct)) - 1) / b
 
         # Update the previous distance buffer
         self._pre_dist_to_target = dist_to_target
 
         # TODO sparse rewards
         reward = 0
-
-        # else:
-        #     dist_to_bgp = self._dist_from_target(
-        #         dist_plane=(-self._data.body("background-pane").xpos[1]),
-        #         ray_site_name="rangefinder-site",
-        #         target_id=self._background_idx0
-        #     )
-        #     reward = (math.exp(-a * dist_to_bgp) - 1) / b
 
         # Estimate reward according to the collisions
         if geomid == self._target_idx:
@@ -309,23 +292,6 @@ class ContextSwitchReplication(Env):
                                                   zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
-
-        # if self._background_on:
-        #     if geomid == self._background_idx0:
-        #         reward = 1
-        #         # Update the environment
-        #         acc = self._b_change / self._background_on_interval
-        #         self._model.geom(geomid).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
-        #         # Do a forward so everything will be set
-        #         mujoco.mj_forward(self._model, self._data)
-        # else:
-        #     if geomid == self._target_idx:
-        #         reward = 1
-        #         # Update the environment
-        #         acc = self._b_change / self._target_switch_interval
-        #         self._model.geom(geomid).rgba[0:3] = [x + y for x, y in zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
-        #         # Do a forward so everything will be set
-        #         mujoco.mj_forward(self._model, self._data)
 
         if self._steps >= self._ep_len:
             terminate = True
@@ -341,7 +307,7 @@ class ContextSwitchReplication(Env):
                         self._sequence_results_idxs[i] = self._target_idx
                         break
 
-                # Under the training mode, just try once  # TODO train mode
+                # Under the training mode, just try once
                 if (self._mode == 'train') or (self._mode == 'continual_train'):
                     if self._trials >= self._max_trials:
                         terminate = True
