@@ -21,7 +21,7 @@ rl:
 
   # Note, before starting the pipeline, make sure the testing and training environment settings are consistent.
   test:
-    num_episodes: 10
+    num_episodes: 1
     loaded_model_name: 'rl_model_13350000_steps'
     continual_logs_name: 'PPO_51'
 
