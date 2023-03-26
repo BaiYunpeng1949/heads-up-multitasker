@@ -7,9 +7,10 @@ import os
 from gym import Env
 from gym.spaces import Box
 
-from huc.utils.rendering import Camera, Context
-
 import yaml
+from scipy.ndimage import gaussian_filter
+
+from huc.utils.rendering import Camera, Context
 
 
 class SwitchBack(Env):
@@ -38,7 +39,7 @@ class SwitchBack(Env):
         if (self._mode == 'train') or (self._mode == 'continual_train'):
             self._ep_len = 80
         else:
-            self._ep_len = 1000
+            self._ep_len = 2000
 
         # Initialise thresholds and counters
         self._steps = 0
@@ -84,19 +85,21 @@ class SwitchBack(Env):
         self._background_show_flag = None
         self._background_show_timestep = None
         self._background_trials = None
-        self._background_max_trials = 1
+        if self._mode == 'train' or self._mode == 'continual_train':
+            self._background_max_trials = 1
+        else:
+            self._background_max_trials = 4
         self._acc_background = self._b_change / self._background_dwell_interval
         self._background_show_interval = 2.3 * self._reading_target_dwell_interval
         self._background_last_on_steps = None
 
         # Define the relocation distraction relevant variables
-        self._relocating_dwell_interval = 10
+        self._relocating_dwell_interval = 0.5 * self._reading_target_dwell_interval
         self._relocating_steps = None
-        # self._relocating_neighbor_dist = 0.03   # TODO maybe use it later, right now use the hand-craft one
         self._relocating_neighbors = None
-
-        # Initialize the previous distance buffer for reward shaping
-        self._pre_dist_to_target = 0
+        self._relocating_incorrect_steps = None
+        # Neighbor distance threshold
+        self._relocating_dist_neighbor = 0.01
 
         # Define observation space
         self._width = 40
@@ -123,7 +126,9 @@ class SwitchBack(Env):
         rgb, _ = self._eye_cam.render()
         # Preprocess
         rgb = np.transpose(rgb, [2, 0, 1])
-        return self.normalise(rgb, 0, 255, -1, 1)
+        rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
+        rgb_foveated = self._foveate(img=rgb_normalize)
+        return rgb_foveated
 
     def reset(self):
 
@@ -193,6 +198,9 @@ class SwitchBack(Env):
             self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
             self._switch_target(idx=self._sequence_target_idxs[0])
 
+            # Relocating
+            self._relocating_incorrect_steps = 0
+
     def _switch_target(self, idx):
 
         for _idx in self._reading_target_idxs:
@@ -229,7 +237,7 @@ class SwitchBack(Env):
         # Non-trainings
         else:       # TODO change it later.
             if self._background_on == False:
-                if (self._steps - self._background_last_on_steps) >= self._background_show_interval:
+                if (self._steps - self._background_last_on_steps) >= self._background_show_interval and self._background_trials < self._background_max_trials:
                     # Background
                     self._background_on = True
                     self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
@@ -240,12 +248,15 @@ class SwitchBack(Env):
             else:
                 if self._model.geom(self._background_idx0).rgba[2] >= self._b_change:
                     # Background
+                    self._background_trials += 1
                     self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
                     self._background_on = False
                     # Update the step buffer
                     self._background_last_on_steps = self._steps
                     # Reading grids distractions
-                    self._find_neighbors()
+                    self._find_neighbors()    # TODO baseline vs issues on relocating
+                    # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                    # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
@@ -254,17 +265,19 @@ class SwitchBack(Env):
 
         # TODO maybe later the memory mechanism can be added here.
 
-        idx = self._reading_target_idx
-        if (idx % 4 == 2) or (idx % 4 == 3):    # TODO generalize this using the self._relocating_neighbor_dist later
-            neighbors = [idx-1, idx, idx+1]
-        elif idx % 4 == 1:
-            neighbors = [idx, idx+1]
-        else:
-            neighbors = [idx-1, idx]
+        # TODO generalize this using the self._relocating_neighbor_dist later
+        target_grid_idx = self._reading_target_idx
+        target_xpos = self._data.geom(target_grid_idx).xpos
 
-        for _idx in neighbors:
-            self._model.geom(_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
-            self._model.geom(_idx).size[0:3] = self._HINT_SIZE.copy()
+        neighbors = []
+
+        for grid_idx in self._sequence_target_idxs:
+            grid_xpos = self._data.geom(grid_idx).xpos
+            dist = np.linalg.norm(grid_xpos - target_xpos)
+            if dist <= self._relocating_dist_neighbor:
+                neighbors.append(grid_idx)
+                self._model.geom(grid_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
 
         self._relocating_neighbors = neighbors.copy()
 
@@ -297,15 +310,48 @@ class SwitchBack(Env):
         dist = math.sqrt((itsct_pnt[0]-target_pnt[0])**2 + (itsct_pnt[2]-target_pnt[2])**2)
         return dist
 
-    def render(self, mode="rgb_array"):
-        rgb, _ = self._env_cam.render()
-        rgb_eye, _ = self._eye_cam.render()
-        return rgb, rgb_eye
-
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
+
+    def _foveate(self, img):
+
+        # Define the foveal region
+        fov = 90      # TODO get the fov value from mujoco model
+        foveal_size = 20
+        foveal_pixels = int(foveal_size / 2 * img.shape[0] / fov)
+        foveal_center = (img.shape[0] // 2, img.shape[1] // 2)
+
+        # Define the blur kernel
+        kernel_size = foveal_pixels * 2 + 1
+        kernel = np.zeros((kernel_size, kernel_size))
+
+        # Create a linear ramp for the blur kernel
+        ramp = np.linspace(0, 1, kernel_size)
+        kernel[:, foveal_pixels] = ramp
+        kernel[foveal_pixels, :] = ramp
+
+        # Create a circular mask for the foveal region
+        y, x = np.ogrid[-foveal_center[0]:img.shape[0] - foveal_center[0], -foveal_center[1]:img.shape[1] - foveal_center[1]]
+        mask = x ** 2 + y ** 2 <= (foveal_pixels ** 2)
+
+        # Apply a Gaussian blur to each color channel separately
+        blurred = np.zeros_like(img)
+        for c in range(3):
+            blurred_channel = gaussian_filter(img[:, :, c], sigma=5)
+            blurred[:, :, c][~mask] = blurred_channel[~mask]
+
+        # Combine the original image and the blurred image
+        foveated = img.copy()
+        foveated[~mask] = blurred[~mask]
+
+        return foveated
+
+    def render(self, mode="rgb_array"):
+        rgb, _ = self._env_cam.render()
+        rgb_eye, _ = self._eye_cam.render()
+        return rgb, rgb_eye
 
     def step(self, action):
         # Normalise action from [-1, 1] to actuator control range
@@ -390,6 +436,8 @@ class SwitchBack(Env):
                 else:
                     if geomid in self._relocating_neighbors:
                         self._relocating_steps += 1
+                        if geomid != self._reading_target_idx:
+                            self._relocating_incorrect_steps += 1
 
                 # Check whether the grid has been fixated for enough time
                 if (self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change) and (self._reading_target_idx not in self._sequence_results_idxs):
@@ -404,5 +452,13 @@ class SwitchBack(Env):
                         terminate = True
                     else:
                         self._switch_target(idx=self._reading_target_idx + 1)
+
+                if terminate:
+                    print('The total timesteps is: {}. \n'
+                          'The incorrect relocating timesteps / The switch back duration is: {}. \n'
+                          'The reading goodput is: {} (grids per timestep). \n'
+                          'The switch back error rate is: {}%.'.
+                          format(self._steps, self._relocating_incorrect_steps, round(len(self._sequence_target_idxs) / self._steps, 5),
+                                 round(100*self._relocating_incorrect_steps/(self._background_max_trials*self._relocating_dwell_interval), 2)))
 
         return self._get_obs(), reward, terminate, {}
