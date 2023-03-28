@@ -21,6 +21,8 @@ from huc.utils.write_video import write_video
 from huc.envs.moving_eye.MovingEye import MovingEye
 from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
+from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
+from huc.envs.context_switch_replication.SwitchBack import SwitchBack
 
 _MODES = {
     'train': 'train',
@@ -90,9 +92,11 @@ class RL:
         self._mode = self._config_rl['mode']
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = MovingEye()
+        # self._env = MovingEye()
         # self._env = ReadingEye()
         # self._env = ContextSwitch()
+        # self._env = ContextSwitchReplication()
+        self._env = SwitchBack()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
