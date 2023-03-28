@@ -27,8 +27,8 @@ class SwitchBack(Env):
         self._mode = config['rl']['mode']
 
         # Open the mujoco model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory,
-                                                                "context-switch-12-inter-line-spacing-50-v2.xml"))
+        self._xml_path = os.path.join(directory, "context-switch-12-inter-line-spacing-50-v2.xml")
+        self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
 
         # Define how often policy is queried
@@ -90,7 +90,7 @@ class SwitchBack(Env):
         else:
             self._background_max_trials = 4
         self._acc_background = self._b_change / self._background_dwell_interval
-        self._background_show_interval = 2.3 * self._reading_target_dwell_interval
+        self._background_show_interval = 3 * self._reading_target_dwell_interval
         self._background_last_on_steps = None
 
         # Define the relocation distraction relevant variables
@@ -99,7 +99,7 @@ class SwitchBack(Env):
         self._relocating_neighbors = None
         self._relocating_incorrect_steps = None
         # Neighbor distance threshold
-        self._relocating_dist_neighbor = 0.01
+        self._relocating_dist_neighbor = 0.01 + 0.0001       # Actual inter-word distance + offset
 
         # Define observation space
         self._width = 40
@@ -119,6 +119,7 @@ class SwitchBack(Env):
                                dt=1 / self._action_sample_freq)
         self._env_cam = Camera(self._context, self._model, self._data, camera_id="env", maxgeom=100,
                                dt=1 / self._action_sample_freq)
+        self._cam_eye_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
     def _get_obs(self):
 
@@ -127,8 +128,8 @@ class SwitchBack(Env):
         # Preprocess
         rgb = np.transpose(rgb, [2, 0, 1])
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-        rgb_foveated = self._foveate(img=rgb_normalize)
-        return rgb_foveated
+        # rgb_foveated = self._foveate(img=rgb_normalize)
+        return rgb_normalize
 
     def reset(self):
 
@@ -161,16 +162,25 @@ class SwitchBack(Env):
         self._relocating_steps = 0
         self._relocating_neighbors = []
 
-        # TODO change according to the settings
         # Specify according to the training or non-trainings:
         #  training simple but generalizable abilities, non-training actual tasks
         if (self._mode == 'train') or (self._mode == 'continual_train'):
             # Initialize eye ball rotation angles
-            eye_x_motor_init_range = [-0.5, 0.5]
-            eye_y_motor_init_range = [-0.25, 0.25]
+            if 'mid-right' in self._xml_path:
+                eye_x_motor_init_range = [-0.5, 0.5]
+                eye_y_motor_init_range = [-0.5, 0.25]
+            elif 'bottom-center' in self._xml_path:
+                eye_x_motor_init_range = [-0.5, 0.5]
+                eye_y_motor_init_range = [-0.25, 0.25]
+            elif 'inter-line-spacing-50' in self._xml_path:
+                eye_x_motor_init_range = [-0.5, 0.5]
+                eye_y_motor_init_range = [-0.25, 0.25]
+            else:
+                eye_x_motor_init_range = [-0.5, 0.5]
+                eye_y_motor_init_range = [-0.5, 0.5]
             action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
                       np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
-            # TODO try to use data.xmat directly set orientations. The model.quat should not be changed.
+            # TODO Aleksi suggested using qpos, try it later
             for i in range(10):
                 # Set motor control
                 self._data.ctrl[:] = action
@@ -235,7 +245,7 @@ class SwitchBack(Env):
                     self._background_on = False
 
         # Non-trainings
-        else:       # TODO change it later.
+        else:
             if self._background_on == False:
                 if (self._steps - self._background_last_on_steps) >= self._background_show_interval and self._background_trials < self._background_max_trials:
                     # Background
@@ -243,8 +253,9 @@ class SwitchBack(Env):
                     self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
                     # Reading grids
                     self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                    self._model.geom(self._reading_target_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                    self._model.geom(self._reading_target_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+                    for idx in self._sequence_target_idxs:
+                        self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                        self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
             else:
                 if self._model.geom(self._background_idx0).rgba[2] >= self._b_change:
                     # Background
@@ -264,8 +275,6 @@ class SwitchBack(Env):
     def _find_neighbors(self):
 
         # TODO maybe later the memory mechanism can be added here.
-
-        # TODO generalize this using the self._relocating_neighbor_dist later
         target_grid_idx = self._reading_target_idx
         target_xpos = self._data.geom(target_grid_idx).xpos
 
@@ -317,9 +326,12 @@ class SwitchBack(Env):
 
     def _foveate(self, img):
 
+        # Define the blurring level
+        sigma = 2
+
         # Define the foveal region
-        fov = 90      # TODO get the fov value from mujoco model
-        foveal_size = 20
+        fov = self._cam_eye_fovy
+        foveal_size = 30
         foveal_pixels = int(foveal_size / 2 * img.shape[0] / fov)
         foveal_center = (img.shape[0] // 2, img.shape[1] // 2)
 
@@ -339,7 +351,7 @@ class SwitchBack(Env):
         # Apply a Gaussian blur to each color channel separately
         blurred = np.zeros_like(img)
         for c in range(3):
-            blurred_channel = gaussian_filter(img[:, :, c], sigma=5)
+            blurred_channel = gaussian_filter(img[:, :, c], sigma=sigma)
             blurred[:, :, c][~mask] = blurred_channel[~mask]
 
         # Combine the original image and the blurred image
