@@ -9,6 +9,7 @@ from gym.spaces import Box
 
 import yaml
 from scipy.ndimage import gaussian_filter
+import copy
 
 from huc.utils.rendering import Camera, Context
 
@@ -72,9 +73,10 @@ class SwitchBack(Env):
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
         self._reading_target_dwell_interval = 2 * self._action_sample_freq
-        self._sequence_target_idxs = []
+        self._sequence_target_idxs = None
         # The reading result buffer - should has the same length
-        self._sequence_results_idxs = []
+        self._sequence_results_idxs = None
+        self._pre_sequence_results_idxs = None
         self._default_idx = -1
         self._num_targets = 0
         self._acc_reading_target = self._b_change / self._reading_target_dwell_interval
@@ -100,6 +102,12 @@ class SwitchBack(Env):
         self._relocating_incorrect_steps = None
         # Neighbor distance threshold
         self._relocating_dist_neighbor = 0.01 + 0.0001       # Actual inter-word distance + offset
+        # Relocating - pick up point
+        self._relocating_pickup_dwell_steps = int(0.25 * self._reading_target_dwell_interval)
+        self._relocating_pickup_records = None
+        self._relocating_incorrect_num = None
+        self._off_background_step = None
+        self._switch_back_durations = None
 
         # Define observation space
         self._width = 40
@@ -161,6 +169,10 @@ class SwitchBack(Env):
         # Relocating / pick-up issues
         self._relocating_steps = 0
         self._relocating_neighbors = []
+        self._relocating_pickup_records = []
+        self._relocating_incorrect_num = 0
+        self._off_background_step = 0
+        self._switch_back_durations = []
 
         # Specify according to the training or non-trainings:
         #  training simple but generalizable abilities, non-training actual tasks
@@ -175,6 +187,9 @@ class SwitchBack(Env):
             elif 'inter-line-spacing-50' in self._xml_path:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.25, 0.25]
+            elif 'inter-line-spacing-100' in self._xml_path:
+                eye_x_motor_init_range = [-0.4, 0.4]
+                eye_y_motor_init_range = [-0.16, 0.16]
             else:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.5, 0.5]
@@ -206,6 +221,7 @@ class SwitchBack(Env):
             # Reading grids
             self._sequence_target_idxs = self._reading_target_idxs.tolist()
             self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
+            self._pre_sequence_results_idxs = self._sequence_results_idxs.copy()
             self._switch_target(idx=self._sequence_target_idxs[0])
 
             # Relocating
@@ -268,6 +284,17 @@ class SwitchBack(Env):
                     self._find_neighbors()    # TODO baseline vs issues on relocating
                     # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
                     # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                    # Switch back off background timestamp
+                    if self._off_background_step == 0:
+                        # Only update when last pick up happened and this time stamp was reset to 0
+                        self._off_background_step = self._steps
+                    else:
+                        # The previous trial did not read anything
+                        self._off_background_step += self._background_show_interval
+                        self._relocating_incorrect_num += 1
+                        print(
+                            'One relocating trial was unable to pick up any grid at the target grid {}.'.format(self._reading_target_idx)
+                        )
 
         # Do a forward so everything will be set
         mujoco.mj_forward(self._model, self._data)
@@ -285,7 +312,7 @@ class SwitchBack(Env):
             dist = np.linalg.norm(grid_xpos - target_xpos)
             if dist <= self._relocating_dist_neighbor:
                 neighbors.append(grid_idx)
-                self._model.geom(grid_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                self._model.geom(grid_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()   # Continue to avoid infinite loop
                 self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
 
         self._relocating_neighbors = neighbors.copy()
@@ -418,8 +445,6 @@ class SwitchBack(Env):
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 
-        # print(geomid, target_idx, self._steps, reward, self._background_on, self._model.geom(self._background_idx0).rgba[0:4])      # TODO debug delete later
-
         # Check termination conditions
         if self._steps >= self._ep_len:
             terminate = True
@@ -438,23 +463,69 @@ class SwitchBack(Env):
                             terminate = True
             # Non-trainings
             else:
-                # Check the relocating / pick-up issues
-                if self._relocating_steps >= self._relocating_dwell_interval:
+                # Check the relocating / pick-up issues - version 0328
+                if geomid in self._relocating_neighbors:
+                    self._relocating_pickup_records.append(geomid)
                     for idx in self._relocating_neighbors:
-                        if idx != self._reading_target_idx:
-                            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-                            self._relocating_steps = 0
-                else:
-                    if geomid in self._relocating_neighbors:
-                        self._relocating_steps += 1
-                        if geomid != self._reading_target_idx:
-                            self._relocating_incorrect_steps += 1
+                        # The first grid with cumulative fixations has not been found - TODO do it
+                        if self._relocating_pickup_records.count(idx) > self._relocating_pickup_dwell_steps:
+                            # Update the switch back duration
+                            current_step = self._steps
+                            switch_back_duration = current_step - self._off_background_step
+                            self._switch_back_durations.append(switch_back_duration)
+
+                            # Update the counters
+                            if idx == self._reading_target_idx:
+                                pass
+                            else:
+                                self._relocating_incorrect_num += 1
+
+                            # # Draw all distractions back to normal - version continue reading with target
+                            # for _idx in self._relocating_neighbors:
+                            #     if _idx != self._reading_target_idx:
+                            #         self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                            #         self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+
+                            # Draw all distractions back to normal - version continue with the current grid
+                            for _idx in self._relocating_neighbors:
+                                if _idx != idx:
+                                    self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                                    self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+                            # Refresh the current target grid and the sequence results idxs
+                            self._reading_target_idx = idx
+                            self._sequence_results_idxs = [grid_id for grid_id in self._sequence_target_idxs if grid_id < idx]
+
+                            # Clear the buffer
+                            self._relocating_pickup_records = []
+                            self._relocating_neighbors = []
+                            self._off_background_step = 0
+                            # Set to 0 to avoid one empty round of relocating: during one interval of the background task,
+                            # it never picked up anything. This is related to the hyper-parameter of self._relocating_pickup_dwell_steps
+                            break
 
                 # Check whether the grid has been fixated for enough time
                 if (self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change) and (self._reading_target_idx not in self._sequence_results_idxs):
-
                     # Update the results for complex testing mode
+                    self._pre_sequence_results_idxs = self._sequence_results_idxs.copy()
+
+                    # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
+                    if not self._relocating_neighbors:
+                        pass
+                    else:       # When the relocating_neighbor is not empty
+                        # Add new switch back durations
+                        current_step = self._steps
+                        switch_back_duration = current_step - self._off_background_step
+                        self._switch_back_durations.append(switch_back_duration)
+
+                        # Clear the buffer
+                        self._relocating_pickup_records = []
+                        self._relocating_neighbors = []
+                        self._off_background_step = 0
+
+                        print(
+                            'One relocating trial was finished earlier at target grid {}.'.format(self._reading_target_idx)
+                        )
+
                     for i in range(self._num_targets):
                         if self._sequence_results_idxs[i] == self._default_idx:
                             self._sequence_results_idxs[i] = self._reading_target_idx
@@ -467,10 +538,10 @@ class SwitchBack(Env):
 
                 if terminate:
                     print('The total timesteps is: {}. \n'
-                          'The incorrect relocating timesteps / The switch back duration is: {}. \n'
+                          'The switch back duration is: {}. \n'
                           'The reading goodput is: {} (grids per timestep). \n'
                           'The switch back error rate is: {}%.'.
-                          format(self._steps, self._relocating_incorrect_steps, round(len(self._sequence_target_idxs) / self._steps, 5),
-                                 round(100*self._relocating_incorrect_steps/(self._background_max_trials*self._relocating_dwell_interval), 2)))
+                          format(self._steps, np.sum(self._switch_back_durations), round(len(self._sequence_target_idxs) / self._steps, 5),
+                                 round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
 
         return self._get_obs(), reward, terminate, {}
