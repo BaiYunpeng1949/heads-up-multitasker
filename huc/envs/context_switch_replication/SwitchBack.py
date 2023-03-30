@@ -9,7 +9,6 @@ from gym.spaces import Box
 
 import yaml
 from scipy.ndimage import gaussian_filter
-import copy
 
 from huc.utils.rendering import Camera, Context
 
@@ -76,7 +75,6 @@ class SwitchBack(Env):
         self._sequence_target_idxs = None
         # The reading result buffer - should has the same length
         self._sequence_results_idxs = None
-        self._pre_sequence_results_idxs = None
         self._default_idx = -1
         self._num_targets = 0
         self._acc_reading_target = self._b_change / self._reading_target_dwell_interval
@@ -136,8 +134,8 @@ class SwitchBack(Env):
         # Preprocess
         rgb = np.transpose(rgb, [2, 0, 1])
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-        # rgb_foveated = self._foveate(img=rgb_normalize)
-        return rgb_normalize
+        rgb_foveated = self._foveate(img=rgb_normalize)
+        return rgb_foveated
 
     def reset(self):
 
@@ -221,7 +219,6 @@ class SwitchBack(Env):
             # Reading grids
             self._sequence_target_idxs = self._reading_target_idxs.tolist()
             self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
-            self._pre_sequence_results_idxs = self._sequence_results_idxs.copy()
             self._switch_target(idx=self._sequence_target_idxs[0])
 
             # Relocating
@@ -354,7 +351,7 @@ class SwitchBack(Env):
     def _foveate(self, img):
 
         # Define the blurring level
-        sigma = 2
+        sigma = 0.2
 
         # Define the foveal region
         fov = self._cam_eye_fovy
@@ -505,8 +502,6 @@ class SwitchBack(Env):
 
                 # Check whether the grid has been fixated for enough time
                 if (self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change) and (self._reading_target_idx not in self._sequence_results_idxs):
-                    # Update the results for complex testing mode
-                    self._pre_sequence_results_idxs = self._sequence_results_idxs.copy()
 
                     # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
                     if not self._relocating_neighbors:
