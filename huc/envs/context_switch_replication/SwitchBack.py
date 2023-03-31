@@ -27,7 +27,7 @@ class SwitchBack(Env):
         self._mode = config['rl']['mode']
 
         # Open the mujoco model
-        self._xml_path = os.path.join(directory, "context-switch-12-inter-line-spacing-50-v2.xml")
+        self._xml_path = os.path.join(directory, "context-switch-12-mid-right-v1.xml")
         self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
 
@@ -99,7 +99,7 @@ class SwitchBack(Env):
         self._relocating_neighbors = None
         self._relocating_incorrect_steps = None
         # Neighbor distance threshold
-        self._relocating_dist_neighbor = 0.01 + 0.0001       # Actual inter-word distance + offset
+        self._relocating_dist_neighbor = 0.010 + 0.0001       # Actual inter-word distance + offset
         # Relocating - pick up point
         self._relocating_pickup_dwell_steps = int(0.25 * self._reading_target_dwell_interval)
         self._relocating_pickup_records = None
@@ -134,8 +134,8 @@ class SwitchBack(Env):
         # Preprocess
         rgb = np.transpose(rgb, [2, 0, 1])
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-        rgb_foveated = self._foveate(img=rgb_normalize)
-        return rgb_foveated
+        # rgb_foveated = self._foveate(img=rgb_normalize)
+        return rgb_normalize
 
     def reset(self):
 
@@ -176,24 +176,24 @@ class SwitchBack(Env):
         #  training simple but generalizable abilities, non-training actual tasks
         if (self._mode == 'train') or (self._mode == 'continual_train'):
             # Initialize eye ball rotation angles
-            if 'mid-right' in self._xml_path:
+            if 'context-switch-12-mid-right' in self._xml_path:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.5, 0.25]
-            elif 'bottom-center' in self._xml_path:
+            elif 'context-switch-12-bottom-center' in self._xml_path:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.25, 0.25]
-            elif 'inter-line-spacing-50' in self._xml_path:
+            elif 'context-switch-12-inter-line-spacing-50' in self._xml_path:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.25, 0.25]
-            elif 'inter-line-spacing-100' in self._xml_path:
-                eye_x_motor_init_range = [-0.4, 0.4]
-                eye_y_motor_init_range = [-0.16, 0.16]
+            elif 'context-switch-12-inter-line-spacing-100' in self._xml_path:
+                eye_x_motor_init_range = [-0.5, 0.5]
+                eye_y_motor_init_range = [-0.25, 0.25]
             else:
                 eye_x_motor_init_range = [-0.5, 0.5]
                 eye_y_motor_init_range = [-0.5, 0.5]
             action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
                       np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
-            # TODO Aleksi suggested using qpos, try it later
+
             for i in range(10):
                 # Set motor control
                 self._data.ctrl[:] = action
@@ -279,8 +279,12 @@ class SwitchBack(Env):
                     self._background_last_on_steps = self._steps
                     # Reading grids distractions
                     self._find_neighbors()    # TODO baseline vs issues on relocating
+
+                    # Reading with out distractions
                     # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
                     # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                    # self._relocating_neighbors = [self._reading_target_idx]
+
                     # Switch back off background timestamp
                     if self._off_background_step == 0:
                         # Only update when last pick up happened and this time stamp was reset to 0
@@ -488,9 +492,10 @@ class SwitchBack(Env):
                                 if _idx != idx:
                                     self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
                                     self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-                            # Refresh the current target grid and the sequence results idxs
-                            self._reading_target_idx = idx
-                            self._sequence_results_idxs = [grid_id for grid_id in self._sequence_target_idxs if grid_id < idx]
+                            # Refresh the current target grid and the sequence results idxs if idx is not the previous target
+                            if idx != self._reading_target_idx:
+                                self._reading_target_idx = idx
+                                self._sequence_results_idxs = [grid_id for grid_id in self._sequence_target_idxs if grid_id < idx]
 
                             # Clear the buffer
                             self._relocating_pickup_records = []
