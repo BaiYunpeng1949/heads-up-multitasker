@@ -132,10 +132,10 @@ class SwitchBack(Env):
         # Render the image
         rgb, _ = self._eye_cam.render()
         # Preprocess
-        rgb = np.transpose(rgb, [2, 0, 1])
-        rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-        rgb_foveated = self._foveate(img=rgb_normalize)
-        return rgb_foveated
+        rgb_foveated = self._foveate(img=rgb)
+        rgb_foveated = np.transpose(rgb_foveated, [2, 0, 1])
+        rgb_normalize = self.normalise(rgb_foveated, 0, 255, -1, 1)
+        return rgb_normalize
 
     def reset(self):
 
@@ -351,7 +351,7 @@ class SwitchBack(Env):
     def _foveate(self, img):
 
         # Define the blurring level
-        sigma = 0.2
+        sigma = 1
 
         # Define the foveal region
         fov = self._cam_eye_fovy
