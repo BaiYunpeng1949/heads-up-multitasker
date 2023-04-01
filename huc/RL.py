@@ -1,6 +1,7 @@
 import os
 
 import yaml
+import cv2
 from tqdm import tqdm
 import numpy as np
 
@@ -87,6 +88,10 @@ class RL:
             self._config_utils = config['utils']
         except ValueError:
             print('Invalid configurations. Check your config.yaml file.')
+
+        # Print the configuration
+        if 'foveate' in self._config_rl['train']['checkpoints_folder_name']:
+            print('Configuration:\n    The foveated vision is applied.\n')
 
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
@@ -249,6 +254,18 @@ class RL:
                 obs, reward, done, info = self._env.step(action)
                 imgs.append(self._env.render()[0])
                 imgs_eye.append(self._env.render()[1])
+
+                # Save img frame by frame
+                if self._env._steps <= 3:
+                    # print('printed the {}th frame'.format(self._env._steps))
+                    # Create a folder if not exist
+                    folder_name = 'C:/Users/91584/Desktop/{}'.format(self._config_rl['train']['checkpoints_folder_name'])
+                    if not os.path.exists(folder_name):
+                        os.makedirs(folder_name)
+                    path = folder_name + '/{}.png'.format(self._env._steps)
+                    # path = 'C:/Users/91584/Desktop/{}/{}.png'.format(self._config_rl['train']['checkpoints_folder_name'], self._env._steps)
+                    cv2.imwrite(path, self._env.render()[1])
+
                 score += reward
                 # progress_bar.update(1)
             # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.

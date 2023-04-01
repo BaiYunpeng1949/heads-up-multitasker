@@ -23,8 +23,8 @@ class SwitchBack(Env):
         # Read the configurations from the YAML file.
         root_dir = os.path.dirname(os.path.dirname(directory))
         with open(os.path.join(root_dir, "config.yaml")) as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
-        self._mode = config['rl']['mode']
+            self._config = yaml.load(f, Loader=yaml.FullLoader)
+        self._mode = self._config['rl']['mode']
 
         # Open the mujoco model
         self._xml_path = os.path.join(directory, "context-switch-12-mid-right-v1.xml")
@@ -131,11 +131,19 @@ class SwitchBack(Env):
 
         # Render the image
         rgb, _ = self._eye_cam.render()
+
         # Preprocess
-        rgb = np.transpose(rgb, [2, 0, 1])
-        rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-        # rgb_foveated = self._foveate(img=rgb_normalize)
-        return rgb_normalize
+        # Foveated vision applied
+        if 'foveate' in self._config['rl']['train']['checkpoints_folder_name']:
+            rgb_foveated = self._foveate(img=rgb)
+            rgb_foveated = np.transpose(rgb_foveated, [2, 0, 1])
+            rgb_normalize = self.normalise(rgb_foveated, 0, 255, -1, 1)
+            return rgb_normalize
+        # Foveated vision not applied
+        else:
+            rgb = np.transpose(rgb, [2, 0, 1])
+            rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
+            return rgb_normalize
 
     def reset(self):
 
@@ -355,7 +363,7 @@ class SwitchBack(Env):
     def _foveate(self, img):
 
         # Define the blurring level
-        sigma = 0.2
+        sigma = 1
 
         # Define the foveal region
         fov = self._cam_eye_fovy
@@ -397,7 +405,7 @@ class SwitchBack(Env):
         # Normalise action from [-1, 1] to actuator control range
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
-
+        # action = [0, 0] # TODO debug delete later
         # Set motor control
         self._data.ctrl[:] = action
 
