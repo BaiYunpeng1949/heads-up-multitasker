@@ -5,7 +5,7 @@ rl:
 
   train:
     total_timesteps: 20000000
-    checkpoints_folder_name: 'checkpoints_switchback_0401_20M_12grids_midright_sparse_foveatedsigma1_4040'
+    checkpoints_folder_name: 'checkpoints_switchback_0401_20M_12grids_interline100_sparse_foveatedsigma1_160160'
     num_workers: 16   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 5000   # TODO do not change this parameter
     algorithm: 'PPO'
