@@ -24,6 +24,7 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack
+from huc.envs.locomotion.Locomotion import Locomotion, LocomotionTrain, LocomotionTest
 
 _MODES = {
     'train': 'train',
@@ -84,14 +85,14 @@ class RL:
 
         try:
             self._config_rl = config['rl']
-            self._config_mj_env = config['mj_env']
-            self._config_utils = config['utils']
         except ValueError:
             print('Invalid configurations. Check your config.yaml file.')
 
         # Print the configuration
         if 'foveate' in self._config_rl['train']['checkpoints_folder_name']:
             print('Configuration:\n    The foveated vision is applied.\n')
+        else:
+            print('Configuration:\n    The foveated vision is not applied.\n')
 
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
@@ -101,7 +102,11 @@ class RL:
         # self._env = ReadingEye()
         # self._env = ContextSwitch()
         # self._env = ContextSwitchReplication()
-        self._env = SwitchBack()
+        # self._env = SwitchBack()
+        if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+            self._env = LocomotionTrain()
+        else:
+            self._env = LocomotionTest()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

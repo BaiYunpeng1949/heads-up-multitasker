@@ -27,7 +27,7 @@ class SwitchBack(Env):
         self._mode = self._config['rl']['mode']
 
         # Open the mujoco model
-        self._xml_path = os.path.join(directory, "context-switch-12-inter-line-spacing-100-v1.xml")
+        self._xml_path = os.path.join(directory, "context-switch-12-mid-right-v1.xml")
         self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
 
@@ -108,8 +108,8 @@ class SwitchBack(Env):
         self._switch_back_durations = None
 
         # Define observation space
-        self._width = 160
-        self._height = 160
+        self._width = 40
+        self._height = 40
         self.observation_space = Box(low=0, high=255, shape=(3, self._width, self._height))  # width, height correctly set?
 
         # Define action space
@@ -533,8 +533,8 @@ class SwitchBack(Env):
                         print(
                             'One relocating trial was finished earlier at target grid {}.'.format(self._reading_target_idx)
                         )
-
-                    for i in range(self._num_targets):
+                    print('the number of targets is: {}'.format(self._num_targets)) # TODO debug delete it later
+                    for i in range(self._num_targets):      # TODO this might be useless now
                         if self._sequence_results_idxs[i] == self._default_idx:
                             self._sequence_results_idxs[i] = self._reading_target_idx
                             break
