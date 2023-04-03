@@ -1,11 +1,11 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 20000000
-    checkpoints_folder_name: 'checkpoints_switchback_0402_20M_12grids_midright_sparse_4040_trial'
+    checkpoints_folder_name: 'checkpoints_switchback_0327_20M_12grids_midright_sparse'
     num_workers: 16   # As long as it is smaller than the laptop's number of processes: 16.
     num_steps: 5000   # TODO do not change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`.
@@ -15,7 +15,7 @@ rl:
 
   test:
     num_episodes: 1
-    loaded_model_name: 'rl_model_13000000_steps'
+    loaded_model_name: 'rl_model_11550000_steps'
     continual_logs_name: 'PPO_61'
 
 mj_env:

@@ -23,7 +23,7 @@ from huc.envs.moving_eye.MovingEye import MovingEye
 from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
-from huc.envs.context_switch_replication.SwitchBack import SwitchBack
+from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
 from huc.envs.locomotion.Locomotion import Locomotion, LocomotionTrain, LocomotionTest
 
 _MODES = {
@@ -92,7 +92,7 @@ class RL:
         if 'foveate' in self._config_rl['train']['checkpoints_folder_name']:
             print('Configuration:\n    The foveated vision is applied.\n')
         else:
-            print('Configuration:\n    The foveated vision is not applied.\n')
+            print('Configuration:\n    The foveated vision is NOT applied.\n')
 
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
@@ -102,7 +102,12 @@ class RL:
         # self._env = ReadingEye()
         # self._env = ContextSwitch()
         # self._env = ContextSwitchReplication()
-        # self._env = SwitchBack()
+
+        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+        #     self._env = SwitchBackTrain()
+        # else:
+        #     self._env = SwitchBackTest()
+
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionTrain()
         else:

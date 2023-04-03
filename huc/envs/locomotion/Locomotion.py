@@ -460,14 +460,6 @@ class LocomotionTest(Locomotion):
                 if self._off_background_step == 0:
                     # Only update when last pick up happened and this time stamp was reset to 0
                     self._off_background_step = self._steps
-                else:
-                    # The previous trial did not read anything
-                    self._off_background_step += self._background_show_interval
-                    self._relocating_incorrect_num += 1
-                    print(
-                        'One relocating trial was unable to pick up any grid at the target grid {}.'.format(
-                            self._reading_target_idx)
-                    )
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -514,17 +506,17 @@ class LocomotionTest(Locomotion):
         # Specify the targets on different conditions
         if self._background_on == True:
             target_idx = self._background_idx0
-            acc = self._change_rgba_background
+            change = self._change_rgba_background
         else:
             target_idx = self._reading_target_idx
-            acc = self._change_rbga_reading_target
+            change = self._change_rbga_reading_target
 
         # Focus on targets detection
         if geomid == target_idx:
             reward = 1
             # Update the environment
             self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
-                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
+                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, change])]
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 
@@ -534,47 +526,67 @@ class LocomotionTest(Locomotion):
         else:
             terminate = False
 
-            # Check the relocating / pick-up issues - version 0328
-            if geomid in self._relocating_neighbors:
-                self._relocating_pickup_records.append(geomid)
-                for idx in self._relocating_neighbors:
-                    # The first grid with cumulative fixations has not been found - TODO do it
-                    if self._relocating_pickup_records.count(idx) > self._relocating_pickup_dwell_steps:
-                        # Update the switch back duration
-                        current_step = self._steps
-                        switch_back_duration = current_step - self._off_background_step
-                        self._switch_back_durations.append(switch_back_duration)
+            # Check the relocating / pick-up status when the background event is off - version 0328
+            if self._background_on == False:
+                # Check the relocating / pick-up issues - version 0328
+                if geomid in self._relocating_neighbors:
+                    self._relocating_pickup_records.append(geomid)
+                    for idx in self._relocating_neighbors:
+                        # The first grid with cumulative fixations has not been found - TODO do it
+                        if self._relocating_pickup_records.count(idx) > self._relocating_pickup_dwell_steps:
+                            # Update the switch back duration
+                            current_step = self._steps
+                            switch_back_duration = current_step - self._off_background_step
+                            self._switch_back_durations.append(switch_back_duration)
 
-                        # Update the counters
-                        if idx == self._reading_target_idx:
-                            pass
-                        else:
-                            self._relocating_incorrect_num += 1
+                            # Update the counters
+                            if idx == self._reading_target_idx:
+                                pass
+                            else:
+                                self._relocating_incorrect_num += 1
 
-                        # Draw all distractions back to normal - version continue with the current grid
-                        for _idx in self._relocating_neighbors:
-                            if _idx != idx:
-                                self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                                self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-                        # Refresh the current target grid and the sequence results idxs if idx is not the previous target
-                        if idx != self._reading_target_idx:
-                            self._reading_target_idx = idx
+                            # Draw all distractions back to normal - version continue with the current grid
+                            for _idx in self._relocating_neighbors:
+                                if _idx != idx:
+                                    self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                                    self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+                            # Refresh the current target grid and the sequence results idxs if idx is not the previous target
+                            if idx != self._reading_target_idx:
+                                self._reading_target_idx = idx
 
-                        # Clear the buffer
-                        self._relocating_pickup_records = []
-                        self._relocating_neighbors = []
-                        self._off_background_step = 0
-                        # Set to 0 to avoid one empty round of relocating: during one interval of the background task,
-                        # it never picked up anything. This is related to the hyper-parameter of self._relocating_pickup_dwell_steps
-                        break
+                            # Clear the buffer
+                            self._relocating_pickup_records = []
+                            self._relocating_neighbors = []
+                            self._off_background_step = 0
+                            # Set to 0 to avoid one empty round of relocating: during one interval of the background task,
+                            # it never picked up anything. This is related to the hyper-parameter of self._relocating_pickup_dwell_steps
+                            break
+            # Check at the start of the next background event, whether the pervious relocating trial was successful
+            else:
+                # The relocating did not pick up anything at the previous trial
+                if self._off_background_step != 0:
+                    self._relocating_incorrect_num += 1
+                    self._switch_back_durations.append(self._background_show_interval)
+                    print(
+                        'One relocating trial was unable to pick up any grid at the target grid {}. '
+                        'The relocating pickup records is: {}. '
+                        'The switch back duration is: {}. '
+                        'The background trial number is: {}.'
+                            .format(self._reading_target_idx, self._background_show_interval,
+                                    self._relocating_pickup_records, self._background_trials)
+                    )
+                    # Clear the buffer
+                    self._relocating_pickup_records = []
+                    self._relocating_neighbors = []
+                    self._off_background_step = 0
 
-            # Check whether the grid has been fixated for enough time
+            # Check whether the grid (background or reading) has been fixated for enough time
             if self._model.geom(self._reading_target_idx).rgba[2] >= self._rgba_delta:
 
                 # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
                 if not self._relocating_neighbors:
                     pass
-                else:  # When the relocating_neighbor is not empty
+                else:  # When the relocating_neighbor is not empty - the relocation was not over that the relocating dwell was bigger than the remaining reading time
                     # Add new switch back durations
                     current_step = self._steps
                     switch_back_duration = current_step - self._off_background_step
@@ -586,8 +598,9 @@ class LocomotionTest(Locomotion):
                     self._off_background_step = 0
 
                     print(
-                        'One relocating trial was finished earlier at target grid {}.'.format(
-                            self._reading_target_idx)
+                        'One relocating trial was finished earlier at target grid {}. The switch back duration is: {}. '
+                        'The background trial is: {}'.
+                            format(self._reading_target_idx, switch_back_duration, self._background_trials)
                     )
 
                 # Terminate the loop if all grids are traversed, or switch to the next grid
@@ -598,10 +611,10 @@ class LocomotionTest(Locomotion):
 
             if terminate:
                 print('The total timesteps is: {}. \n'
-                      'The switch back duration is: {}. \n'
+                      'The switch back duration is: {}. The durations are: {} \n'
                       'The reading goodput is: {} (grids per timestep). \n'
                       'The switch back error rate is: {}%.'.
-                      format(self._steps, np.sum(self._switch_back_durations),
+                      format(self._steps, np.sum(self._switch_back_durations), self._switch_back_durations,
                              round(len(self._sequence_target_idxs) / self._steps, 5),
                              round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
 
