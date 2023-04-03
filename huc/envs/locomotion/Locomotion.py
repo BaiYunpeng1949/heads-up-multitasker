@@ -30,6 +30,7 @@ class Locomotion(Env):
         self._xml_path = os.path.join(directory, self._config['mj_env']['xml'])
         self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
+        mujoco.mj_forward(self._model, self._data)  # Forward pass to initialise the model
 
         # Define how often policy is queried
         self._action_sample_freq = 20
@@ -68,11 +69,13 @@ class Locomotion(Env):
         self._reading_targets_idxs = None
         self._change_rbga_reading_target = self._rgba_delta / self._reading_target_dwell_timesteps
 
-        # Define the grids on the background pane
+        # Define the events on the background pane
         self._background_on = None
         self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._background_trials = None
         self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
+
+        # Define the locomotion variables - TODO specify on subclasses
 
         # Define observation space
         self._width = self._config['mj_env']['width']
@@ -257,6 +260,25 @@ class LocomotionTrain(Locomotion):
         # Initialize the flag for the background task - show or not
         self._background_show_flag = None
 
+        # Define the movement of the eyeball
+        self._eye_x_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
+        self._eye_y_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-y")
+        self._moving_bgp_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "moving-bgpe")
+        self._bgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
+        self._sgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
+
+        # I am start off moving the background since if moving the eyeball, smart glass pane will also be needed to move
+        # TODO later integrate the eyeball and sgp into one body
+        # If the eyeball is moving too close to the background, it will stop at the threshold distance.
+        # Then after minding the background for a while, it should disappear or get back to its original position.
+        # Whether the eyeball is stopping and seeing the background or not will determine the timing the background event (red color) appears.
+        self._background_init_displacement_y = None      # TODO specify later in the _reset_scene method
+        self._displacement_lower_bound = self._model.jnt_range[self._moving_bgp_joint_idx][0]
+        self._displacement_upper_bound = self._model.jnt_range[self._moving_bgp_joint_idx][1]
+        self._background_disp_per_timestep = self._displacement_lower_bound / 1000
+        self._nearest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_lower_bound
+        self._furthest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_upper_bound
+
     def reset(self):
         super().reset()
 
@@ -283,14 +305,18 @@ class LocomotionTrain(Locomotion):
         else:
             eye_x_motor_init_range = [-0.5, 0.5]
             eye_y_motor_init_range = [-0.5, 0.5]
-        action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
+
+        init_angle = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
                   np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
 
-        for i in range(10):
-            # Set motor control
-            self._data.ctrl[:] = action
-            # Advance the simulation
-            mujoco.mj_step(self._model, self._data, self._frame_skip)
+        # for i in range(10):
+        #     # Set motor control
+        #     self._data.ctrl[:] = action
+        #     # Advance the simulation
+        #     mujoco.mj_step(self._model, self._data, self._frame_skip)
+
+        self._data.qpos[self._eye_x_joint_idx] = init_angle[0]
+        self._data.qpos[self._eye_y_joint_idx] = init_angle[1]
 
         # Define the target reading grids
         self._sequence_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
@@ -298,25 +324,39 @@ class LocomotionTrain(Locomotion):
         # Define the background events
         self._background_show_flag = np.random.choice([True, False])
 
-        # Decide whether or not show the reading grids
+        # Define whether or not show the reading grids - TODO noted that the qpos is the relative displacement regarding the initial position
         if self._background_show_flag == False:
             self._switch_target(idx=self._sequence_target_idxs[0])
+            self._background_init_displacement_y = np.random.uniform(self._displacement_lower_bound, self._displacement_upper_bound)
+            self._data.qpos[self._moving_bgp_joint_idx] += self._background_init_displacement_y
+        else:
+            self._data.qpos[self._moving_bgp_joint_idx] = self._displacement_lower_bound
+
+        mujoco.mj_forward(self._model, self._data)
 
     def _update_background(self):
         super()._update_background()
 
-        if self._background_on == False:
-            if self._background_trials < self._background_max_trials:
-                # Show the background event by changing to a brighter color
-                if self._steps >= 0:
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                    self._background_on = True
+        # The background pane is showing events - the red color events show
+        if self._background_show_flag == True:
+            if self._background_on == False:
+                if self._background_trials < self._background_max_trials:
+                    # Show the background event by changing to a brighter color
+                    if self._steps >= 0:
+                        self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                        self._background_on = True
+            else:
+                # Identify whether should stop the background event
+                if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
+                    self._background_trials += 1
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
+                    self._background_on = False
+        # The background pane is not showing events - the position of the background pane is moving - preliminarily simulate the eyeball movement
         else:
-            # Identify whether should stop the background event
-            if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
-                self._background_trials += 1
-                self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                self._background_on = False
+            # If the background pane is not moving too close, then move the background pane
+            if self._data.body(self._bgp_body_idx).xpos[1] > self._nearest_bgp_xpos_y:
+                # Move the background pane
+                self._data.qpos[self._moving_bgp_joint_idx] += -0.001
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -330,8 +370,7 @@ class LocomotionTrain(Locomotion):
         # Set motor control
         self._data.ctrl[:] = action
 
-        if self._background_show_flag == True:
-            self._update_background()
+        self._update_background()
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
@@ -346,17 +385,17 @@ class LocomotionTrain(Locomotion):
         # Specify the targets on different conditions
         if self._background_show_flag == True:
             target_idx = self._background_idx0
-            acc = self._change_rgba_background
+            change_rgba = self._change_rgba_background
         else:
             target_idx = self._reading_target_idx
-            acc = self._change_rbga_reading_target
+            change_rgba = self._change_rbga_reading_target
 
         # Focus on targets detection
         if geomid == target_idx:
             reward = 1
             # Update the environment
             self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
-                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, acc])]
+                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, change_rgba])]
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 

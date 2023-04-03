@@ -101,7 +101,6 @@ class RL:
         # self._env = MovingEye()
         # self._env = ReadingEye()
         # self._env = ContextSwitch()
-        # self._env = ContextSwitchReplication()
 
         # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
         #     self._env = SwitchBackTrain()
@@ -111,7 +110,7 @@ class RL:
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionTrain()
         else:
-            self._env = LocomotionTest()
+            self._env = LocomotionTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -182,6 +181,7 @@ class RL:
         # The MuJoCo environment debugs. Check whether the environment and tasks work as designed.
         elif self._mode == _MODES['debug']:
             self._num_episodes = self._config_rl['test']['num_episodes']
+            self._loaded_model_name = 'debug'
             # self._num_steps = self._env.num_steps
         # The MuJoCo environment demo display with user interactions, such as mouse interactions.
         elif self._mode == _MODES['interact']:
@@ -305,7 +305,7 @@ class RL:
             self._train()
         elif self._mode == _MODES['continual_train']:
             self._continual_train()
-        elif self._mode == _MODES['test']:
+        elif self._mode == _MODES['test'] or self._mode == _MODES['debug']:
             # Generate the results from the pre-trained model.
             rgb_images, rgb_eye_images = self._test()
             # Write a video. First get the rgb images, then identify the path.
@@ -329,9 +329,6 @@ class RL:
                 width=rgb_eye_images[0].shape[1],
                 height=rgb_eye_images[0].shape[0],
             )
-        elif self._mode == _MODES['debug']:
-            # Generate the baseline.
-            self._test()
         else:
             # TODO specify the demo mode later.
             #  Should be something like: self._env.demo()
