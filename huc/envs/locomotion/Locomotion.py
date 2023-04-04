@@ -41,9 +41,15 @@ class Locomotion(Env):
         # The rgba cumulative change for finishing a fixation
         self._rgba_delta = 0.2
 
+        # Get the primitives idxs in MuJoCo
+        self._eye_joint_x_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
+        self._eye_joint_y_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-y")
+        self._bgp_joint_y_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "bgp-joint-y")
+        self._bgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
+        self._sgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
+
         # Get targets (geoms that belong to "smart-glass-pane")
-        sgp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
-        self._reading_target_idxs = np.where(self._model.geom_bodyid == sgp_body)[0]
+        self._reading_target_idxs = np.where(self._model.geom_bodyid == self._sgp_body_idx)[0]
         self._reading_targets = [self._model.geom(idx) for idx in self._reading_target_idxs]
         self._reading_target_idx = None
         self._reading_target = None
@@ -56,8 +62,7 @@ class Locomotion(Env):
         self._HINT_RGBA = [0.8, 0.8, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
-        bp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
-        self._background_idxs = np.where(self._model.geom_bodyid == bp_body)[0]
+        self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
         self._background_idx0 = self._background_idxs[0]
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
@@ -76,6 +81,11 @@ class Locomotion(Env):
         self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
 
         # Define the locomotion variables - TODO specify on subclasses
+        self._displacement_lower_bound = self._model.jnt_range[self._bgp_joint_y_idx][0]
+        self._displacement_upper_bound = self._model.jnt_range[self._bgp_joint_y_idx][1]
+        self._nearest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_lower_bound
+        self._furthest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_upper_bound
+        self._background_disp_per_timestep = self._displacement_lower_bound / 400
 
         # Define observation space
         self._width = self._config['mj_env']['width']
@@ -260,24 +270,12 @@ class LocomotionTrain(Locomotion):
         # Initialize the flag for the background task - show or not
         self._background_show_flag = None
 
-        # Define the movement of the eyeball
-        self._eye_x_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
-        self._eye_y_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-y")
-        self._moving_bgp_joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "moving-bgpe")
-        self._bgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
-        self._sgp_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
-
         # I am start off moving the background since if moving the eyeball, smart glass pane will also be needed to move
         # TODO later integrate the eyeball and sgp into one body
         # If the eyeball is moving too close to the background, it will stop at the threshold distance.
         # Then after minding the background for a while, it should disappear or get back to its original position.
         # Whether the eyeball is stopping and seeing the background or not will determine the timing the background event (red color) appears.
         self._background_init_displacement_y = None      # TODO specify later in the _reset_scene method
-        self._displacement_lower_bound = self._model.jnt_range[self._moving_bgp_joint_idx][0]
-        self._displacement_upper_bound = self._model.jnt_range[self._moving_bgp_joint_idx][1]
-        self._background_disp_per_timestep = self._displacement_lower_bound / 1000
-        self._nearest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_lower_bound
-        self._furthest_bgp_xpos_y = self._data.body(self._bgp_body_idx).xpos[1].copy() + self._displacement_upper_bound
 
     def reset(self):
         super().reset()
@@ -315,8 +313,8 @@ class LocomotionTrain(Locomotion):
         #     # Advance the simulation
         #     mujoco.mj_step(self._model, self._data, self._frame_skip)
 
-        self._data.qpos[self._eye_x_joint_idx] = init_angle[0]
-        self._data.qpos[self._eye_y_joint_idx] = init_angle[1]
+        self._data.qpos[self._eye_joint_x_idx] = init_angle[0]
+        self._data.qpos[self._eye_joint_y_idx] = init_angle[1]
 
         # Define the target reading grids
         self._sequence_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
@@ -328,9 +326,9 @@ class LocomotionTrain(Locomotion):
         if self._background_show_flag == False:
             self._switch_target(idx=self._sequence_target_idxs[0])
             self._background_init_displacement_y = np.random.uniform(self._displacement_lower_bound, self._displacement_upper_bound)
-            self._data.qpos[self._moving_bgp_joint_idx] += self._background_init_displacement_y
+            self._data.qpos[self._bgp_joint_y_idx] += self._background_init_displacement_y
         else:
-            self._data.qpos[self._moving_bgp_joint_idx] = self._displacement_lower_bound
+            self._data.qpos[self._bgp_joint_y_idx] = self._displacement_lower_bound
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -356,7 +354,7 @@ class LocomotionTrain(Locomotion):
             # If the background pane is not moving too close, then move the background pane
             if self._data.body(self._bgp_body_idx).xpos[1] > self._nearest_bgp_xpos_y:
                 # Move the background pane
-                self._data.qpos[self._moving_bgp_joint_idx] += -0.001
+                self._data.qpos[self._bgp_joint_y_idx] += self._background_disp_per_timestep
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -422,7 +420,7 @@ class LocomotionTest(Locomotion):
     def __init__(self):
         super().__init__()
 
-        self._ep_len = 2000
+        self._ep_len = 8000
 
         self._init_reading_idx = -1
 
@@ -465,40 +463,54 @@ class LocomotionTest(Locomotion):
         # Relocating
         self._relocating_incorrect_steps = 0
 
+        # Locomotion
+        self._data.qpos[self._bgp_joint_y_idx] = self._displacement_upper_bound
+
     def _update_background(self):
         super()._update_background()
 
-        if self._background_on == False:
-            if (
-                    self._steps - self._background_last_on_steps) >= self._background_show_interval and self._background_trials < self._background_max_trials:
-                # Background
-                self._background_on = True
-                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                # Reading grids
-                self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                for idx in self._sequence_target_idxs:
-                    self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                    self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+        # If the background is not on the nearest position, it will move towards the smart glass pane
+        if self._data.body(self._bgp_body_idx).xpos[1] > self._nearest_bgp_xpos_y:
+            # Move the background towards the smart glass pane
+            self._data.qpos[self._bgp_joint_y_idx] += self._background_disp_per_timestep
+            # Set the background red event flag
+            self._background_on = False
+        # If the background pane is on the nearest position, starts the red color event
         else:
-            if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
-                # Background
-                self._background_trials += 1
-                self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                self._background_on = False
-                # Update the step buffer
-                self._background_last_on_steps = self._steps
-                # Reading grids distractions
-                self._find_neighbors()  # TODO baseline vs issues on relocating
+            # Start the red color event
+            if self._background_on == False:
+                if self._background_trials < self._background_max_trials:
+                    self._background_on = True
+                    # Set the red color
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                    # De-highlight the previous job - reading
+                    self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
+                    for idx in self._sequence_target_idxs:
+                        self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                        self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+            # Check when to stop the red color event when the red color is on
+            else:
+                if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
+                    self._background_trials += 1
+                    # Reset the background variables: the color, status flag, and the position
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
+                    self._background_on = False
+                    self._data.qpos[self._bgp_joint_y_idx] = self._displacement_upper_bound
 
-                # Reading without distractions
-                # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
-                # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
-                # self._relocating_neighbors = [self._reading_target_idx]
+                    # Switch back to reading and display distractions
+                    self._find_neighbors()   # TODO baseline vs issues on relocating
+                    # Reading without distractions
+                    # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                    # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                    # self._relocating_neighbors = [self._reading_target_idx]
 
-                # Switch back off background timestamp
-                if self._off_background_step == 0:
-                    # Only update when last pick up happened and this time stamp was reset to 0
-                    self._off_background_step = self._steps
+                    # Update the step buffer
+                    self._background_last_on_steps = self._steps
+
+                    # Switch back off background timestamp
+                    if self._off_background_step == 0:
+                        # Only update when last pick up happened and this time stamp was reset to 0
+                        self._off_background_step = self._steps
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -642,10 +654,13 @@ class LocomotionTest(Locomotion):
                             format(self._reading_target_idx, switch_back_duration, self._background_trials)
                     )
 
-                # Terminate the loop if all grids are traversed, or switch to the next grid
-                if self._reading_target_idx >= self._sequence_target_idxs[-1]:
+                # Terminate the loop if all moving background trials are done
+                if self._background_trials >= self._background_max_trials:
                     terminate = True
                 else:
+                    # Traverse all girds idx in the target sequence, if reaches the end, start from the beginning
+                    if self._reading_target_idx >= self._sequence_target_idxs[-1]:
+                        self._reading_target_idx = self._sequence_target_idxs[0] - 1
                     self._switch_target(idx=self._reading_target_idx + 1)
 
             if terminate:

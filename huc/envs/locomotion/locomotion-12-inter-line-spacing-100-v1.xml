@@ -28,7 +28,7 @@
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
 
-        <camera name="env" pos="-0.5 -0.35 0.15" euler="1.0 -0.85 -0.37"/>
+        <camera name="env" pos="0.35 -0.35 0.15" euler="1.4 0.5 0.12"/>
 
         <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
             <geom name="eye" type="sphere" size="0.025" material="blue-eye" rgba="1 1 1 1" quat="0.6625191 0.0130711 0.7488417 0.0115643"/>
@@ -56,7 +56,7 @@
         </body>
 
         <body name="background-pane" pos="0 1.12 0">
-            <joint name="moving-bgp" class="temp-moving-bgp" axis="0 1 0" range="-1 0"/>
+            <joint name="bgp-joint-y" class="temp-moving-bgp" axis="0 1 0" range="-1 0"/>
             <geom name="grid-bgp" pos="-0 0 0" class="background-grid"/>
         </body>
 

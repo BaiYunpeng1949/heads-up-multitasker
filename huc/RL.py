@@ -110,7 +110,7 @@ class RL:
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionTrain()
         else:
-            self._env = LocomotionTrain()
+            self._env = LocomotionTest()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
