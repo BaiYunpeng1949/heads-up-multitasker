@@ -61,16 +61,19 @@ class Locomotion(Env):
         self._bc_reading_target_idxs = np.where(self._model.geom_bodyid == self._sgp_bc_body_idx)[0]
         # Middle-right
         self._mr_reading_target_idxs = np.where(self._model.geom_bodyid == self._sgp_mr_body_idx)[0]
+        # All layouts
+        self._all_layouts_reading_traget_idxs = np.concatenate((self._ils100_reading_target_idxs.copy(),
+                                                                self._bc_reading_target_idxs.copy(),
+                                                                self._mr_reading_target_idxs.copy()))
         # General reading target index
         self._reading_target_idxs = None    # The reading target idxs list
         self._reading_target_idx = None     # The exact reading target idx
 
         # Define the default text grid size and rgba from a sample grid idx=0, define the hint text size and rgba
         self._INVISIBLE_ALPHA = 0
-        sample_grid_idx = self._ils100_reading_target_idxs[0]
+        sample_grid_idx = self._ils100_reading_target_idxs[0].copy()
         self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:4].copy()
-        self._DEFAULT_TEXT_RGBA = [self._model.geom(sample_grid_idx).rgba[0], self._model.geom(sample_grid_idx).rgba[1],
-                                   self._model.geom(sample_grid_idx).rgba[2], 1]
+        self._DEFAULT_TEXT_RGBA = [0, 0, 0, 1]
         self._RUNTIME_TEXT_RGBA = None
         self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
                            self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
@@ -78,7 +81,7 @@ class Locomotion(Env):
 
         # Get the background (geoms that belong to "background-pane")
         self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
-        self._background_idx0 = self._background_idxs[0]
+        self._background_idx0 = self._background_idxs[0].copy()
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
@@ -94,7 +97,7 @@ class Locomotion(Env):
         self._background_trials = None
         self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
 
-        # Define the locomotion variables - TODO specify on subclasses
+        # Define the locomotion variables
         self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0]
         self._displacement_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1]
         self._nearest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._displacement_lower_bound
@@ -154,6 +157,10 @@ class Locomotion(Env):
         return self._get_obs()
 
     def _reset_scene(self):
+
+        # Reset the all reading grids - hide
+        for idx in self._all_layouts_reading_traget_idxs:
+            self._model.geom(idx).rgba[3] = self._INVISIBLE_ALPHA
 
         # Reset the background scene and variables
         self._background_trials = 0
@@ -281,7 +288,6 @@ class LocomotionTrain(Locomotion):
 
         # Define the initial displacement of the agent's head
         self._head_init_displacement_y = None
-        self._head_init_displacement_x = None   # TODO - not used yet
 
     def reset(self):
         super().reset()
@@ -292,11 +298,6 @@ class LocomotionTrain(Locomotion):
 
     def _reset_scene(self):
         super()._reset_scene()
-
-        # Hide all reading grids
-        all_reading_traget_idxs = np.concatenate((self._ils100_reading_target_idxs.copy(), self._bc_reading_target_idxs.copy(), self._mr_reading_target_idxs.copy()))
-        for idx in all_reading_traget_idxs:
-            self._model.geom(idx).rgba[3] = self._INVISIBLE_ALPHA
 
         # Initialize eye ball rotation angles
         eye_x_motor_init_range = [-0.5, 0.5]
@@ -323,14 +324,14 @@ class LocomotionTrain(Locomotion):
             self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
         # Define the target reading grids from the selected reading layouts
-        self._sequence_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
+        self._reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
 
         # Define the background events
         self._background_show_flag = np.random.choice([True, False])
 
         # Define whether or not show the reading grids - TODO noted that the qpos is the relative displacement regarding the initial position
         if self._background_show_flag == False: # Show the reading grids    # TODO include the x position later
-            self._switch_target(idx=self._sequence_target_idxs[0])
+            self._switch_target(idx=self._reading_target_idxs[0])
             self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound, self._displacement_upper_bound)
             self._data.qpos[self._head_joint_y_idx] += self._head_init_displacement_y
         else:
@@ -425,14 +426,13 @@ class LocomotionTest(Locomotion):
     def __init__(self):
         super().__init__()
 
-        self._ep_len = 4000
+        self._ep_len = 3000
 
         self._init_reading_idx = -1
 
         self._background_max_trials = 4
 
-        self._background_show_interval = 3 * self._reading_target_dwell_timesteps
-        self._background_last_on_steps = None
+        self._background_show_interval = 3 * self._reading_target_dwell_timesteps   # TODO change this later
 
         # Define the relocation distraction relevant variables
         self._relocating_dwell_interval = 0.5 * self._reading_target_dwell_timesteps
@@ -451,12 +451,28 @@ class LocomotionTest(Locomotion):
     def _reset_scene(self):
         super()._reset_scene()
 
-        # Reset the smart glass pane scene and variables - TODO decide teh reading target idx and initialize it here
+        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
+        layout_name = self._config['rl']['test']['layout_name']
+        if layout_name == 'interline-spacing-100':
+            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
+        elif layout_name == 'bottom-center':
+            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
+        elif layout_name == 'middle-right':
+            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
+        else:
+            raise ValueError('Invalid layout name.')
+
+        # Reset the smart glass pane scene and variables
         for idx in self._reading_target_idxs:
             self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
             self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
-        self._background_last_on_steps = 0
+        # Reading grids
+        self._reading_target_idxs = self._reading_target_idxs.tolist()
+        self._switch_target(idx=self._reading_target_idxs[0])
+
+        # Background flag
+        self._background_show_flag = False
 
         # Relocating / pick-up issues
         self._relocating_steps = 0
@@ -466,27 +482,26 @@ class LocomotionTest(Locomotion):
         self._off_background_step = 0
         self._switch_back_durations = []
 
-        # Reading grids
-        self._sequence_target_idxs = self._reading_target_idxs.tolist()
-        self._switch_target(idx=self._sequence_target_idxs[0])
-
         # Relocating
         self._relocating_incorrect_steps = 0
 
         # Locomotion
-        self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound
 
     def _update_background(self):
         super()._update_background()
 
-        # If the background is not on the nearest position, it will move towards the smart glass pane
-        if self._data.body(self._bgp_body_idx).xpos[1] > self._nearest_head_xpos_y:
-            # Move the background towards the smart glass pane
+        # If the head is not on the furthest position, it will move towards the background pane
+        if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
+            # Move the head towards the background pane
             self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
-            # Set the background red event flag
-            self._background_on = False
-        # If the background pane is on the nearest position, starts the red color event
+
+        # If the head is on the furthest position, i.e., near the background, starts the red color event
         else:
+            # Prevent the head from moving further - stop at the furthest position
+            if self._data.body(self._head_body_idx).xpos[1] > self._furthest_head_xpos_y:
+                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+
             # Start the red color event
             if self._background_on == False:
                 if self._background_trials < self._background_max_trials:
@@ -495,9 +510,10 @@ class LocomotionTest(Locomotion):
                     self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
                     # De-highlight the previous job - reading
                     self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                    for idx in self._sequence_target_idxs:
+                    for idx in self._reading_target_idxs:
                         self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
                         self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+
             # Check when to stop the red color event when the red color is on
             else:
                 if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
@@ -505,7 +521,7 @@ class LocomotionTest(Locomotion):
                     # Reset the background variables: the color, status flag, and the position
                     self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
                     self._background_on = False
-                    self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound
 
                     # Switch back to reading and display distractions
                     self._find_neighbors()   # TODO baseline vs issues on relocating
@@ -513,9 +529,6 @@ class LocomotionTest(Locomotion):
                     # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
                     # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
                     # self._relocating_neighbors = [self._reading_target_idx]
-
-                    # Update the step buffer
-                    self._background_last_on_steps = self._steps
 
                     # Switch back off background timestamp
                     if self._off_background_step == 0:
@@ -531,7 +544,7 @@ class LocomotionTest(Locomotion):
 
         neighbors = []
 
-        for grid_idx in self._sequence_target_idxs:
+        for grid_idx in self._reading_target_idxs:
             grid_xpos = self._data.geom(grid_idx).xpos
             dist = np.linalg.norm(grid_xpos - target_xpos)
             if dist <= self._relocating_dist_neighbor:
@@ -669,8 +682,8 @@ class LocomotionTest(Locomotion):
                     terminate = True
                 else:
                     # Traverse all girds idx in the target sequence, if reaches the end, start from the beginning
-                    if self._reading_target_idx >= self._sequence_target_idxs[-1]:
-                        self._reading_target_idx = self._sequence_target_idxs[0] - 1
+                    if self._reading_target_idx >= self._reading_target_idxs[-1]:
+                        self._reading_target_idx = self._reading_target_idxs[0] - 1
                     self._switch_target(idx=self._reading_target_idx + 1)
 
             if terminate:
@@ -679,7 +692,7 @@ class LocomotionTest(Locomotion):
                       'The reading goodput is: {} (grids per timestep). \n'
                       'The switch back error rate is: {}%.'.
                       format(self._steps, np.sum(self._switch_back_durations), self._switch_back_durations,
-                             round(len(self._sequence_target_idxs) / self._steps, 5),
+                             round(self._background_max_trials * len(self._reading_target_idxs) / self._steps, 5),
                              round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
 
         return self._get_obs(), reward, terminate, {}

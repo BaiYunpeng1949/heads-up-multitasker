@@ -1,7 +1,7 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 20000000
@@ -14,8 +14,9 @@ rl:
     save_freq: 50000  # Save a checkpoint every 0.5 million steps.
 
   test:
-    num_episodes: 10
-    loaded_model_name: 'rl_model_15000000_steps'
+    num_episodes: 1
+    layout_name: 'interline-spacing-100'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
+    loaded_model_name: 'rl_model_10000000_steps'
     continual_logs_name: 'PPO_61'
 
 mj_env:

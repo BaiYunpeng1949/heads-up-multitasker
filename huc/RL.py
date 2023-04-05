@@ -110,7 +110,7 @@ class RL:
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionTrain()
         else:
-            self._env = LocomotionTrain()
+            self._env = LocomotionTest()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -312,7 +312,9 @@ class RL:
             video_folder_path = os.path.join('training', 'videos')
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
-            video_path = os.path.join(video_folder_path, self._loaded_model_name + '.avi')
+            layout_name = self._config_rl['test']['layout_name']
+            video_name_prefix = layout_name + '_' + self._loaded_model_name
+            video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
             write_video(
                 filepath=video_path,
                 fps=int(self._env._action_sample_freq),
@@ -321,7 +323,7 @@ class RL:
                 height=rgb_images[0].shape[0],
             )
             # Write the agent's visual perception
-            video_path_eye = os.path.join(video_folder_path, self._loaded_model_name + '_eye.avi')
+            video_path_eye = os.path.join(video_folder_path, video_name_prefix + '_eye.avi')
             write_video(
                 filepath=video_path_eye,
                 fps=int(self._env._action_sample_freq),
