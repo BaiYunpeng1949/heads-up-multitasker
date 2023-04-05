@@ -70,7 +70,6 @@ class Locomotion(Env):
         self._reading_target_idx = None     # The exact reading target idx
 
         # Define the default text grid size and rgba from a sample grid idx=0, define the hint text size and rgba
-        self._INVISIBLE_ALPHA = 0
         sample_grid_idx = self._ils100_reading_target_idxs[0].copy()
         self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:4].copy()
         self._DEFAULT_TEXT_RGBA = [0, 0, 0, 1]
@@ -85,7 +84,7 @@ class Locomotion(Env):
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
-        self._EVENT_RGBA = [0.8, 0, 0, self._model.geom(self._background_idx0).rgba[3].copy()]
+        self._EVENT_RGBA = [0.8, 0, 0, 1]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
         self._reading_target_dwell_timesteps = 2 * self._action_sample_freq
@@ -93,13 +92,13 @@ class Locomotion(Env):
 
         # Define the events on the background pane
         self._background_on = None
-        self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._background_trials = None
+        self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
 
         # Define the locomotion variables
-        self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0]
-        self._displacement_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1]
+        self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0].copy()
+        self._displacement_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1].copy()
         self._nearest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._displacement_lower_bound
         self._furthest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._displacement_upper_bound
         self._head_disp_per_timestep = (self._displacement_upper_bound - self._displacement_lower_bound) / 400
@@ -111,9 +110,6 @@ class Locomotion(Env):
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
-
-        # Define a cutoff for rangefinder (in meters, could be something like 3 instead of 0.1)
-        self._rangefinder_cutoff = 0.1
 
         # Initialise context, cameras
         self._context = Context(self._model, max_resolution=[1280, 960])
@@ -149,7 +145,6 @@ class Locomotion(Env):
 
         # Reset counters
         self._steps = 0
-        # self._trials = 0
 
         # Reset the scene
         self._reset_scene()
@@ -160,11 +155,9 @@ class Locomotion(Env):
 
         # Reset the all reading grids - hide
         for idx in self._all_layouts_reading_traget_idxs:
-            self._model.geom(idx).rgba[3] = self._INVISIBLE_ALPHA
+            self._model.geom(idx).rgba[3] = 0
 
-        # Reset the background scene and variables
-        self._background_trials = 0
-        self._background_on = False
+        # Reset the background scene
         self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
 
     def _switch_target(self, idx):
@@ -276,6 +269,9 @@ class LocomotionTrain(Locomotion):
         # Initialize the episode length
         self._ep_len = 100
 
+        # Initialize the steps on target: either reading or background
+        self._steps_on_target = None
+
         # Initialize the counter, and the max number of trials for the reading task
         self._reading_trials = None
         self._reading_max_trials = 1
@@ -289,13 +285,6 @@ class LocomotionTrain(Locomotion):
         # Define the initial displacement of the agent's head
         self._head_init_displacement_y = None
 
-    def reset(self):
-        super().reset()
-
-        self._reading_trials = 0
-
-        return self._get_obs()
-
     def _reset_scene(self):
         super()._reset_scene()
 
@@ -303,11 +292,11 @@ class LocomotionTrain(Locomotion):
         eye_x_motor_init_range = [-0.5, 0.5]
         eye_y_motor_init_range = [-0.5, 0.4]
 
-        init_angle = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
-                  np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
+        init_angle_x = np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1])
+        init_angle_y = np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])
 
-        self._data.qpos[self._eye_joint_x_idx] = init_angle[0]
-        self._data.qpos[self._eye_joint_y_idx] = init_angle[1]
+        self._data.qpos[self._eye_joint_x_idx] = init_angle_x
+        self._data.qpos[self._eye_joint_y_idx] = init_angle_y
 
         # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
         random_choice = np.random.choice([0, 1, 2], 1)
@@ -324,16 +313,25 @@ class LocomotionTrain(Locomotion):
             self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
         # Define the target reading grids from the selected reading layouts
+        self._reading_trials = 0
         self._reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
 
         # Define the background events
+        self._background_trials = 0
+        self._background_on = False
         self._background_show_flag = np.random.choice([True, False])
 
-        # Define whether or not show the reading grids - TODO noted that the qpos is the relative displacement regarding the initial position
-        if self._background_show_flag == False: # Show the reading grids    # TODO include the x position later
+        # Initialize the steps on target
+        self._steps_on_target = 0
+
+        # Initialize the locomotion slide displacement
+        self._data.qpos[self._head_joint_y_idx] = 0
+
+        # Define whether or not show the reading grids
+        if self._background_show_flag == False: # Show the reading grids
             self._switch_target(idx=self._reading_target_idxs[0])
             self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound, self._displacement_upper_bound)
-            self._data.qpos[self._head_joint_y_idx] += self._head_init_displacement_y
+            self._data.qpos[self._head_joint_y_idx] = self._head_init_displacement_y
         else:
             self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
 
@@ -347,15 +345,8 @@ class LocomotionTrain(Locomotion):
             if self._background_on == False:
                 if self._background_trials < self._background_max_trials:
                     # Show the background event by changing to a brighter color
-                    if self._steps >= 0:
-                        self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                        self._background_on = True
-            else:
-                # Identify whether should stop the background event
-                if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
-                    self._background_trials += 1
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                    self._background_on = False
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                    self._background_on = True
         # The background pane is not showing events - the head is moving
         else:
             # Move the head if it has not getting close to the background enough
@@ -374,6 +365,7 @@ class LocomotionTrain(Locomotion):
         # Set motor control
         self._data.ctrl[:] = action
 
+        # Update the background events
         self._update_background()
 
         # Advance the simulation
@@ -396,10 +388,16 @@ class LocomotionTrain(Locomotion):
 
         # Focus on targets detection
         if geomid == target_idx:
+
+            # Sparse reward
             reward = 1
+
+            # Update the steps on target
+            self._steps_on_target += 1
+
             # Update the environment
-            self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
-                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, change_rgba])]
+            self._model.geom(geomid).rgba[2] += change_rgba
+
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 
@@ -409,12 +407,20 @@ class LocomotionTrain(Locomotion):
         else:
             terminate = False
 
+            # Background events scenario
             if self._background_show_flag == True:
-                if self._background_trials >= self._background_max_trials:
-                    terminate = True
+                if self._steps_on_target >= self._background_dwell_timesteps:
+                    self._background_trials += 1
+                    # For multiple trials - remember to initialize scene - flag and geom color
+                    self._steps_on_target = 0
+                    if self._background_trials >= self._background_max_trials:
+                        terminate = True
+            # Reading grids scenario
             else:
-                if self._model.geom(self._reading_target_idx).rgba[2] >= self._rgba_delta:
+                if self._steps_on_target >= self._reading_target_dwell_timesteps:
                     self._reading_trials += 1
+                    # For multiple trials - remember to initialize scene - flag and geom color
+                    self._steps_on_target = 0
                     if self._reading_trials >= self._reading_max_trials:
                         terminate = True
 
@@ -426,23 +432,21 @@ class LocomotionTest(Locomotion):
     def __init__(self):
         super().__init__()
 
-        self._ep_len = 3000
+        # Initialize the length of the episode
+        self._ep_len = 8000
 
-        self._init_reading_idx = -1
+        # Initialize the number of trials
+        self._background_max_trials = 8
 
-        self._background_max_trials = 4
-
-        self._background_show_interval = 3 * self._reading_target_dwell_timesteps   # TODO change this later
+        # Define the buffer for storing the number of goodput grids
+        self._num_read_grids = None
 
         # Define the relocation distraction relevant variables
-        self._relocating_dwell_interval = 0.5 * self._reading_target_dwell_timesteps
-        self._relocating_steps = None
         self._relocating_neighbors = None
-        self._relocating_incorrect_steps = None
         # Neighbor distance threshold
         self._relocating_dist_neighbor = 0.010 + 0.0001  # Actual inter-word distance + offset
         # Relocating - pick up point
-        self._relocating_pickup_dwell_steps = int(0.25 * self._reading_target_dwell_timesteps)
+        self._relocating_pickup_dwell_steps = 10   # int(0.25 * self._reading_target_dwell_timesteps)
         self._relocating_pickup_records = None
         self._relocating_incorrect_num = None
         self._off_background_step = None
@@ -471,22 +475,22 @@ class LocomotionTest(Locomotion):
         self._reading_target_idxs = self._reading_target_idxs.tolist()
         self._switch_target(idx=self._reading_target_idxs[0])
 
+        # The counter of read grids
+        self._num_read_grids = 0
+
         # Background flag
-        self._background_show_flag = False
+        self._background_trials = 0
+        self._background_on = False
 
         # Relocating / pick-up issues
-        self._relocating_steps = 0
         self._relocating_neighbors = []
         self._relocating_pickup_records = []
         self._relocating_incorrect_num = 0
         self._off_background_step = 0
         self._switch_back_durations = []
 
-        # Relocating
-        self._relocating_incorrect_steps = 0
-
         # Locomotion
-        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound
+        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
 
     def _update_background(self):
         super()._update_background()
@@ -494,13 +498,13 @@ class LocomotionTest(Locomotion):
         # If the head is not on the furthest position, it will move towards the background pane
         if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
             # Move the head towards the background pane
-            self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
+            self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep.copy()
 
         # If the head is on the furthest position, i.e., near the background, starts the red color event
         else:
             # Prevent the head from moving further - stop at the furthest position
             if self._data.body(self._head_body_idx).xpos[1] > self._furthest_head_xpos_y:
-                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound.copy()
 
             # Start the red color event
             if self._background_on == False:
@@ -518,10 +522,11 @@ class LocomotionTest(Locomotion):
             else:
                 if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
                     self._background_trials += 1
-                    # Reset the background variables: the color, status flag, and the position
+                    # Reset the background variables: the color, status flag
                     self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
                     self._background_on = False
-                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound
+                    # Reset the head and env-cam position
+                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
 
                     # Switch back to reading and display distractions
                     self._find_neighbors()   # TODO baseline vs issues on relocating
@@ -632,21 +637,19 @@ class LocomotionTest(Locomotion):
                             self._relocating_pickup_records = []
                             self._relocating_neighbors = []
                             self._off_background_step = 0
-                            # Set to 0 to avoid one empty round of relocating: during one interval of the background task,
-                            # it never picked up anything. This is related to the hyper-parameter of self._relocating_pickup_dwell_steps
                             break
             # Check at the start of the next background event, whether the pervious relocating trial was successful
             else:
                 # The relocating did not pick up anything at the previous trial
                 if self._off_background_step != 0:
                     self._relocating_incorrect_num += 1
-                    self._switch_back_durations.append(self._background_show_interval)
+                    self._switch_back_durations.append(0)   # TODO handle this later
                     print(
                         'One relocating trial was unable to pick up any grid at the target grid {}. '
                         'The relocating pickup records is: {}. '
                         'The switch back duration is: {}. '
                         'The background trial number is: {}.'
-                            .format(self._reading_target_idx, self._background_show_interval,
+                            .format(self._reading_target_idx, 0,
                                     self._relocating_pickup_records, self._background_trials)
                     )
                     # Clear the buffer
@@ -656,6 +659,9 @@ class LocomotionTest(Locomotion):
 
             # Check whether the grid (background or reading) has been fixated for enough time
             if self._model.geom(self._reading_target_idx).rgba[2] >= self._rgba_delta:
+
+                # Update the number of read grids
+                self._num_read_grids += 1
 
                 # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
                 if not self._relocating_neighbors:
@@ -692,7 +698,7 @@ class LocomotionTest(Locomotion):
                       'The reading goodput is: {} (grids per timestep). \n'
                       'The switch back error rate is: {}%.'.
                       format(self._steps, np.sum(self._switch_back_durations), self._switch_back_durations,
-                             round(self._background_max_trials * len(self._reading_target_idxs) / self._steps, 5),
+                             round(self._num_read_grids / self._steps, 5),
                              round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
 
         return self._get_obs(), reward, terminate, {}

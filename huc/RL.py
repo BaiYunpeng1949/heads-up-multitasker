@@ -90,9 +90,10 @@ class RL:
 
         # Print the configuration
         if 'foveate' in self._config_rl['train']['checkpoints_folder_name']:
-            print('Configuration:\n    The foveated vision is applied.\n')
+            print('Configuration:\n    The foveated vision is applied.')
         else:
-            print('Configuration:\n    The foveated vision is NOT applied.\n')
+            print('Configuration:\n    The foveated vision is NOT applied.')
+        print('    The layout name is: {}\n'.format(self._config_rl['test']['layout_name']))
 
         # Specify the pipeline mode.
         self._mode = self._config_rl['mode']
@@ -110,7 +111,7 @@ class RL:
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionTrain()
         else:
-            self._env = LocomotionTest()
+            self._env = LocomotionTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -144,12 +145,12 @@ class RL:
             self._model = PPO(
                 policy="CnnPolicy",
                 env=self._parallel_envs,
-                #env=self._env,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
                 tensorboard_log=self._training_logs_path,
                 n_steps=self._config_rl['train']["num_steps"],
                 batch_size=self._config_rl['train']["batch_size"],
+                # ent_coef=self._config_rl['train']["ent_coef"],
                 device=self._config_rl['train']["device"]
             )
         # Load the pre-trained models and test.

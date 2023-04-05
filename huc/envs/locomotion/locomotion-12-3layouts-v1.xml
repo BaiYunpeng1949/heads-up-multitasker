@@ -5,7 +5,7 @@
     <size njmax="1000" nconmax="400"/>
     <default class="main">
         <default class="head">
-            <joint type="slide" stiffness="0.0" damping="0.5" armature="0.0" limited="true"/>
+            <joint type="slide" stiffness="0.0" damping="0.5" armature="0.0" limited="true" range="0 1"/>
         </default>
 
         <default class="eye">
@@ -93,8 +93,8 @@
                 <geom name="grid-36" pos="0.015 0 0" class="smart-glass-grid"/>
             </body>
 
-            <joint name="head-joint-y" class="head" axis="0 1 0" range="0 1"/>
-            <joint name="head-joint-x" class="head" axis="1 0 0" range="0 1"/>
+            <joint name="head-joint-y" class="head" axis="0 1 0" />
+            <joint name="head-joint-x" class="head" axis="1 0 0" />
         </body>
 
         <body name="background-pane" pos="0 1.12 0">

@@ -1,23 +1,24 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 20000000
-    checkpoints_folder_name: 'checkpoints_locomotion_0405_alllayouts_movinghead'
-    num_workers: 16   # As long as it is smaller than the laptop's number of processes: 16.
+    total_timesteps: 30000000
+    checkpoints_folder_name: 'checkpoints_locomotion_0405_alllayouts_movinghead_nousergb_30million'
+    num_workers: 16   # As long as it is smaller than the laptop's number of processes: 16
     num_steps: 5000   # TODO do not change this parameter
-    batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`.
+    batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
     target_kl: 1.0
+    ent_coef: 0.05    # Entropy coefficient
     device: 'cuda'     # 'cuda' for default
-    save_freq: 50000  # Save a checkpoint every 0.5 million steps.
+    save_freq: 50000  # Save a checkpoint every 0.5 million steps
 
   test:
     num_episodes: 1
-    layout_name: 'interline-spacing-100'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
+    layout_name: 'middle-right'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
     loaded_model_name: 'rl_model_10000000_steps'
-    continual_logs_name: 'PPO_61'
+    continual_logs_name: 'PPO_75'
 
 mj_env:
   xml: 'locomotion-12-3layouts-v1.xml'
