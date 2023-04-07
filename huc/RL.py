@@ -4,6 +4,7 @@ import yaml
 import cv2
 from tqdm import tqdm
 import numpy as np
+from typing import Callable
 
 import gym
 
@@ -70,6 +71,27 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.linear(self.cnn(observations))
 
 
+def linear_schedule(initial_value: float) -> Callable[[float], float]:
+    """
+    Linear learning rate schedule.
+    Ref: https://stable-baselines3.readthedocs.io/en/master/guide/examples.html#learning-rate-schedule
+
+    :param initial_value: Initial learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+
+        :param progress_remaining:
+        :return: current learning rate
+        """
+        return progress_remaining * initial_value
+
+    return func
+
+
 class RL:
     def __init__(self, config_file):
         """
@@ -88,15 +110,17 @@ class RL:
         except ValueError:
             print('Invalid configurations. Check your config.yaml file.')
 
+        # Specify the pipeline mode.
+        self._mode = self._config_rl['mode']
+
         # Print the configuration
         if 'foveate' in self._config_rl['train']['checkpoints_folder_name']:
             print('Configuration:\n    The foveated vision is applied.')
         else:
             print('Configuration:\n    The foveated vision is NOT applied.')
-        print('    The layout name is: {}\n'.format(self._config_rl['test']['layout_name']))
-
-        # Specify the pipeline mode.
-        self._mode = self._config_rl['mode']
+        print('    The mode is: {}'.format(self._config_rl['mode']))
+        if self._mode == _MODES['test'] or self._mode == _MODES['debug']:
+            print('        The layout name is: {}\n'.format(self._config_rl['test']['layout_name']))
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
         # self._env = MovingEye()
@@ -150,8 +174,11 @@ class RL:
                 tensorboard_log=self._training_logs_path,
                 n_steps=self._config_rl['train']["num_steps"],
                 batch_size=self._config_rl['train']["batch_size"],
+                # clip_range=linear_schedule(self._config_rl['train']["clip_range"]),
                 # ent_coef=self._config_rl['train']["ent_coef"],
-                device=self._config_rl['train']["device"]
+                # n_epochs=self._config_rl['train']["n_epochs"],
+                device=self._config_rl['train']["device"],
+                seed=42,
             )
         # Load the pre-trained models and test.
         elif self._mode == _MODES['test'] or self._mode == _MODES['continual_train']:
@@ -297,10 +324,6 @@ class RL:
         This method helps run the RL pipeline.
         Call it.
         """
-        print(
-            '\n\n***************************** RL Pipeline starts with the mode {} *************************************'
-                .format(self._mode)
-        )
         # Check train or not.
         if self._mode == _MODES['train']:
             self._train()
