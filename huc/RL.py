@@ -1,7 +1,7 @@
 import os
 
 import yaml
-from tqdm import tqdm
+#from tqdm import tqdm
 import numpy as np
 
 import gym
