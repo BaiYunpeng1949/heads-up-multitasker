@@ -10,6 +10,7 @@ import torch as th
 from torch import nn
 
 from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack
@@ -23,6 +24,7 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack
+from huc.envs.context_switch_replication.SwitchBackLSTM import SwitchBackLSTM
 
 _MODES = {
     'train': 'train',
@@ -96,7 +98,7 @@ class RL:
         # self._env = ReadingEye()
         # self._env = ContextSwitch()
         # self._env = ContextSwitchReplication()
-        self._env = SwitchBack()
+        self._env = SwitchBackLSTM()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -127,8 +129,8 @@ class RL:
                 log_std_init=-1.0,
                 normalize_images=False
             )
-            self._model = PPO(
-                policy="CnnPolicy",
+            self._model = RecurrentPPO(
+                policy="CnnLstmPolicy",
                 env=self._parallel_envs,
                 #env=self._env,
                 verbose=1,
@@ -147,7 +149,7 @@ class RL:
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
             self._num_episodes = self._config_rl['test']['num_episodes']
-            self._num_steps = self._env._ep_len
+            # self._num_steps = self._env._ep_len
             # Load the model
             if self._mode == _MODES['test']:
                 self._model = PPO.load(self._loaded_model_path, self._env)
