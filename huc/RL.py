@@ -138,7 +138,7 @@ class RL:
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
             env_id=self._env.__class__,
-            n_envs=4,#self._config_rl['train']["num_workers"],
+            n_envs=self._config_rl['train']["num_workers"],
             seed=None,
             vec_env_cls=SubprocVecEnv,
         )
