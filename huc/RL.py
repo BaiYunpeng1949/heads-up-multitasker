@@ -12,7 +12,7 @@ import torch as th
 from torch import nn
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack
 from stable_baselines3.common.callbacks import CheckpointCallback
@@ -177,8 +177,9 @@ class RL:
                 # clip_range=linear_schedule(self._config_rl['train']["clip_range"]),
                 # ent_coef=self._config_rl['train']["ent_coef"],
                 # n_epochs=self._config_rl['train']["n_epochs"],
+                learning_rate=self._config_rl['train']["learning_rate"],
                 device=self._config_rl['train']["device"],
-                seed=42,
+                seed=9,
             )
         # Load the pre-trained models and test.
         elif self._mode == _MODES['test'] or self._mode == _MODES['continual_train']:
