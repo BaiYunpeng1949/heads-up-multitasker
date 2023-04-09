@@ -5,7 +5,7 @@ import mujoco
 import os
 
 from gym import Env
-from gym.spaces import Box
+from gym.spaces import Box, Dict
 
 import yaml
 from scipy.ndimage import gaussian_filter
@@ -61,7 +61,11 @@ class SwitchBackLSTM(Env):
         # Define observation space
         self._width = 40
         self._height = 40
-        self.observation_space = Box(low=0, high=255, shape=(3, self._width, self._height))  # width, height correctly set?
+        self.observation_space = Dict({
+            "vision": Box(low=0, high=255, shape=(3, self._width, self._height)),
+            "proprioception": Box(low=-1, high=1, shape=(self._model.nq+self._model.nu,))})
+        # TODO set "proprioception" low and high according to joint/control limits, or make sure to output normalized
+        #  joint/control values as observations
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -86,12 +90,27 @@ class SwitchBackLSTM(Env):
         rgb_foveated = rgb#self._foveate(img=rgb)
         rgb_foveated = np.transpose(rgb_foveated, [2, 0, 1])
         rgb_normalize = self.normalise(rgb_foveated, 0, 255, -1, 1)
-        return rgb_normalize
+
+        # Get joint values (qpos) and motor set points (ctrl) -- call them proprioception for now
+        proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+
+        return {"vision": rgb_normalize, "proprioception": proprioception}
+
+    def _set_initial_state(self):
+
+        # Randomly sample joint values for eye-joint-x and eye-joint-y
+        joints = ["eye-joint-x", "eye-joint-y"]
+        for joint in joints:
+            joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint)
+            self._data.qpos[joint_idx] = np.random.uniform(*self._model.jnt_range[joint_idx])
 
     def reset(self):
 
         # Reset mujoco sim
         mujoco.mj_resetData(self._model, self._data)
+
+        # Random initial state TODO maybe need to input qpos to policy for this to be useful
+        # self._set_initial_state()
 
         # Reset counters
         self._steps = 0
@@ -214,11 +233,16 @@ class SwitchBackLSTM(Env):
         terminate = False
 
         # Normalise action from [-1, 1] to actuator control range
-        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+        # action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        # action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        self._data.ctrl += action
+        for act_name in ["eye-x-motor", "eye-y-motor"]:
+            idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
+            self._data.ctrl[idx] = np.clip(self._data.ctrl[idx], *self._model.actuator_ctrlrange[idx])
 
         # Set motor control
-        self._data.ctrl[:] = action
+        # self._data.ctrl[:] = action
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)

@@ -5,6 +5,7 @@ from tqdm import tqdm
 import numpy as np
 
 import gym
+from gym import spaces
 
 import torch as th
 from torch import nn
@@ -25,6 +26,7 @@ from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack
 from huc.envs.context_switch_replication.SwitchBackLSTM import SwitchBackLSTM
+from huc.sb3.recurrent_policies import RecurrentMultiInputActorCriticPolicyTanhActions
 
 _MODES = {
     'train': 'train',
@@ -35,7 +37,7 @@ _MODES = {
 }
 
 
-class CustomCNN(BaseFeaturesExtractor):
+class VisionExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
         """
@@ -64,11 +66,44 @@ class CustomCNN(BaseFeaturesExtractor):
         with th.no_grad():
             n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
 
-        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.LeakyReLU())
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         return self.linear(self.cnn(observations))
 
+
+class ProprioceptionExtractor(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        super().__init__(observation_space, features_dim)
+        # We assume a 1D tensor
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features=observation_space.shape[0], out_features=features_dim),
+            nn.LeakyReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.net(observations)
+
+
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: spaces.Dict, vision_features_dim: int = 256,
+                 proprioception_features_dim: int = 256):
+        super().__init__(observation_space, features_dim=vision_features_dim+proprioception_features_dim)
+
+        self.extractors = nn.ModuleDict({
+            "vision": VisionExtractor(observation_space["vision"], vision_features_dim),
+            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim)})
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        # self.extractors contain nn.Modules that do all the processing.
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        # Return a (B, self._features_dim) PyTorch tensor, where B is batch dimension.
+        return th.cat(encoded_tensor_list, dim=1)
 
 class RL:
     def __init__(self, config_file):
@@ -103,7 +138,7 @@ class RL:
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
             env_id=self._env.__class__,
-            n_envs=self._config_rl['train']["num_workers"],
+            n_envs=4,#self._config_rl['train']["num_workers"],
             seed=None,
             vec_env_cls=SubprocVecEnv,
         )
@@ -122,17 +157,17 @@ class RL:
             # Configure the model.
             # Initialise model that is run with multiple threads. TODO finalise this later
             policy_kwargs = dict(
-                features_extractor_class=CustomCNN,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=64),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[64, 64],
-                log_std_init=-1.0,
+                net_arch=[256, 256],
+                log_std_init=0.0,
                 normalize_images=False
             )
             self._model = RecurrentPPO(
-                policy="CnnLstmPolicy",
+                policy="MultiInputLstmPolicy",
                 env=self._parallel_envs,
-                #env=self._env,
+                # env=self._env,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
                 tensorboard_log=self._training_logs_path,
@@ -152,7 +187,7 @@ class RL:
             # self._num_steps = self._env._ep_len
             # Load the model
             if self._mode == _MODES['test']:
-                self._model = PPO.load(self._loaded_model_path, self._env)
+                self._model = RecurrentPPO.load(self._loaded_model_path, self._env)
             elif self._mode == _MODES['continual_train']:
                 # Logistics.
                 # Pipeline related variables.
