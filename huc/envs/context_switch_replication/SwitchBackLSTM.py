@@ -96,7 +96,7 @@ class SwitchBackLSTM(Env):
 
         return {"vision": rgb_normalize, "proprioception": proprioception}
 
-    def _set_initial_state(self):
+    def _sample_initial_state(self):
 
         # Randomly sample joint values for eye-joint-x and eye-joint-y
         joints = ["eye-joint-x", "eye-joint-y"]
@@ -109,8 +109,8 @@ class SwitchBackLSTM(Env):
         # Reset mujoco sim
         mujoco.mj_resetData(self._model, self._data)
 
-        # Random initial state TODO maybe need to input qpos to policy for this to be useful
-        # self._set_initial_state()
+        # Random initial state
+        self._sample_initial_state()
 
         # Reset counters
         self._steps = 0
