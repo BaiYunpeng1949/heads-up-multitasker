@@ -172,6 +172,7 @@ class RL:
                 env=self._parallel_envs,
                 # env=self._env,
                 verbose=1,
+                learning_rate=self._config_rl['train']["learning_rate"],
                 policy_kwargs=policy_kwargs,
                 tensorboard_log=self._training_logs_path,
                 n_steps=self._config_rl['train']["num_steps"],
