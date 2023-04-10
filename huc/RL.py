@@ -25,7 +25,8 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.locomotion.Locomotion import Locomotion, LocomotionTrain, LocomotionTest
+from huc.envs.locomotion.Locomotion import Locomotion, LocomotionTrain, LocomotionTest, LocomotionTrickyTest
+from huc.envs.locomotion.Relocation import RelocationTrain
 
 _MODES = {
     'train': 'train',
@@ -132,10 +133,15 @@ class RL:
         # else:
         #     self._env = SwitchBackTest()
 
+        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+        #     self._env = LocomotionTrain()
+        # else:
+        #     self._env = LocomotionTrickyTest()
+
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-            self._env = LocomotionTrain()
+            self._env = RelocationTrain()
         else:
-            self._env = LocomotionTrain()
+            self._env = RelocationTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -179,7 +185,7 @@ class RL:
                 # n_epochs=self._config_rl['train']["n_epochs"],
                 learning_rate=self._config_rl['train']["learning_rate"],
                 device=self._config_rl['train']["device"],
-                seed=9,
+                seed=42,
             )
         # Load the pre-trained models and test.
         elif self._mode == _MODES['test'] or self._mode == _MODES['continual_train']:
