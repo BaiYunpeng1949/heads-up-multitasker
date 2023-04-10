@@ -158,11 +158,14 @@ class RL:
             # Initialise model that is run with multiple threads. TODO finalise this later
             policy_kwargs = dict(
                 features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=64),
+                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=0.0,
-                normalize_images=False
+                normalize_images=False,
+                squash_output=True,
+                lstm_hidden_size=64,
+                n_lstm_layers=3
             )
             self._model = RecurrentPPO(
                 policy="MultiInputLstmPolicy",
