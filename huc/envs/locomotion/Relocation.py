@@ -40,8 +40,6 @@ class RelocationBase(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        # The rgba cumulative change for finishing a fixation
-        self._rgba_delta = 0.2
 
         # Get the primitives idxs in MuJoCo
         self._eye_joint_x_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
@@ -78,7 +76,7 @@ class RelocationBase(Env):
         # self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
         #                    self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
         self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
-        self._HINT_RGBA = [1, 1, 0, 1]      # Yellow: used to be [0.8, 0.8, 0, 1]
+        self._HINT_RGBA = [1, 1, 0, 0.5]      # Yellow: used to be [0.8, 0.8, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
         self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
@@ -88,9 +86,16 @@ class RelocationBase(Env):
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
         self._EVENT_RGBA = [1, 0, 0, 1]      # Red: used to be [0.8, 0, 0, 1]
 
+        # Color changes
+        # The rgba cumulative change for finishing a fixation
+        self._rgba_delta = 1
+        # The rgba cumulative change for finishing a fixation of the real target
+        self._alpha_delta = 1 - self._HINT_RGBA[3]
+
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
         self._reading_target_dwell_timesteps = int(0.5 * self._action_sample_freq)
         self._change_rbga_reading_target = self._rgba_delta / self._reading_target_dwell_timesteps
+        self._change_alpha_reading_target = self._alpha_delta / self._reading_target_dwell_timesteps
 
         # Define the events on the background pane
         self._background_on = None
@@ -250,7 +255,7 @@ class RelocationTrain(RelocationBase):
         super().__init__()
 
         # Initialize the episode length
-        self._ep_len = 200
+        self._ep_len = 500
 
         # Initialize the steps on target: either reading or background
         self._steps_on_target = None
@@ -380,20 +385,26 @@ class RelocationTrain(RelocationBase):
 
         # Target detection
         if geomid in self._neighbors:
-            # Sparse reward
-            reward = 1
 
             # Update the steps on target
             self._neighbors_steps[self._neighbors.index(geomid)] += 1
+
             if geomid == target_idx:
+                # Sparse reward
+                reward = 1
                 # Update the steps on target
                 self._steps_on_target += 1
+                # Update the reading target - becomes more opaque
+                self._model.geom(geomid).rgba[2] += self._change_alpha_reading_target
+            else:
+                # Update the distractions - becomes dimmer
+                self._model.geom(geomid).rgba[2] += change_rgba
 
             # Update the environment
             # De-highlight the geom if it has been fixated enough
-            if self._neighbors_steps[self._neighbors.index(geomid)] >= self._reading_target_dwell_timesteps:
-                self._model.geom(geomid).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                self._model.geom(geomid).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+            if self._neighbors_steps[self._neighbors.index(geomid)] >= self._reading_target_dwell_timesteps:    # TODO change to relocation threshold dwell timesteps
+                # self._model.geom(geomid).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                # self._model.geom(geomid).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
                 # Update the neighbors list
                 self._neighbors[self._neighbors.index(geomid)] = -2     # TODO cannot use -1, -1 is the default value for rangefinder
 
@@ -401,8 +412,7 @@ class RelocationTrain(RelocationBase):
                 if geomid == target_idx:
                     # Update the reading target
                     self._reading_trials += 1
-            else:
-                self._model.geom(geomid).rgba[2] += change_rgba
+
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 

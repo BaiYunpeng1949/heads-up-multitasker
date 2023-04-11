@@ -293,7 +293,7 @@ class RL:
             done = False
             score = 0
             info = None
-            # progress_bar = tqdm(total=self._num_steps)
+
             while not done:
                 if self._mode == _MODES['debug']:
                     action = self._env.action_space.sample()
@@ -313,7 +313,7 @@ class RL:
                     if not os.path.exists(folder_name):
                         os.makedirs(folder_name)
                     path = folder_name + '/{}.png'.format(self._env._steps)
-                    # path = 'C:/Users/91584/Desktop/{}/{}.png'.format(self._config_rl['train']['checkpoints_folder_name'], self._env._steps)
+
                     cv2.imwrite(path, self._env.render()[1])
 
                 score += reward
@@ -349,7 +349,7 @@ class RL:
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             layout_name = self._config_rl['test']['layout_name']
-            video_name_prefix = layout_name + '_' + self._loaded_model_name
+            video_name_prefix = self._config_rl['train']['checkpoints_folder_name'] + '_' + layout_name + '_' + self._loaded_model_name
             video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
             write_video(
                 filepath=video_path,
@@ -368,8 +368,6 @@ class RL:
                 height=rgb_eye_images[0].shape[0],
             )
         else:
-            # TODO specify the demo mode later.
-            #  Should be something like: self._env.demo()
             pass
 
     def __del__(self):
