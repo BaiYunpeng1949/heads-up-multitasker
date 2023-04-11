@@ -78,7 +78,7 @@ class RelocationBase(Env):
         # self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
         #                    self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
         self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
-        self._HINT_RGBA = [0.8, 0.8, 0, 1]
+        self._HINT_RGBA = [1, 1, 0, 1]      # Yellow: used to be [0.8, 0.8, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
         self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
@@ -86,7 +86,7 @@ class RelocationBase(Env):
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
-        self._EVENT_RGBA = [0.8, 0, 0, 1]
+        self._EVENT_RGBA = [1, 0, 0, 1]      # Red: used to be [0.8, 0, 0, 1]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
         self._reading_target_dwell_timesteps = int(0.5 * self._action_sample_freq)
@@ -250,7 +250,7 @@ class RelocationTrain(RelocationBase):
         super().__init__()
 
         # Initialize the episode length
-        self._ep_len = 100
+        self._ep_len = 200
 
         # Initialize the steps on target: either reading or background
         self._steps_on_target = None
@@ -265,10 +265,13 @@ class RelocationTrain(RelocationBase):
         self._background_show_flag = None
 
         # Neighbor distance threshold
-        self._neighbor_dist_thres = 0.010 + 0.0001
+        self._neighbor_dist_thres = None    # 0.010 + 0.0001, or 0.0121
         # Neighbors list
         self._relocating_neighbors = None
         self._center_grid_idx = None
+        self._neighbors = None
+        self._neighbors_permanent_buffer = None
+        self._neighbors_steps = None    # Each grids in neighbors list has a step counter
 
         # Define the initial displacement of the agent's head
         self._head_init_displacement_y = None
@@ -290,10 +293,13 @@ class RelocationTrain(RelocationBase):
         random_choice = np.random.choice([0, 1, 2], 1)
         if random_choice == 0:
             self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
+            self._neighbor_dist_thres = 0.0101
         elif random_choice == 1:
             self._reading_target_idxs = self._bc_reading_target_idxs.copy()
+            self._neighbor_dist_thres = 0.0121
         else:
             self._reading_target_idxs = self._mr_reading_target_idxs.copy()
+            self._neighbor_dist_thres = 0.0101
 
         # Reset the smart glass pane scene and variables
         for idx in self._reading_target_idxs:
@@ -303,24 +309,20 @@ class RelocationTrain(RelocationBase):
 
         # Define the target reading grids from the selected reading layouts
         self._reading_trials = 0
-        random_idxs = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)
-        # Define the central target idx, and start the distractions with a reading target embedded in it
-        self._center_grid_idx = random_idxs[0]
-        self._find_neighbors()
 
-        # # Define the background events
-        # self._background_trials = 0
-        # self._background_on = False
-        # self._background_show_flag = np.random.choice([True, False])
-        #
-        # # Relocation task
-        # self._relocating_neighbors = []
+        # Define the central target idx, and start the distractions with a reading target embedded in it
+        random_idxs = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)
+        self._center_grid_idx = random_idxs[0]
+        self._neighbors = []
+        self._neighbors_steps = []
+        # Find the neighbors and set up the scene
+        self._find_neighbors()
 
         # Initialize the steps on target
         self._steps_on_target = 0
 
         # Initialize the locomotion slide displacement
-        self._data.qpos[self._head_joint_y_idx] = 0
+        self._data.qpos[self._head_joint_y_idx] = 0.0
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -339,8 +341,18 @@ class RelocationTrain(RelocationBase):
                 self._model.geom(grid_idx).rgba[0:4] = self._HINT_RGBA.copy()   # Continue to avoid infinite loop
                 self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
 
+        # Update the neighbors list
+        self._neighbors = neighbors.copy()
+        self._neighbors_permanent_buffer = neighbors.copy()
+
+        # Initialize the steps on each neighbor
+        self._neighbors_steps = [0] * len(neighbors)
+
         # Randomly choose one grid in the neighbors list to be the target
         self._reading_target_idx = np.random.choice(neighbors, 1)[0].copy()
+
+        if self._mode == "test":        # TODO debug delete later
+            self._reading_target_idx = self._center_grid_idx
 
     def step(self, action):
         super().step(action)
@@ -366,18 +378,31 @@ class RelocationTrain(RelocationBase):
         target_idx = self._reading_target_idx
         change_rgba = self._change_rbga_reading_target
 
-        # Focus on targets detection
-        if geomid == target_idx:
-
+        # Target detection
+        if geomid in self._neighbors:
             # Sparse reward
             reward = 1
 
             # Update the steps on target
-            self._steps_on_target += 1
+            self._neighbors_steps[self._neighbors.index(geomid)] += 1
+            if geomid == target_idx:
+                # Update the steps on target
+                self._steps_on_target += 1
 
             # Update the environment
-            self._model.geom(geomid).rgba[2] += change_rgba
+            # De-highlight the geom if it has been fixated enough
+            if self._neighbors_steps[self._neighbors.index(geomid)] >= self._reading_target_dwell_timesteps:
+                self._model.geom(geomid).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                self._model.geom(geomid).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+                # Update the neighbors list
+                self._neighbors[self._neighbors.index(geomid)] = -2     # TODO cannot use -1, -1 is the default value for rangefinder
 
+                # Check for the reading target
+                if geomid == target_idx:
+                    # Update the reading target
+                    self._reading_trials += 1
+            else:
+                self._model.geom(geomid).rgba[2] += change_rgba
             # Do a forward so everything will be set
             mujoco.mj_forward(self._model, self._data)
 
@@ -387,11 +412,18 @@ class RelocationTrain(RelocationBase):
         else:
             terminate = False
 
-            if self._steps_on_target >= self._reading_target_dwell_timesteps:
-                self._reading_trials += 1
-                # For multiple trials - remember to initialize scene - flag and geom color
-                self._steps_on_target = 0
-                if self._reading_trials >= self._reading_max_trials:
-                    terminate = True
+            # Terminate if all trials have been done - TODO if multiple trials, buffers need to be reset
+            if self._reading_trials >= self._reading_max_trials:
+                terminate = True
+
+        # Print logs if on the testing mode - TODO debug delete
+        if self._mode != 'train' and self._mode != 'continual_train':
+            if terminate == True:
+                print(f'The ending steps are: {self._steps}; \n'
+                      f'The neighbors were defined as: {self._neighbors_permanent_buffer}; \n'
+                      f'The number of elements in the neighborhood: {len(self._neighbors)}; \n'
+                      f'The number of steps on the target: {self._steps_on_target}; \n'
+                      f'The target idx is: {target_idx}; \n'
+                      f'The neighbor fixations steps are: {self._neighbors_steps}; \n')
 
         return self._get_obs(), reward, terminate, {}

@@ -25,7 +25,7 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.locomotion.Locomotion import Locomotion, LocomotionTrain, LocomotionTest, LocomotionTrickyTest
+from huc.envs.locomotion.Locomotion import LocomotionTrain, LocomotionRelocationTrain, LocomotionTest, LocomotionTrickyTest
 from huc.envs.locomotion.Relocation import RelocationTrain
 
 _MODES = {
@@ -142,6 +142,11 @@ class RL:
             self._env = RelocationTrain()
         else:
             self._env = RelocationTrain()
+
+        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+        #     self._env = LocomotionRelocationTrain()
+        # else:
+        #     self._env = LocomotionRelocationTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -315,8 +320,8 @@ class RL:
                 # progress_bar.update(1)
             # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
             print(
-                '\nEpisode:{}     Score:{}    '
-                .format(episode, score)
+                f'Episode:{episode}     Score:{score} \n'
+                f'--------------------------------------------------\n'
             )
 
         return imgs, imgs_eye

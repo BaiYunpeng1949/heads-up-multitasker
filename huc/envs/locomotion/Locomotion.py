@@ -14,7 +14,7 @@ from scipy.ndimage import gaussian_filter
 from huc.utils.rendering import Camera, Context
 
 
-class Locomotion(Env):
+class LocomotionBase(Env):
 
     def __init__(self):
 
@@ -75,8 +75,9 @@ class Locomotion(Env):
         self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:4].copy()
         self._DEFAULT_TEXT_RGBA = [0, 0, 0, 1]
         self._RUNTIME_TEXT_RGBA = None
-        self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
-                           self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
+        # self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
+        #                    self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
+        self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
         self._HINT_RGBA = [0.8, 0.8, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
@@ -262,7 +263,7 @@ class Locomotion(Env):
         return
 
 
-class LocomotionTrain(Locomotion):
+class LocomotionTrain(LocomotionBase):
 
     def __init__(self):
         super().__init__()
@@ -428,7 +429,227 @@ class LocomotionTrain(Locomotion):
         return self._get_obs(), reward, terminate, {}
 
 
-class LocomotionTest(Locomotion):
+class LocomotionRelocationTrain(LocomotionBase):
+    def __init__(self):
+        super().__init__()
+
+        # Initialize the episode length
+        self._ep_len = 100
+
+        # Initialize the steps on target: either reading or background
+        self._steps_on_target = None
+
+        # Initialize the counter, and the max number of trials for the reading task
+        self._reading_trials = None
+        self._reading_max_trials = 1
+
+        # Initialize the max number of trials for the background task
+        self._background_max_trials = 1
+
+        # Initialize the relocation relevant variables
+        self._neighbor_dist_thres = 0.010 + 0.0001
+        self._relocating_center_grid_idx = None
+        self._relocating_dwell_steps_thres = int(0.5 * self._action_sample_freq)
+
+        # Define the transition of 3 modes: 1-reading, 2-background, 3-relocation
+        self._tasks_modes = [1, 2, 3]
+        self._task_mode = None
+
+        # Define the initial displacement of the agent's head
+        self._head_init_displacement_y = None
+
+    def _reset_scene(self):
+        super()._reset_scene()
+
+        # Initialize eye ball rotation angles
+        eye_x_motor_init_range = [-0.5, 0.5]
+        eye_y_motor_init_range = [-0.5, 0.4]
+
+        init_angle_x = np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1])
+        init_angle_y = np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])
+
+        self._data.qpos[self._eye_joint_x_idx] = init_angle_x
+        self._data.qpos[self._eye_joint_y_idx] = init_angle_y
+
+        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
+        random_choice = np.random.choice([0, 1, 2], 1)
+        if random_choice == 0:
+            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
+        elif random_choice == 1:
+            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
+        else:
+            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
+
+        # Reset the smart glass pane scene and variables
+        for idx in self._reading_target_idxs:
+            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+            mujoco.mj_forward(self._model, self._data)
+
+        # Define the task mode: 1-reading, 2-background, 3-relocation
+        self._task_mode = np.random.choice(self._tasks_modes, 1).copy()
+
+        # Reading task
+        # Define the target reading grids from the selected reading layouts
+        if self._task_mode == 1:
+            self._reading_trials = 0
+            random_reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
+            # Highlight the target reading grids
+            self._switch_target(idx=random_reading_target_idxs[0])
+        # Background task
+        elif self._task_mode == 2:
+            # Define the background events
+            self._background_trials = 0
+            self._background_on = False
+
+        # Relocation task
+        elif self._task_mode == 3:
+            self._reading_trials = 0
+            # Randomize the center grid index for evoking neighbors
+            self._center_grid_idx = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)[0]
+            self._find_neighbors()
+        else:
+            raise Warning('The task mode is not defined! Should be 1-reading, 2-background, 3-relocation!')
+
+        # Initialize the steps on target
+        self._steps_on_target = 0
+
+        # Initialize the locomotion slide displacement
+        self._data.qpos[self._head_joint_y_idx] = 0
+
+        # Initialize the locomotion head position
+        # Reading and Relocation task
+        if self._task_mode == 1 or self._task_mode == 3:
+            self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound,
+                                                               self._displacement_upper_bound)
+            self._data.qpos[self._head_joint_y_idx] = self._head_init_displacement_y
+        # Background task
+        else:
+            self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def _find_neighbors(self):
+
+        center_grid_idx = self._center_grid_idx
+        center_xpos = self._data.geom(center_grid_idx).xpos
+
+        neighbors = []
+
+        for grid_idx in self._reading_target_idxs:
+            grid_xpos = self._data.geom(grid_idx).xpos
+            dist = np.linalg.norm(grid_xpos - center_xpos)
+            if dist <= self._neighbor_dist_thres:
+                neighbors.append(grid_idx)
+                self._model.geom(grid_idx).rgba[0:4] = self._HINT_RGBA.copy()   # Continue to avoid infinite loop
+                self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
+
+        # Randomly choose one grid in the neighbors list to be the target
+        self._reading_target_idx = np.random.choice(neighbors, 1)[0].copy()
+
+    def _update_background(self):
+        super()._update_background()
+
+        # The background pane is showing events - the red color events show
+        if self._task_mode == 2:
+            if self._background_on == False:
+                if self._background_trials < self._background_max_trials:
+                    # Show the background event by changing to a brighter color
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                    self._background_on = True
+        # The background pane is not showing events - the head is moving
+        else:
+            # Move the head if it has not getting close to the background enough
+            if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
+                self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def step(self, action):
+        super().step(action)
+
+        # Normalise action from [-1, 1] to actuator control range
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        # Set motor control
+        self._data.ctrl[:] = action
+
+        # Update the background events
+        self._update_background()
+
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data, self._frame_skip)
+        self._steps += 1
+
+        # Eye-sight detection
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
+
+        # Estimate reward for each step
+        reward = 0
+
+        # Specify the targets on different conditions
+        if self._task_mode == 2:
+            target_idx = self._background_idx0
+            change_rgba = self._change_rgba_background
+        else:
+            target_idx = self._reading_target_idx
+            change_rgba = self._change_rbga_reading_target
+
+        # Focus on targets detection
+        if geomid == target_idx:
+            # Sparse reward
+            reward = 1
+
+            # Update the steps on target
+            self._steps_on_target += 1
+
+            # Update the environment
+            self._model.geom(geomid).rgba[2] += change_rgba
+
+            # Do a forward so everything will be set
+            mujoco.mj_forward(self._model, self._data)
+
+        # Check termination conditions
+        if self._steps >= self._ep_len:
+            terminate = True
+        else:
+            terminate = False
+
+            # Background events scenario
+            if self._task_mode == 2:
+                if self._steps_on_target >= self._background_dwell_timesteps:
+                    self._background_trials += 1
+                    # For multiple trials - remember to initialize scene - flag and geom color
+                    self._steps_on_target = 0
+                    if self._background_trials >= self._background_max_trials:
+                        terminate = True
+            # Reading grids scenario
+            else:
+                if self._task_mode == 1:
+                    thres = self._reading_target_dwell_timesteps
+                else:
+                    thres = self._relocating_dwell_steps_thres
+                if self._steps_on_target >= thres:
+                    self._reading_trials += 1
+                    # For multiple trials - remember to initialize scene - flag and geom color
+                    # self._steps_on_target = 0       # TODO uncomment later
+                    if self._reading_trials >= self._reading_max_trials:
+                        terminate = True
+
+        # Print logs if on the testing mode - TODO debug delete
+        if self._mode != 'train' and self._mode != 'continual_train':
+            if terminate == True:
+                print(f'The ending steps are: {self._steps}; \n'
+                      f'The task mode is: {self._task_mode}; \n'
+                      f'The layout is: {self._reading_target_idx}; \n'
+                      f'The number of steps on the target: {self._steps_on_target}; \n'
+                      f'The target idx is: {target_idx}; \n')
+
+        return self._get_obs(), reward, terminate, {}
+
+
+class LocomotionTest(LocomotionBase):
 
     def __init__(self):
         super().__init__()
@@ -706,7 +927,7 @@ class LocomotionTest(Locomotion):
         return self._get_obs(), reward, terminate, {}
 
 
-class LocomotionTrickyTest(Locomotion):
+class LocomotionTrickyTest(LocomotionBase):
 
     def __init__(self):
         super().__init__()
