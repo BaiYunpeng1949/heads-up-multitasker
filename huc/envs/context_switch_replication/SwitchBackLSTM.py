@@ -17,6 +17,9 @@ class SwitchBackLSTM(Env):
 
     def __init__(self):
 
+        # RNG
+        self.rng = np.random.default_rng()
+
         # Get directory of this file
         directory = os.path.dirname(os.path.realpath(__file__))
 
@@ -31,26 +34,22 @@ class SwitchBackLSTM(Env):
 
         # Initialise thresholds and counters
         self._steps = 0
-        self._steps_without_hit = 0
-        self._max_steps_without_hit = int(self._action_sample_freq*4)
-        self._total_dwell_time = 0
-        self._dwell_time_threshold = 2#int(self._action_sample_freq*0.1)
-        self._target = -1
+        self._steps_without_read = 0
+        self._max_steps_without_read = int(self._action_sample_freq*4)
+        self._dwell_time = 0
+        self._dwell_time_threshold = int(self._action_sample_freq*0.5)
 
         # Traverse order of targets
         self._target_idx = 0
         self._traverse_names = ["grid-7", "grid-8", "grid-9", "grid-10",
                                 "grid-25", "grid-26", "grid-27", "grid-28",
                                 "grid-43", "grid-44", "grid-45", "grid-46"]
-        self._traverse_ids = [mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, name) for name in self._traverse_names]
+        self._traverse_order = self._get_traverse_order(self._traverse_names)
+        self._target = self._traverse_order[self._target_idx]
 
-        # Add a -1 to traverse ids so we know when to stop
-        self._traverse_names.append("STOP")
-        self._traverse_ids.append(-1)
-
-        # Flash current target geom once it has been read
+        # Flash the geom that needs to be read
         self._flashing = False
-        self._flash_duration_steps = 1
+        self._flash_duration_steps = 5
         self._flash_stop = -1
         self._flash_id = -1
         if self._flash_duration_steps == 0:
@@ -82,6 +81,9 @@ class SwitchBackLSTM(Env):
                                dt=1 / self._action_sample_freq)
         self._cam_eye_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
+    def _get_traverse_order(self, names):
+        return [mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, name) for name in names]
+
     def _get_obs(self):
 
         # Render the image
@@ -99,30 +101,46 @@ class SwitchBackLSTM(Env):
     def _sample_initial_state(self):
 
         # Randomly sample joint values for eye-joint-x and eye-joint-y
-        joints = ["eye-joint-x", "eye-joint-y"]
-        for joint in joints:
-            joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint)
-            self._data.qpos[joint_idx] = np.random.uniform(*self._model.jnt_range[joint_idx])
+        # joints = ["eye-joint-x", "eye-joint-y"]
+        # for joint in joints:
+        #     joint_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint)
+        #     self._data.qpos[joint_idx] = np.random.uniform(*self._model.jnt_range[joint_idx])
 
-    def reset(self):
+        # Randomly sample motor values for eye-x-motor and eye-y-motor
+        motors = ["eye-x-motor", "eye-y-motor"]
+        for motor in motors:
+            motor_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, motor)
+            self._data.ctrl[motor_idx] = np.random.uniform(*self._model.actuator_ctrlrange[motor_idx])
+
+    def reset(self, scramble=True):
 
         # Reset mujoco sim
         mujoco.mj_resetData(self._model, self._data)
 
         # Random initial state
-        self._sample_initial_state()
+        # self._sample_initial_state()
 
         # Reset counters
         self._steps = 0
-        self._steps_without_hit = 0
-        self._total_dwell_time = 0
+        self._steps_without_read = 0
+        self._dwell_time = 0
 
         # Reset other stuff
         self._flash_stop = -1
         self._flash_id = -1
         self._flashing = False
+
+        # Scramble traverse order if necessary
+        if scramble:
+            self._traverse_order = self._get_traverse_order(self.rng.permutation(self._traverse_names))
+        else:
+            self._traverse_order = self._get_traverse_order(self._traverse_names)
+        self._traverse_order = [self._traverse_order[0]]
         self._target_idx = 0
-        self._target = self._traverse_ids[self._target_idx]
+        self._target = self._traverse_order[self._target_idx]
+
+        # Set flashing
+        self._start_flash()
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -236,10 +254,10 @@ class SwitchBackLSTM(Env):
         # action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         # action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
-        self._data.ctrl += action
-        for act_name in ["eye-x-motor", "eye-y-motor"]:
-            idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
-            self._data.ctrl[idx] = np.clip(self._data.ctrl[idx], *self._model.actuator_ctrlrange[idx])
+        # self._data.ctrl += action
+        for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
+            act_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
+            self._data.ctrl[act_idx] = np.clip(self._data.ctrl[act_idx]+0.05*action[idx], *self._model.actuator_ctrlrange[idx])
 
         # Set motor control
         # self._data.ctrl[:] = action
@@ -248,40 +266,51 @@ class SwitchBackLSTM(Env):
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
-        # Eye-sight detection
-        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
-
-        if geomid == self._target:
-            self._steps_without_hit = 0
-            self._total_dwell_time += 1
-            reward = 1
-        else:
-            self._steps_without_hit += 1
-            reward = 0.1*np.exp(-10*self._angle_from_target(site_name="rangefinder-site"))
-
-        # Check if current target has been read
-        if self._total_dwell_time >= self._dwell_time_threshold:
-
-            # Flash target
-            self._start_flash()
-
-            # Advance to next target
-            self._steps_without_hit = 0
-            self._total_dwell_time = 0
-            self._target_idx += 1
-            self._target = self._traverse_ids[self._target_idx]
-
-
         # Check if we should stop flashing
         if self._flashing and self._steps >= self._flash_stop:
             self._stop_flash()
 
-        # Check if all targets have been traversed
-        if self._traverse_names[self._target_idx] == "STOP":
-            terminate = True
+        # Eye-sight detection
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
 
-        # Check for early termination
-        if self._steps_without_hit >= self._max_steps_without_hit:
-            terminate = True
+        if geomid == self._target:
+            self._dwell_time += 1
+        else:
+            self._dwell_time = 0
+
+        # Check if current target has been read
+        if self._dwell_time >= self._dwell_time_threshold:
+
+            # Give big reward for reading target
+            reward = 10
+
+            # Advance to next target
+            terminate = self._next_target()
+
+        else:
+
+            # Calculate reward based on angle difference
+            reward = 0.1 * (np.exp(-10*self._angle_from_target(site_name="rangefinder-site"))-0)
+
+            # Increase counter
+            self._steps_without_read += 1
+
+        # Check if we should switch target (early termination)
+        if self._steps_without_read >= self._max_steps_without_read:
+            terminate = self._next_target()
 
         return self._get_obs(), reward, terminate, {}
+
+    def _next_target(self):
+
+        self._steps_without_read = 0
+        self._dwell_time = 0
+        self._target_idx += 1
+        self._target = self._traverse_order[self._target_idx] if self._target_idx < len(self._traverse_order) else None
+
+        # Flash next target (if we haven't reached end of traverse list)
+        if self._target is not None:
+            self._start_flash()
+            return False
+        else:
+            return True
