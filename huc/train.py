@@ -46,10 +46,10 @@ if __name__ == "__main__":
     features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32),
     activation_fn=torch.nn.LeakyReLU,
     net_arch=[256, 256],
-    log_std_init=-1.0,
+    log_std_init=0.0,
     normalize_images=False,
-    lstm_hidden_size=32,
-    n_lstm_layers=6
+    lstm_hidden_size=256,
+    n_lstm_layers=3
   )
   model = RecurrentPPO(
     policy=RecurrentMultiInputActorCriticPolicyTanhActions,
