@@ -112,7 +112,7 @@ class SwitchBackLSTM(Env):
             motor_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, motor)
             self._data.ctrl[motor_idx] = np.random.uniform(*self._model.actuator_ctrlrange[motor_idx])
 
-    def reset(self, scramble=True):
+    def reset(self, scramble=False):
 
         # Reset mujoco sim
         mujoco.mj_resetData(self._model, self._data)
@@ -135,7 +135,7 @@ class SwitchBackLSTM(Env):
             self._traverse_order = self._get_traverse_order(self.rng.permutation(self._traverse_names))
         else:
             self._traverse_order = self._get_traverse_order(self._traverse_names)
-        self._traverse_order = [self._traverse_order[0]]
+        #self._traverse_order = [self._traverse_order[0]]
         self._target_idx = 0
         self._target = self._traverse_order[self._target_idx]
 
@@ -257,7 +257,7 @@ class SwitchBackLSTM(Env):
         # self._data.ctrl += action
         for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
             act_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
-            self._data.ctrl[act_idx] = np.clip(self._data.ctrl[act_idx]+0.05*action[idx], *self._model.actuator_ctrlrange[idx])
+            self._data.ctrl[act_idx] = np.clip(self._data.ctrl[act_idx]+0.2*action[idx], *self._model.actuator_ctrlrange[idx])
 
         # Set motor control
         # self._data.ctrl[:] = action
