@@ -19,9 +19,9 @@ rl:
     save_freq: 50000  # Save a checkpoint every 0.5 million steps
 
   test:
-    num_episodes: 10
-    layout_name: 'bottom-center'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_40000000_steps'
+    num_episodes: 1
+    layout_name: 'interline-spacing-100'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
+    loaded_model_name: 'rl_model_50000000_steps'
     continual_logs_name: 'PPO_88'
 
 mj_env:
