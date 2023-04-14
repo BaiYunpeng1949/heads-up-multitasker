@@ -93,7 +93,7 @@ class RelocationBase(Env):
         self._alpha_delta = 1 - self._HINT_RGBA[3]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
-        self._reading_target_dwell_timesteps = int(0.5 * self._action_sample_freq)
+        self._reading_target_dwell_timesteps = int(2 * self._action_sample_freq)        # TODO this has to be the relocation related variable in locomotion class
         self._change_rbga_reading_target = self._rgba_delta / self._reading_target_dwell_timesteps
         self._change_alpha_reading_target = self._alpha_delta / self._reading_target_dwell_timesteps
 
@@ -395,7 +395,7 @@ class RelocationTrain(RelocationBase):
                 # Update the steps on target
                 self._steps_on_target += 1
                 # Update the reading target - becomes more opaque
-                self._model.geom(geomid).rgba[2] += self._change_alpha_reading_target
+                self._model.geom(geomid).rgba[2] += self._change_alpha_reading_target   # TODO a mistake, but it works, the index should be 3
             else:
                 # Update the distractions - becomes dimmer
                 self._model.geom(geomid).rgba[2] += change_rgba

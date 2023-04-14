@@ -138,15 +138,15 @@ class RL:
         # else:
         #     self._env = LocomotionTrickyTest()
 
-        if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-            self._env = RelocationTrain()
-        else:
-            self._env = RelocationTrain()
-
         # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-        #     self._env = LocomotionRelocationTrain()
+        #     self._env = RelocationTrain()
         # else:
-        #     self._env = LocomotionRelocationTrain()
+        #     self._env = RelocationTrain()
+
+        if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+            self._env = LocomotionRelocationTrain()
+        else:
+            self._env = LocomotionRelocationTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -349,7 +349,7 @@ class RL:
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             layout_name = self._config_rl['test']['layout_name']
-            video_name_prefix = self._config_rl['train']['checkpoints_folder_name'] + '_' + layout_name + '_' + self._loaded_model_name
+            video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_' + layout_name
             video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
             write_video(
                 filepath=video_path,
