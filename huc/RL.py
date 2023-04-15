@@ -59,6 +59,10 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.LeakyReLU(),
             nn.Flatten(),
         )
 
@@ -119,9 +123,10 @@ class RL:
             print('Configuration:\n    The foveated vision is applied.')
         else:
             print('Configuration:\n    The foveated vision is NOT applied.')
-        print('    The mode is: {}'.format(self._config_rl['mode']))
-        if self._mode == _MODES['test'] or self._mode == _MODES['debug']:
-            print('        The layout name is: {}\n'.format(self._config_rl['test']['layout_name']))
+        print(
+            f"    The mode is: {self._config_rl['mode']} \n"
+            f"    The layout name is: {self._config_rl['test']['layout_name']}\n"
+        )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
         # self._env = MovingEye()
@@ -173,7 +178,7 @@ class RL:
                 features_extractor_class=CustomCNN,
                 features_extractor_kwargs=dict(features_dim=128),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[64, 64],
+                net_arch=[128, 128],
                 log_std_init=-1.0,
                 normalize_images=False
             )

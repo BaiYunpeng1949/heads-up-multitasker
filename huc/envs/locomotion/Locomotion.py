@@ -84,7 +84,7 @@ class LocomotionBase(Env):
         # self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
         #                    self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
         self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
-        self._HINT_RGBA = [0.8, 0.8, 0, 1]
+        self._HINT_RGBA = [1, 1, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
         self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
@@ -92,7 +92,7 @@ class LocomotionBase(Env):
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
-        self._EVENT_RGBA = [0.8, 0, 0, 1]
+        self._EVENT_RGBA = [1, 0, 0, 1]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
         self._reading_target_dwell_timesteps = int(2 * self._action_sample_freq)
@@ -459,8 +459,7 @@ class LocomotionRelocationTrain(LocomotionBase):
 
         # Color settings for relocation
         self._relocation_target_idx = None
-        self._RELOCATION_HINT_RGBA = [1, 1, 0,
-                                      0.5]  # Maybe change to another color to decrease the difficulty of training the policy
+        self._RELOCATION_HINT_RGBA = [1, 1, 0, 0.5]
         self._relocation_rgb_change_per_fixation = 1 / self._relocating_dwell_steps_thres
         self._relocation_alpha_change_per_fixation = (1 - self._RELOCATION_HINT_RGBA[
             3]) / self._relocating_dwell_steps_thres
@@ -491,18 +490,19 @@ class LocomotionRelocationTrain(LocomotionBase):
         self._data.qpos[self._eye_joint_y_idx] = init_angle_y
 
         # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
-        self._layout = np.random.choice([0, 1, 2], 1)
-        if self._layout == 0:
+        self._layout = np.random.choice(['interline-spacing-100', 'bottom-center', 'middle-right'], 1)
+        # self._layout = self._config['rl']['test']['layout_name']
+        if self._layout == 'interline-spacing-100':
             self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
             self._neighbor_dist_thres = 0.0101
-        elif self._layout == 1:
+        elif self._layout == 'bottom-center':
             self._reading_target_idxs = self._bc_reading_target_idxs.copy()
             self._neighbor_dist_thres = 0.0121  # Bottom-center layout - not aligned with the visual search flow, more distractions will caused
-        elif self._layout == 2:
+        elif self._layout == 'middle-right':
             self._reading_target_idxs = self._mr_reading_target_idxs.copy()
             self._neighbor_dist_thres = 0.0101
         else:
-            raise NotImplementedError('Invalid layout index: {}'.format(self._layout))
+            raise NotImplementedError('Invalid layout name: {}'.format(self._layout))
 
         # Reset the smart glass pane scene and variables
         for idx in self._reading_target_idxs:
@@ -612,7 +612,7 @@ class LocomotionRelocationTrain(LocomotionBase):
         # Specify the targets on different conditions
         if self._task_mode == 1:
             target_idx = self._reading_target_idx
-            change_rgba = self._reading_rgb_change_per_step
+            change_rgba = 0  # self._reading_rgb_change_per_step
         elif self._task_mode == 2:
             target_idx = self._background_idx0
             change_rgba = self._background_rgba_change_per_step
@@ -668,13 +668,10 @@ class LocomotionRelocationTrain(LocomotionBase):
         mujoco.mj_forward(self._model, self._data)
 
         # Check termination conditions
-        if self._steps >= self._ep_len:
+        if self._steps >= self._ep_len or self._trials >= self._max_trials:
             terminate = True
         else:
             terminate = False
-
-            if self._trials >= self._max_trials:
-                terminate = True
 
         return self._get_obs(), reward, terminate, {}
 
@@ -1360,15 +1357,14 @@ class LocomotionRelocationTest(LocomotionBase):
 
             # Start the red color event
             if self._task_mode != BACKGROUND_MODE:
-                if self._background_trials < self._background_max_trials:
-                    self._task_mode = BACKGROUND_MODE
-                    # Set the red color
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                    # De-highlight the previous job - reading
-                    self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                    for idx in self._reading_target_idxs:
-                        self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                        self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+                self._task_mode = BACKGROUND_MODE
+                # Set the red color
+                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                # De-highlight the previous job - reading
+                self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
+                for idx in self._reading_target_idxs:
+                    self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                    self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -1515,7 +1511,7 @@ class LocomotionRelocationTest(LocomotionBase):
         mujoco.mj_forward(self._model, self._data)
 
         # Check termination conditions
-        if self._steps >= self._ep_len or self._background_trials >= self._background_max_trials:
+        if self._steps >= self._ep_len or self._background_trials > self._background_max_trials:
             terminate = True
         else:
             terminate = False
