@@ -81,9 +81,9 @@ class LocomotionBase(Env):
         self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:4].copy()
         self._DEFAULT_TEXT_RGBA = [0, 0, 0, 1]
         self._RUNTIME_TEXT_RGBA = None
-        # self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 6 / 5, self._DEFAULT_TEXT_SIZE[1],
-        #                    self._DEFAULT_TEXT_SIZE[2] * 6 / 5]
-        self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
+        self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 4 / 3, self._DEFAULT_TEXT_SIZE[1],
+                           self._DEFAULT_TEXT_SIZE[2] * 4 / 3]
+        # self._HINT_SIZE = self._DEFAULT_TEXT_SIZE.copy()
         self._HINT_RGBA = [1, 1, 0, 1]
 
         # Get the background (geoms that belong to "background-pane")
@@ -103,6 +103,9 @@ class LocomotionBase(Env):
         self._background_trials = None
         self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._background_rgba_change_per_step = self._rgba_delta / self._background_dwell_timesteps
+
+        # Define the tasks variables for the relocation task
+        self._neighbor_dist_thres = 0.0101
 
         # Define the locomotion variables
         self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0].copy()
@@ -272,6 +275,508 @@ class LocomotionBase(Env):
         return
 
 
+class LocomotionRelocationTrain(LocomotionBase):
+    def __init__(self):
+        super().__init__()
+
+        # Initialize the episode length and training trial thresholds
+        self._ep_len = 8000
+        self._max_trials = 1
+        self._trials = 0
+
+        # Initialize the steps on target: either reading or background
+        self._steps_on_target = None
+
+        # Initialize the relocation relevant variables
+        self._relocating_center_grid_idx = None
+        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
+        self._neighbors = None
+        self._neighbors_steps = None
+
+        # Color settings for relocation
+        self._relocation_target_idx = None
+        self._RELOCATION_HINT_RGBA = [1, 0, 1, 0.5]
+        self._relocation_rgb_change_per_fixation = 1 / self._relocating_dwell_steps_thres
+        self._relocation_alpha_change_per_fixation = (1 - self._RELOCATION_HINT_RGBA[
+            3]) / self._relocating_dwell_steps_thres
+
+        # Define the transition of 3 modes: 1-reading, 2-background, 3-relocation
+        self._task_mode = None
+        self._layout = None
+
+        # Define the initial displacement of the agent's head
+        self._head_init_displacement_y = None
+
+    def _reset_scene(self):
+        super()._reset_scene()
+
+        # Initializations
+        self._trials = 0
+        self._steps_on_target = 0
+
+        # Eyeball rotation initialization
+        # Initialize eye ball rotation angles
+        eye_x_motor_init_range = [-0.5, 0.5]
+        eye_y_motor_init_range = [-0.5, 0.4]
+
+        init_angle_x = np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1])
+        init_angle_y = np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])
+
+        self._data.qpos[self._eye_joint_x_idx] = init_angle_x
+        self._data.qpos[self._eye_joint_y_idx] = init_angle_y
+
+        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
+        # self._layout = np.random.choice(['interline-spacing-100', 'bottom-center', 'middle-right'], 1)
+        self._layout = self._config['rl']['test']['layout_name']
+        if self._layout == 'interline-spacing-100':
+            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
+        elif self._layout == 'bottom-center':
+            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
+        elif self._layout == 'middle-right':
+            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
+        else:
+            raise NotImplementedError('Invalid layout name: {}'.format(self._layout))
+
+        # Reset the smart glass pane scene and variables
+        for idx in self._reading_target_idxs:
+            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+            mujoco.mj_forward(self._model, self._data)
+
+        # Define the task mode: 1-reading, 2-background, 3-relocation
+        self._task_mode = np.random.choice([1, 2, 3], 1).copy()
+        # Reading task
+        if self._task_mode == 1:
+            random_reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
+            # Highlight the target reading grids
+            self._switch_target(idx=random_reading_target_idxs[0])
+        # Background task
+        elif self._task_mode == 2:
+            # Define the background events
+            self._background_on = False
+        # Relocation task
+        elif self._task_mode == 3:
+            # Randomize the center grid index for evoking neighbors
+            self._center_grid_idx = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)[0]
+            self._neighbors, self._neighbors_steps = [], []
+            # Find the neighbors and set up the scene
+            self._find_neighbors()
+        else:
+            raise NotImplementedError('The task mode is not defined! Should be 1-reading, 2-background, 3-relocation!')
+
+        # Initialize the locomotion head position
+        self._data.qpos[self._head_joint_y_idx] = 0
+        # Reading and Relocation task
+        if self._task_mode == 1 or self._task_mode == 3:
+            self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound,
+                                                               self._displacement_upper_bound)
+            self._data.qpos[self._head_joint_y_idx] = self._head_init_displacement_y
+        # Background task
+        else:
+            self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def _find_neighbors(self):
+        # Find the neighbors of the center grid
+        center_xpos = self._data.geom(self._center_grid_idx).xpos
+
+        neighbors = []
+
+        for grid_idx in self._reading_target_idxs:
+            grid_xpos = self._data.geom(grid_idx).xpos
+            dist = np.linalg.norm(grid_xpos - center_xpos)
+            if dist <= self._neighbor_dist_thres:
+                neighbors.append(grid_idx)
+                self._model.geom(grid_idx).rgba[0:4] = self._RELOCATION_HINT_RGBA.copy()
+
+        # Randomly choose one grid in the neighbors list to be the target
+        self._relocation_target_idx = np.random.choice(neighbors, 1)[0].copy()
+
+        # Update the neighbors list
+        self._neighbors = neighbors.copy()
+
+        # Initialize the steps on each neighbor
+        self._neighbors_steps = [0] * len(neighbors)
+
+        if self._mode == "test":  # TODO debug delete later - get the own tests
+            self._relocation_target_idx = self._center_grid_idx
+
+    def _update_background(self):
+        super()._update_background()
+
+        # The background pane is showing events - the red color events show
+        if self._task_mode == 2:
+            if self._background_on == False:
+                # Show the background event by changing to a brighter color
+                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                self._background_on = True
+        # The background pane is not showing events - the head is moving
+        else:
+            # Move the head if it has not getting close to the background enough
+            if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
+                self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def step(self, action):
+        super().step(action)
+
+        # Normalise action from [-1, 1] to actuator control range
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        # Set motor control
+        self._data.ctrl[:] = action
+
+        # Update the background events
+        self._update_background()
+
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data, self._frame_skip)
+        self._steps += 1
+
+        # Eye-sight detection
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
+
+        # Estimate reward for each step
+        reward = 0
+
+        # Specify the targets on different conditions
+        if self._task_mode == 1:
+            target_idx = self._reading_target_idx
+            change_rgba = 0  # self._reading_rgb_change_per_step
+        elif self._task_mode == 2:
+            target_idx = self._background_idx0
+            change_rgba = self._background_rgba_change_per_step
+        else:
+            target_idx = self._relocation_target_idx
+            change_rgba = self._relocation_rgb_change_per_fixation
+
+        # Single target scenarios - 1 reading and 2 background
+        if self._task_mode == 1 or self._task_mode == 2:
+            # Focus on targets detection
+            if geomid == target_idx:
+                # Sparse reward
+                reward = 1
+                # Update the steps on target
+                self._steps_on_target += 1
+                # Update the environment
+                self._model.geom(geomid).rgba[2] += change_rgba
+                # Check if the target has been fixated enough
+                if self._steps_on_target >= self._background_dwell_timesteps and self._task_mode == 2:
+                    self._trials += 1
+                if self._steps_on_target >= self._reading_target_dwell_timesteps and self._task_mode == 1:
+                    self._trials += 1
+
+        # Multiple targets scenarios - 3 relocation
+        else:
+            if geomid in self._neighbors:
+                # Update the steps on target
+                self._neighbors_steps[self._neighbors.index(geomid)] += 1
+
+                if geomid == target_idx:
+                    # Sparse reward
+                    reward = 1
+                    # Update the steps on target
+                    self._steps_on_target += 1
+                    # Update the reading target - becomes more opaque
+                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_fixation
+                else:
+                    # Update the distractions - becomes dimmer
+                    self._model.geom(geomid).rgba[1] += self._relocation_rgb_change_per_fixation
+
+                # Update the environment
+                # De-highlight the geom if it has been fixated enough
+                if self._neighbors_steps[self._neighbors.index(geomid)] >= self._relocating_dwell_steps_thres:
+                    # Update the neighbors list
+                    self._neighbors[self._neighbors.index(geomid)] = -2
+
+                    # Check for the reading target
+                    if geomid == target_idx:
+                        # Update the reading target
+                        self._trials += 1
+
+        # Do a forward so everything will be set
+        mujoco.mj_forward(self._model, self._data)
+
+        # Check termination conditions
+        if self._steps >= self._ep_len or self._trials >= self._max_trials:
+            terminate = True
+        else:
+            terminate = False
+
+        return self._get_obs(), reward, terminate, {}
+
+
+class LocomotionRelocationTest(LocomotionBase):
+
+    def __init__(self):
+        super().__init__()
+
+        # Initialize the length of the episode
+        self._ep_len = 4000
+
+        # Initialize the number of trials
+        self._background_max_trials = 8
+        self._background_trials = None
+
+        self._steps_on_reading_target = None
+        self._steps_on_relocation_target = None
+        self._steps_on_background_target = None
+
+        # Define the buffer for storing the number of goodput grids
+        self._num_read_grids = None
+
+        # Initialize the relocation relevant variables
+        self._neighbors = None
+        self._neighbors_steps = None
+
+        self._relocation_target_idx = None
+        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
+        self._relocating_limit_steps_thres = self._relocating_dwell_steps_thres
+
+        self._RELOCATION_HINT_RGBA = [1, 0, 1, 0.5]
+        self._relocation_rgb_change_per_step = 1 / self._relocating_dwell_steps_thres
+        self._relocation_alpha_change_per_step = (1 - self._RELOCATION_HINT_RGBA[
+            3]) / self._relocating_dwell_steps_thres
+
+        # Initialize the context switch relevant variables
+        self._off_background_step = None
+        self._switch_back_durations = None
+        self._switch_back_error_rates = None
+
+        # Initialize the task mode and layout name
+        self._task_mode = None
+        self._layout_name = None
+
+    def _reset_scene(self):
+        super()._reset_scene()
+
+        # Reset the permanent and temporary counters
+        self._background_trials = 0
+        self._num_read_grids = 0
+        self._switch_back_durations = []
+        self._switch_back_error_rates = []
+
+        self._steps_on_reading_target = 0
+        self._steps_on_relocation_target = 0
+        self._steps_on_background_target = 0
+        self._off_background_step = 0
+        self._neighbors, self._neighbors_steps = [], []
+        self._relocation_target_idx = -2
+
+        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
+        self._layout_name = self._config['rl']['test']['layout_name']
+        if self._layout_name == 'interline-spacing-100':
+            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
+        elif self._layout_name == 'bottom-center':
+            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
+        elif self._layout_name == 'middle-right':
+            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
+        else:
+            raise ValueError('Invalid layout name.')
+
+        # Reset the smart glass pane scene and variables
+        for idx in self._reading_target_idxs:
+            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+            # Set everything so the we can find neighbors if needed
+            mujoco.mj_forward(self._model, self._data)
+
+        # Reading grids
+        self._reading_target_idxs = self._reading_target_idxs.tolist()
+        self._switch_target(idx=self._reading_target_idxs[0])
+        self._task_mode = READING_MODE
+
+        # Locomotion
+        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
+
+    def _update_background(self):
+        super()._update_background()
+
+        # Locomotion
+        # If the head is not on the furthest position, it will move towards the background pane
+        if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
+            # Move the head towards the background pane
+            self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep.copy()
+
+        # If the head is on the furthest position, i.e., near the background, starts the red color event
+        else:
+            # Prevent the head from moving further - stop at the furthest position
+            if self._data.body(self._head_body_idx).xpos[1] > self._furthest_head_xpos_y:
+                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound.copy()
+
+            # Start the red color event
+            if self._task_mode != BACKGROUND_MODE:
+                self._task_mode = BACKGROUND_MODE
+                # Set the red color
+                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                # De-highlight the previous job - reading
+                self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
+                for idx in self._reading_target_idxs:
+                    self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                    self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def _find_neighbors(self):
+        # Find the neighbors of the center grid
+        center_xpos = self._data.geom(self._reading_target_idx).xpos
+
+        neighbors = []
+
+        for grid_idx in self._reading_target_idxs:
+            grid_xpos = self._data.geom(grid_idx).xpos
+            dist = np.linalg.norm(grid_xpos - center_xpos)
+            if dist <= self._neighbor_dist_thres:
+                neighbors.append(grid_idx)
+                self._model.geom(grid_idx).rgba[0:4] = self._RELOCATION_HINT_RGBA.copy()
+
+        # Randomly choose one grid in the neighbors list to be the target
+        self._relocation_target_idx = self._reading_target_idx
+
+        # Update the neighbors list
+        self._neighbors = neighbors.copy()
+
+        # Initialize the steps on each neighbor
+        self._neighbors_steps = [0] * len(neighbors)
+
+    def step(self, action):
+        super().step(action)
+
+        # Normalise action from [-1, 1] to actuator control range
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        # Set motor control
+        self._data.ctrl[:] = action
+
+        # Update the background changes, non-trainings
+        self._update_background()
+
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data, self._frame_skip)
+        self._steps += 1
+
+        # Eye-sight detection
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
+
+        # Estimate reward for each step
+        reward = 0
+
+        # Check the tasks and update accordingly
+        if self._task_mode == READING_MODE:
+            if geomid == self._reading_target_idx:
+                # Sparse reward
+                reward = 1
+                # Update the reading target counter
+                self._steps_on_reading_target += 1
+                # Update the reading target color
+                self._model.geom(geomid).rgba[2] += self._reading_rgb_change_per_step
+                # Check the termination condition
+                if self._steps_on_reading_target >= self._reading_target_dwell_timesteps:
+                    # Update the number of reading target
+                    self._num_read_grids += 1
+
+                    # Reset the grid color
+                    if self._reading_target_idx >= self._reading_target_idxs[-1]:
+                        self._reading_target_idx = self._reading_target_idxs[0] - 1
+                    self._switch_target(idx=self._reading_target_idx + 1)
+                    self._task_mode = READING_MODE
+
+                    # Reset the reading target counter
+                    self._steps_on_reading_target = 0
+
+        elif self._task_mode == BACKGROUND_MODE:
+            if geomid == self._background_idx0:
+                # Sparse reward
+                reward = 1
+                # Update the background target counter
+                self._steps_on_background_target += 1
+                # Update the background target color
+                self._model.geom(geomid).rgba[2] += self._background_rgba_change_per_step
+                # Check the termination condition
+                if self._steps_on_background_target >= self._background_dwell_timesteps:
+                    # Update the number of background trials
+                    self._background_trials += 1
+                    # Update the off background step
+                    self._off_background_step = self._steps
+
+                    # Reset the background target counter
+                    self._steps_on_background_target = 0
+                    # Reset the background variables: the color, status flag, the counter, and the head position
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
+                    # Reset the locomotion position
+                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
+
+                    # Jump into the relocation task
+                    self._find_neighbors()
+                    self._task_mode = RELOCATING_MODE
+
+        elif self._task_mode == RELOCATING_MODE:
+            if geomid in self._neighbors:
+                # Update the steps on target
+                self._neighbors_steps[self._neighbors.index(geomid)] += 1
+
+                if geomid == self._relocation_target_idx:
+                    # Sparse reward
+                    reward = 1
+                    # Update the relocation target counter
+                    self._steps_on_relocation_target += 1
+                    # Update the relocation target color
+                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_step
+                else:
+                    # Update the distractions - becomes dimmer
+                    self._model.geom(geomid).rgba[1] += self._relocation_rgb_change_per_step
+
+                # Check the termination condition
+                if np.sum(self._neighbors_steps) >= self._relocating_limit_steps_thres:
+                    # Update the switch back duration
+                    current_step = self._steps
+                    switch_back_duration = current_step - self._off_background_step
+                    self._switch_back_durations.append(switch_back_duration)
+
+                    # Update the switch back error rate
+                    # Get the total number of steps in self._neighbors_steps that does not corresponding to the relocation target
+                    num_switch_back_errors = np.sum(self._neighbors_steps) - self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
+                    # Get the error rate
+                    switch_back_error_rate = num_switch_back_errors / np.sum(self._neighbors_steps)
+                    # Update the switch back error rate list
+                    self._switch_back_error_rates.append(switch_back_error_rate)
+
+                    # Reset the relocation target counter
+                    self._steps_on_relocation_target = 0
+
+                    # Get back to the reading mode
+                    self._task_mode = READING_MODE
+                    # Reset the grid color
+                    for idx in self._reading_target_idxs:
+                        if idx == self._reading_target_idx:
+                            self._model.geom(self._relocation_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                            self._model.geom(self._relocation_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                        else:
+                            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+        else:
+            raise ValueError(f'Unknown task mode: {self._task_mode}')
+
+        mujoco.mj_forward(self._model, self._data)
+
+        # Check termination conditions
+        if self._steps >= self._ep_len or self._background_trials > self._background_max_trials:
+            terminate = True
+        else:
+            terminate = False
+
+        if terminate:
+            print(f'The total timesteps is: {self._steps}. \n'
+                  f'The switch back duration is: {np.sum(self._switch_back_durations)}. The durations are: {self._switch_back_durations} \n'
+                  f'The reading goodput is: {round(self._num_read_grids / self._steps, 5)} (grids per timestep). \n'
+                  f'The switch back error rate (method 1) is: {round(100 * np.mean(self._switch_back_error_rates), 2)} % \n')
+
+        return self._get_obs(), reward, terminate, {}
+
+
 class LocomotionTrain(LocomotionBase):
 
     def __init__(self):
@@ -434,244 +939,6 @@ class LocomotionTrain(LocomotionBase):
                     self._steps_on_target = 0
                     if self._reading_trials >= self._reading_max_trials:
                         terminate = True
-
-        return self._get_obs(), reward, terminate, {}
-
-
-class LocomotionRelocationTrain(LocomotionBase):
-    def __init__(self):
-        super().__init__()
-
-        # Initialize the episode length and training trial thresholds
-        self._ep_len = 400
-        self._max_trials = 1
-        self._trials = 0
-
-        # Initialize the steps on target: either reading or background
-        self._steps_on_target = None
-
-        # Initialize the relocation relevant variables
-        self._neighbor_dist_thres = None
-        self._relocating_center_grid_idx = None
-        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
-        self._neighbors = None
-        self._neighbors_steps = None
-
-        # Color settings for relocation
-        self._relocation_target_idx = None
-        self._RELOCATION_HINT_RGBA = [1, 1, 0, 0.5]
-        self._relocation_rgb_change_per_fixation = 1 / self._relocating_dwell_steps_thres
-        self._relocation_alpha_change_per_fixation = (1 - self._RELOCATION_HINT_RGBA[
-            3]) / self._relocating_dwell_steps_thres
-
-        # Define the transition of 3 modes: 1-reading, 2-background, 3-relocation
-        self._task_mode = None
-        self._layout = None
-
-        # Define the initial displacement of the agent's head
-        self._head_init_displacement_y = None
-
-    def _reset_scene(self):
-        super()._reset_scene()
-
-        # Initializations
-        self._trials = 0
-        self._steps_on_target = 0
-
-        # Eyeball rotation initialization
-        # Initialize eye ball rotation angles
-        eye_x_motor_init_range = [-0.5, 0.5]
-        eye_y_motor_init_range = [-0.5, 0.4]
-
-        init_angle_x = np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1])
-        init_angle_y = np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])
-
-        self._data.qpos[self._eye_joint_x_idx] = init_angle_x
-        self._data.qpos[self._eye_joint_y_idx] = init_angle_y
-
-        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
-        self._layout = np.random.choice(['interline-spacing-100', 'bottom-center', 'middle-right'], 1)
-        # self._layout = self._config['rl']['test']['layout_name']
-        if self._layout == 'interline-spacing-100':
-            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0101
-        elif self._layout == 'bottom-center':
-            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0121  # Bottom-center layout - not aligned with the visual search flow, more distractions will caused
-        elif self._layout == 'middle-right':
-            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0101
-        else:
-            raise NotImplementedError('Invalid layout name: {}'.format(self._layout))
-
-        # Reset the smart glass pane scene and variables
-        for idx in self._reading_target_idxs:
-            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-            mujoco.mj_forward(self._model, self._data)
-
-        # Define the task mode: 1-reading, 2-background, 3-relocation
-        self._task_mode = np.random.choice([1, 2, 3], 1).copy()
-        # Reading task
-        if self._task_mode == 1:
-            random_reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
-            # Highlight the target reading grids
-            self._switch_target(idx=random_reading_target_idxs[0])
-        # Background task
-        elif self._task_mode == 2:
-            # Define the background events
-            self._background_on = False
-        # Relocation task
-        elif self._task_mode == 3:
-            # Randomize the center grid index for evoking neighbors
-            self._center_grid_idx = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)[0]
-            self._neighbors, self._neighbors_steps = [], []
-            # Find the neighbors and set up the scene
-            self._find_neighbors()
-        else:
-            raise NotImplementedError('The task mode is not defined! Should be 1-reading, 2-background, 3-relocation!')
-
-        # Initialize the locomotion head position
-        self._data.qpos[self._head_joint_y_idx] = 0
-        # Reading and Relocation task
-        if self._task_mode == 1 or self._task_mode == 3:
-            self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound,
-                                                               self._displacement_upper_bound)
-            self._data.qpos[self._head_joint_y_idx] = self._head_init_displacement_y
-        # Background task
-        else:
-            self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
-
-        mujoco.mj_forward(self._model, self._data)
-
-    def _find_neighbors(self):
-        # Find the neighbors of the center grid
-        center_xpos = self._data.geom(self._center_grid_idx).xpos
-
-        neighbors = []
-
-        for grid_idx in self._reading_target_idxs:
-            grid_xpos = self._data.geom(grid_idx).xpos
-            dist = np.linalg.norm(grid_xpos - center_xpos)
-            if dist <= self._neighbor_dist_thres:
-                neighbors.append(grid_idx)
-                self._model.geom(grid_idx).rgba[0:4] = self._RELOCATION_HINT_RGBA.copy()
-
-        # Randomly choose one grid in the neighbors list to be the target
-        self._relocation_target_idx = np.random.choice(neighbors, 1)[0].copy()
-
-        # Update the neighbors list
-        self._neighbors = neighbors.copy()
-
-        # Initialize the steps on each neighbor
-        self._neighbors_steps = [0] * len(neighbors)
-
-        if self._mode == "test":  # TODO debug delete later - get the own tests
-            self._relocation_target_idx = self._center_grid_idx
-
-    def _update_background(self):
-        super()._update_background()
-
-        # The background pane is showing events - the red color events show
-        if self._task_mode == 2:
-            if self._background_on == False:
-                # Show the background event by changing to a brighter color
-                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                self._background_on = True
-        # The background pane is not showing events - the head is moving
-        else:
-            # Move the head if it has not getting close to the background enough
-            if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
-                self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
-
-        mujoco.mj_forward(self._model, self._data)
-
-    def step(self, action):
-        super().step(action)
-
-        # Normalise action from [-1, 1] to actuator control range
-        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
-
-        # Set motor control
-        self._data.ctrl[:] = action
-
-        # Update the background events
-        self._update_background()
-
-        # Advance the simulation
-        mujoco.mj_step(self._model, self._data, self._frame_skip)
-        self._steps += 1
-
-        # Eye-sight detection
-        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
-
-        # Estimate reward for each step
-        reward = 0
-
-        # Specify the targets on different conditions
-        if self._task_mode == 1:
-            target_idx = self._reading_target_idx
-            change_rgba = 0  # self._reading_rgb_change_per_step
-        elif self._task_mode == 2:
-            target_idx = self._background_idx0
-            change_rgba = self._background_rgba_change_per_step
-        else:
-            target_idx = self._relocation_target_idx
-            change_rgba = self._relocation_rgb_change_per_fixation
-
-        # Single target scenarios - 1 reading and 2 background
-        if self._task_mode == 1 or self._task_mode == 2:
-            # Focus on targets detection
-            if geomid == target_idx:
-                # Sparse reward
-                reward = 1
-                # Update the steps on target
-                self._steps_on_target += 1
-                # Update the environment
-                self._model.geom(geomid).rgba[2] += change_rgba
-                # Check if the target has been fixated enough
-                if self._steps_on_target >= self._background_dwell_timesteps and self._task_mode == 2:
-                    self._trials += 1
-                if self._steps_on_target >= self._reading_target_dwell_timesteps and self._task_mode == 1:
-                    self._trials += 1
-
-        # Multiple targets scenarios - 3 relocation
-        else:
-            if geomid in self._neighbors:
-                # Update the steps on target
-                self._neighbors_steps[self._neighbors.index(geomid)] += 1
-
-                if geomid == target_idx:
-                    # Sparse reward
-                    reward = 1
-                    # Update the steps on target
-                    self._steps_on_target += 1
-                    # Update the reading target - becomes more opaque
-                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_fixation
-                else:
-                    # Update the distractions - becomes dimmer
-                    self._model.geom(geomid).rgba[2] += self._relocation_rgb_change_per_fixation
-
-                # Update the environment
-                # De-highlight the geom if it has been fixated enough
-                if self._neighbors_steps[self._neighbors.index(geomid)] >= self._relocating_dwell_steps_thres:
-                    # Update the neighbors list
-                    self._neighbors[self._neighbors.index(geomid)] = -2
-
-                    # Check for the reading target
-                    if geomid == target_idx:
-                        # Update the reading target
-                        self._trials += 1
-
-        # Do a forward so everything will be set
-        mujoco.mj_forward(self._model, self._data)
-
-        # Check termination conditions
-        if self._steps >= self._ep_len or self._trials >= self._max_trials:
-            terminate = True
-        else:
-            terminate = False
 
         return self._get_obs(), reward, terminate, {}
 
@@ -1249,277 +1516,5 @@ class LocomotionTrickyTest(LocomotionBase):
                              round(self._num_read_grids / self._steps, 5),
                              round(100 * self._relocating_incorrect_num_method1 / self._background_max_trials, 2),
                              round(100 * self._relocating_incorrect_num_method2 / self._background_max_trials, 2)))
-
-        return self._get_obs(), reward, terminate, {}
-
-
-class LocomotionRelocationTest(LocomotionBase):
-
-    def __init__(self):
-        super().__init__()
-
-        # Initialize the length of the episode
-        self._ep_len = 8000
-
-        # Initialize the number of trials
-        self._background_max_trials = 8
-        self._background_trials = None
-
-        self._steps_on_reading_target = None
-        self._steps_on_relocation_target = None
-        self._steps_on_background_target = None
-
-        # Define the buffer for storing the number of goodput grids
-        self._num_read_grids = None
-
-        # Initialize the relocation relevant variables
-        self._neighbor_dist_thres = None
-        self._neighbors = None
-        self._neighbors_steps = None
-
-        self._relocation_target_idx = None
-        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
-        self._relocating_limit_steps_thres = self._relocating_dwell_steps_thres
-
-        self._RELOCATION_HINT_RGBA = [1, 1, 0, 0.5]
-        self._relocation_rgb_change_per_step = 1 / self._relocating_dwell_steps_thres
-        self._relocation_alpha_change_per_step = (1 - self._RELOCATION_HINT_RGBA[
-            3]) / self._relocating_dwell_steps_thres
-
-        # Initialize the context switch relevant variables
-        self._off_background_step = None
-        self._switch_back_durations = None
-        self._switch_back_error_rates = None
-
-        # Initialize the task mode and layout name
-        self._task_mode = None
-        self._layout_name = None
-
-    def _reset_scene(self):
-        super()._reset_scene()
-
-        # Reset the permanent and temporary counters
-        self._background_trials = 0
-        self._num_read_grids = 0
-        self._switch_back_durations = []
-        self._switch_back_error_rates = []
-
-        self._steps_on_reading_target = 0
-        self._steps_on_relocation_target = 0
-        self._steps_on_background_target = 0
-        self._off_background_step = 0
-        self._neighbors, self._neighbors_steps = [], []
-        self._relocation_target_idx = -2
-
-        # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
-        self._layout_name = self._config['rl']['test']['layout_name']
-        if self._layout_name == 'interline-spacing-100':
-            self._reading_target_idxs = self._ils100_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0101
-        elif self._layout_name == 'bottom-center':
-            self._reading_target_idxs = self._bc_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0121
-        elif self._layout_name == 'middle-right':
-            self._reading_target_idxs = self._mr_reading_target_idxs.copy()
-            self._neighbor_dist_thres = 0.0101
-        else:
-            raise ValueError('Invalid layout name.')
-
-        # Reset the smart glass pane scene and variables
-        for idx in self._reading_target_idxs:
-            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-            self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-            # Set everything so the we can find neighbors if needed
-            mujoco.mj_forward(self._model, self._data)
-
-        # Reading grids
-        self._reading_target_idxs = self._reading_target_idxs.tolist()
-        self._switch_target(idx=self._reading_target_idxs[0])
-        self._task_mode = READING_MODE
-
-        # Locomotion
-        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
-
-    def _update_background(self):
-        super()._update_background()
-
-        # Locomotion
-        # If the head is not on the furthest position, it will move towards the background pane
-        if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
-            # Move the head towards the background pane
-            self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep.copy()
-
-        # If the head is on the furthest position, i.e., near the background, starts the red color event
-        else:
-            # Prevent the head from moving further - stop at the furthest position
-            if self._data.body(self._head_body_idx).xpos[1] > self._furthest_head_xpos_y:
-                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound.copy()
-
-            # Start the red color event
-            if self._task_mode != BACKGROUND_MODE:
-                self._task_mode = BACKGROUND_MODE
-                # Set the red color
-                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                # De-highlight the previous job - reading
-                self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                for idx in self._reading_target_idxs:
-                    self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                    self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-
-        mujoco.mj_forward(self._model, self._data)
-
-    def _find_neighbors(self):
-        # Find the neighbors of the center grid
-        center_xpos = self._data.geom(self._reading_target_idx).xpos
-
-        neighbors = []
-
-        for grid_idx in self._reading_target_idxs:
-            grid_xpos = self._data.geom(grid_idx).xpos
-            dist = np.linalg.norm(grid_xpos - center_xpos)
-            if dist <= self._neighbor_dist_thres:
-                neighbors.append(grid_idx)
-                self._model.geom(grid_idx).rgba[0:4] = self._RELOCATION_HINT_RGBA.copy()
-
-        # Randomly choose one grid in the neighbors list to be the target
-        self._relocation_target_idx = self._reading_target_idx
-
-        # Update the neighbors list
-        self._neighbors = neighbors.copy()
-
-        # Initialize the steps on each neighbor
-        self._neighbors_steps = [0] * len(neighbors)
-
-    def step(self, action):
-        super().step(action)
-
-        # Normalise action from [-1, 1] to actuator control range
-        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
-
-        # Set motor control
-        self._data.ctrl[:] = action
-
-        # Update the background changes, non-trainings
-        self._update_background()
-
-        # Advance the simulation
-        mujoco.mj_step(self._model, self._data, self._frame_skip)
-        self._steps += 1
-
-        # Eye-sight detection
-        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
-
-        # Estimate reward for each step
-        reward = 0
-
-        # Check the tasks and update accordingly
-        if self._task_mode == READING_MODE:
-            if geomid == self._reading_target_idx:
-                # Sparse reward
-                reward = 1
-                # Update the reading target counter
-                self._steps_on_reading_target += 1
-                # Update the reading target color
-                self._model.geom(geomid).rgba[2] += self._reading_rgb_change_per_step
-                # Check the termination condition
-                if self._steps_on_reading_target >= self._reading_target_dwell_timesteps:
-                    # Update the number of reading target
-                    self._num_read_grids += 1
-
-                    # Reset the grid color
-                    if self._reading_target_idx >= self._reading_target_idxs[-1]:
-                        self._reading_target_idx = self._reading_target_idxs[0] - 1
-                    self._switch_target(idx=self._reading_target_idx + 1)
-                    self._task_mode = READING_MODE
-
-                    # Reset the reading target counter
-                    self._steps_on_reading_target = 0
-
-        elif self._task_mode == BACKGROUND_MODE:
-            if geomid == self._background_idx0:
-                # Sparse reward
-                reward = 1
-                # Update the background target counter
-                self._steps_on_background_target += 1
-                # Update the background target color
-                self._model.geom(geomid).rgba[2] += self._background_rgba_change_per_step
-                # Check the termination condition
-                if self._steps_on_background_target >= self._background_dwell_timesteps:
-                    # Update the number of background trials
-                    self._background_trials += 1
-                    # Update the off background step
-                    self._off_background_step = self._steps
-
-                    # Reset the background target counter
-                    self._steps_on_background_target = 0
-                    # Reset the background variables: the color, status flag, the counter, and the head position
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                    # Reset the locomotion position
-                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
-
-                    # Jump into the relocation task
-                    self._find_neighbors()
-                    self._task_mode = RELOCATING_MODE
-
-        elif self._task_mode == RELOCATING_MODE:
-            if geomid in self._neighbors:
-                # Update the steps on target
-                self._neighbors_steps[self._neighbors.index(geomid)] += 1
-
-                if geomid == self._relocation_target_idx:
-                    # Sparse reward
-                    reward = 1
-                    # Update the relocation target counter
-                    self._steps_on_relocation_target += 1
-                    # Update the relocation target color
-                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_step
-                else:
-                    # Update the distractions - becomes dimmer
-                    self._model.geom(geomid).rgba[2] += self._relocation_rgb_change_per_step
-
-                # Check the termination condition
-                if np.sum(self._neighbors_steps) >= self._relocating_limit_steps_thres:
-                    # Update the switch back duration
-                    current_step = self._steps
-                    switch_back_duration = current_step - self._off_background_step
-                    self._switch_back_durations.append(switch_back_duration)
-
-                    # Update the switch back error rate
-                    # Get the total number of steps in self._neighbors_steps that does not corresponding to the relocation target
-                    num_switch_back_errors = np.sum(self._neighbors_steps) - self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
-                    # Get the error rate
-                    switch_back_error_rate = num_switch_back_errors / np.sum(self._neighbors_steps)
-                    # Update the switch back error rate list
-                    self._switch_back_error_rates.append(switch_back_error_rate)
-
-                    # Reset the relocation target counter
-                    self._steps_on_relocation_target = 0
-
-                    # Get back to the reading mode
-                    self._task_mode = READING_MODE
-                    # Reset the grid color
-                    for idx in self._reading_target_idxs:
-                        if idx == self._reading_target_idx:
-                            self._model.geom(self._relocation_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
-
-                        else:
-                            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-        else:
-            raise ValueError(f'Unknown task mode: {self._task_mode}')
-
-        mujoco.mj_forward(self._model, self._data)
-
-        # Check termination conditions
-        if self._steps >= self._ep_len or self._background_trials > self._background_max_trials:
-            terminate = True
-        else:
-            terminate = False
-
-        if terminate:
-            print(f'The total timesteps is: {self._steps}. \n'
-                  f'The switch back duration is: {np.sum(self._switch_back_durations)}. The durations are: {self._switch_back_durations} \n'
-                  f'The reading goodput is: {round(self._num_read_grids / self._steps, 5)} (grids per timestep). \n'
-                  f'The switch back error rate (method 1) is: {round(100 * np.mean(self._switch_back_error_rates), 2)} % \n')
 
         return self._get_obs(), reward, terminate, {}

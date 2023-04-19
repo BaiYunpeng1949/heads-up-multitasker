@@ -59,10 +59,10 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
-            nn.LeakyReLU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
-            nn.LeakyReLU(),
+            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            # nn.LeakyReLU(),
+            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            # nn.LeakyReLU(),
             nn.Flatten(),
         )
 
@@ -125,8 +125,12 @@ class RL:
             print('Configuration:\n    The foveated vision is NOT applied.')
         print(
             f"    The mode is: {self._config_rl['mode']} \n"
-            f"    The layout name is: {self._config_rl['test']['layout_name']}\n"
+            f"    The layout name is: {self._config_rl['test']['layout_name']}"
         )
+        if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
+            print(
+                f"    The loaded model checkpoint is: {self._config_rl['test']['loaded_model_name']}\n"
+            )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
         # self._env = MovingEye()
@@ -350,7 +354,7 @@ class RL:
             # Generate the results from the pre-trained model.
             rgb_images, rgb_eye_images = self._test()
             # Write a video. First get the rgb images, then identify the path.
-            video_folder_path = os.path.join('training', 'videos')
+            video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)
             layout_name = self._config_rl['test']['layout_name']
