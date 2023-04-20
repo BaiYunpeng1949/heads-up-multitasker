@@ -175,11 +175,17 @@ class LocomotionBase(Env):
 
     def _switch_target(self, idx):
 
+        # Check the validity of the target idx and switch to the first one if the target idx is out of range
+        if idx > self._reading_target_idxs[-1]:
+            idx = self._reading_target_idxs[0]
+
+        # De-highlight all the distracting cells
         for _idx in self._reading_target_idxs:
             if _idx != idx:
                 self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
                 self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
 
+        # Highlight the target cell
         self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
         self._model.geom(idx).size[0:3] = self._HINT_SIZE.copy()
 
@@ -275,12 +281,12 @@ class LocomotionBase(Env):
         return
 
 
-class LocomotionRelocationTrain(LocomotionBase):
+class LocomotionRelocationTrain(LocomotionBase):    # TODO use the fail counter to terminate the episode - is it a better solution across major scenarios?
     def __init__(self):
         super().__init__()
 
         # Initialize the episode length and training trial thresholds
-        self._ep_len = 8000
+        self._ep_len = 400
         self._max_trials = 1
         self._trials = 0
 
@@ -515,7 +521,7 @@ class LocomotionRelocationTest(LocomotionBase):
         super().__init__()
 
         # Initialize the length of the episode
-        self._ep_len = 4000
+        self._ep_len = 8000
 
         # Initialize the number of trials
         self._background_max_trials = 8
@@ -526,7 +532,7 @@ class LocomotionRelocationTest(LocomotionBase):
         self._steps_on_background_target = None
 
         # Define the buffer for storing the number of goodput grids
-        self._num_read_grids = None
+        self._num_read_cells = None
 
         # Initialize the relocation relevant variables
         self._neighbors = None
@@ -544,7 +550,7 @@ class LocomotionRelocationTest(LocomotionBase):
         # Initialize the context switch relevant variables
         self._off_background_step = None
         self._switch_back_durations = None
-        self._switch_back_error_rates = None
+        self._switch_back_error_steps = None
 
         # Initialize the task mode and layout name
         self._task_mode = None
@@ -555,9 +561,9 @@ class LocomotionRelocationTest(LocomotionBase):
 
         # Reset the permanent and temporary counters
         self._background_trials = 0
-        self._num_read_grids = 0
+        self._num_read_cells = 0
         self._switch_back_durations = []
-        self._switch_back_error_rates = []
+        self._switch_back_error_steps = []
 
         self._steps_on_reading_target = 0
         self._steps_on_relocation_target = 0
@@ -677,14 +683,11 @@ class LocomotionRelocationTest(LocomotionBase):
                 # Check the termination condition
                 if self._steps_on_reading_target >= self._reading_target_dwell_timesteps:
                     # Update the number of reading target
-                    self._num_read_grids += 1
+                    self._num_read_cells += 1
 
                     # Reset the grid color
-                    if self._reading_target_idx >= self._reading_target_idxs[-1]:
-                        self._reading_target_idx = self._reading_target_idxs[0] - 1
                     self._switch_target(idx=self._reading_target_idx + 1)
                     self._task_mode = READING_MODE
-
                     # Reset the reading target counter
                     self._steps_on_reading_target = 0
 
@@ -731,7 +734,8 @@ class LocomotionRelocationTest(LocomotionBase):
                     self._model.geom(geomid).rgba[1] += self._relocation_rgb_change_per_step
 
                 # Check the termination condition
-                if np.sum(self._neighbors_steps) >= self._relocating_limit_steps_thres:
+                steps_on_relocation_target = self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
+                if steps_on_relocation_target >= self._relocating_limit_steps_thres:
                     # Update the switch back duration
                     current_step = self._steps
                     switch_back_duration = current_step - self._off_background_step
@@ -739,24 +743,27 @@ class LocomotionRelocationTest(LocomotionBase):
 
                     # Update the switch back error rate
                     # Get the total number of steps in self._neighbors_steps that does not corresponding to the relocation target
-                    num_switch_back_errors = np.sum(self._neighbors_steps) - self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
-                    # Get the error rate
-                    switch_back_error_rate = num_switch_back_errors / np.sum(self._neighbors_steps)
+                    switch_back_error_steps = np.sum(self._neighbors_steps) - steps_on_relocation_target
                     # Update the switch back error rate list
-                    self._switch_back_error_rates.append(switch_back_error_rate)
+                    self._switch_back_error_steps.append(switch_back_error_steps)
 
                     # Reset the relocation target counter
                     self._steps_on_relocation_target = 0
 
                     # Get back to the reading mode
                     self._task_mode = READING_MODE
-                    # Reset the grid color
-                    for idx in self._reading_target_idxs:
-                        if idx == self._reading_target_idx:
-                            self._model.geom(self._relocation_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
-                            self._model.geom(self._relocation_target_idx).size[0:3] = self._HINT_SIZE.copy()
-                        else:
-                            self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                    # Update the reading target
+                    self._switch_target(idx=self._reading_target_idx + 1)
+                    # Reset the reading target counter
+                    self._steps_on_reading_target = 0
+
+                    # # Reset the grid color
+                    # for idx in self._reading_target_idxs:
+                    #     if idx == self._reading_target_idx:
+                    #         self._model.geom(self._relocation_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                    #         self._model.geom(self._relocation_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                    #     else:
+                    #         self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
         else:
             raise ValueError(f'Unknown task mode: {self._task_mode}')
 
@@ -769,10 +776,11 @@ class LocomotionRelocationTest(LocomotionBase):
             terminate = False
 
         if terminate:
-            print(f'The total timesteps is: {self._steps}. \n'
+            print(f'The total timesteps is: {self._steps}. The total number of cells traversed is: {self._num_read_cells} \n'
                   f'The switch back duration is: {np.sum(self._switch_back_durations)}. The durations are: {self._switch_back_durations} \n'
-                  f'The reading goodput is: {round(self._num_read_grids / self._steps, 5)} (grids per timestep). \n'
-                  f'The switch back error rate (method 1) is: {round(100 * np.mean(self._switch_back_error_rates), 2)} % \n')
+                  f'The reading goodput is: {round(self._num_read_cells / self._steps, 5)} (grids per timestep). \n'
+                  f'The switch back error rate is: {round(100 * np.sum(self._switch_back_error_steps) / (self._num_read_cells * self._reading_target_dwell_timesteps), 4)} %;'
+                  f'The switch back error steps are: {self._switch_back_error_steps} \n')
 
         return self._get_obs(), reward, terminate, {}
 

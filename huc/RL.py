@@ -129,6 +129,7 @@ class RL:
         )
         if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
             print(
+                f"    The loaded model checkpoints folder name is: {self._config_rl['train']['checkpoints_folder_name']}\n"
                 f"    The loaded model checkpoint is: {self._config_rl['test']['loaded_model_name']}\n"
             )
 
