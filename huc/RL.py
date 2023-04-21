@@ -59,15 +59,12 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
-            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
-            # nn.LeakyReLU(),
-            # nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
-            # nn.LeakyReLU(),
             nn.Flatten(),
         )
 
         # Compute shape by doing one forward pass
         with th.no_grad():
+            # (batch_size, hidden_channels * changed_width * changed_height)
             n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
 
         self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())

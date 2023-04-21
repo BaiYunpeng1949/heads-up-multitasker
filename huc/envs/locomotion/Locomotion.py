@@ -316,8 +316,6 @@ class LocomotionRelocationTrain(LocomotionBase):
         self._ep_len = 400
         self._max_trials = 1
         self._trials = 0
-        self._steps_without_read = None
-        self._max_steps_without_read = int(self._action_sample_freq * 4)
 
         # Initialize the steps on target: either reading or background
         self._steps_on_target = None
@@ -348,7 +346,6 @@ class LocomotionRelocationTrain(LocomotionBase):
         # Initializations
         self._trials = 0
         self._steps_on_target = 0
-        self._steps_without_read = 0
 
         # Eyeball rotation initialization
         # Initialize eye ball rotation angles
@@ -504,13 +501,6 @@ class LocomotionRelocationTrain(LocomotionBase):
                     self._trials += 1
                 if self._steps_on_target >= self._reading_target_dwell_timesteps and self._task_mode == 1:
                     self._trials += 1
-            else:
-                if self._task_mode == 1:
-                    # Reward shaping - Calculate reward based on angle difference - only apply to the reading task now
-                    # Ref - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L292
-                    reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site")) - 0)
-                    # Early termination - If the agent is not reading for a long time, terminate the episode
-                    self._steps_without_read += 1
 
         # Multiple targets scenarios - 3 relocation
         else:
@@ -544,16 +534,10 @@ class LocomotionRelocationTrain(LocomotionBase):
         mujoco.mj_forward(self._model, self._data)
 
         # Check termination conditions
-        if self._task_mode == 1:
-            if self._steps_without_read >= self._max_steps_without_read or self._trials >= self._max_trials:
-                terminate = True
-            else:
-                terminate = False
+        if self._steps >= self._ep_len or self._trials >= self._max_trials:
+            terminate = True
         else:
-            if self._steps >= self._ep_len or self._trials >= self._max_trials:
-                terminate = True
-            else:
-                terminate = False
+            terminate = False
 
         return self._get_obs(), reward, terminate, {}
 
@@ -734,8 +718,6 @@ class LocomotionRelocationTest(LocomotionBase):
                     self._task_mode = READING_MODE
                     # Reset the reading target counter
                     self._steps_on_reading_target = 0
-            else:
-                reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site")) - 0)
 
         elif self._task_mode == BACKGROUND_MODE:
             if geomid == self._background_idx0:
