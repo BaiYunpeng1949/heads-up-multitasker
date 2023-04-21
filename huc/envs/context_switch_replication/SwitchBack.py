@@ -23,11 +23,11 @@ class SwitchBack(Env):
         # Read the configurations from the YAML file.
         root_dir = os.path.dirname(os.path.dirname(directory))
         with open(os.path.join(root_dir, "config.yaml")) as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
-        self._mode = config['rl']['mode']
+            self._config = yaml.load(f, Loader=yaml.FullLoader)
+        self._mode = self._config['rl']['mode']
 
         # Open the mujoco model
-        self._xml_path = os.path.join(directory, "context-switch-12-inter-line-spacing-50-v2.xml")
+        self._xml_path = os.path.join(directory, self._config['mj_env']['xml'])
         self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
 
@@ -35,81 +35,48 @@ class SwitchBack(Env):
         self._action_sample_freq = 20
         self._frame_skip = int((1 / self._action_sample_freq) / self._model.opt.timestep)  # 0.05/0.002=25
 
-        # Define the length of training and testing episodes
-        if (self._mode == 'train') or (self._mode == 'continual_train'):
-            self._ep_len = 80
-        else:
-            self._ep_len = 2000
-
         # Initialise thresholds and counters
-        self._steps = 0
-        self._max_trials = 1
-        self._trials = 0
-        self._b_change = 0.2
+        self._steps = None
+        # The rgba cumulative change for finishing a fixation
+        self._rgba_delta = 0.2
 
-        # Get targets (geoms that belong to "smart-glass-pane")  TODO read how to handle nodes under nodes.
+        # Get targets (geoms that belong to "smart-glass-pane")
         sgp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane")
         self._reading_target_idxs = np.where(self._model.geom_bodyid == sgp_body)[0]
         self._reading_targets = [self._model.geom(idx) for idx in self._reading_target_idxs]
         self._reading_target_idx = None
         self._reading_target = None
-
-        # Get the background (geoms that belong to "background-pane")
-        bp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
-        self._background_idxs = np.where(self._model.geom_bodyid == bp_body)[0]
-        self._background_idx0 = self._background_idxs[0]
-
-        # Define the default text grid size and rgba from a sample grid idx=0
+        # Define the default text grid size and rgba from a sample grid idx=0, define the hint text size and rgba
         self._DEFAULT_TEXT_SIZE = self._model.geom(self._reading_target_idxs[0]).size[0:4].copy()
         self._DEFAULT_TEXT_RGBA = self._model.geom(self._reading_target_idxs[0]).rgba[0:4].copy()
         self._RUNTIME_TEXT_RGBA = None
         self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 4 / 3, self._DEFAULT_TEXT_SIZE[1],
                            self._DEFAULT_TEXT_SIZE[2] * 4 / 3]
         self._HINT_RGBA = [0.8, 0.8, 0, 1]
+
+        # Get the background (geoms that belong to "background-pane")
+        bp_body = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "background-pane")
+        self._background_idxs = np.where(self._model.geom_bodyid == bp_body)[0]
+        self._background_idx0 = self._background_idxs[0]
+        # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
         self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
         self._EVENT_RGBA = [0.8, 0, 0, self._model.geom(self._background_idx0).rgba[3].copy()]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
-        self._reading_target_dwell_interval = 2 * self._action_sample_freq
-        self._sequence_target_idxs = None
-        # The reading result buffer - should has the same length
-        self._sequence_results_idxs = None
-        self._default_idx = -1
-        self._num_targets = 0
-        self._acc_reading_target = self._b_change / self._reading_target_dwell_interval
+        self._reading_target_dwell_timesteps = 2 * self._action_sample_freq
+        self._reading_targets_idxs = None
+        self._change_rbga_reading_target = self._rgba_delta / self._reading_target_dwell_timesteps
 
         # Define the grids on the background pane
         self._background_on = None
-        self._background_dwell_interval = self._reading_target_dwell_interval
-        self._background_show_flag = None
-        self._background_show_timestep = None
+        self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._background_trials = None
-        if self._mode == 'train' or self._mode == 'continual_train':
-            self._background_max_trials = 1
-        else:
-            self._background_max_trials = 4
-        self._acc_background = self._b_change / self._background_dwell_interval
-        self._background_show_interval = 3 * self._reading_target_dwell_interval
-        self._background_last_on_steps = None
-
-        # Define the relocation distraction relevant variables
-        self._relocating_dwell_interval = 0.5 * self._reading_target_dwell_interval
-        self._relocating_steps = None
-        self._relocating_neighbors = None
-        self._relocating_incorrect_steps = None
-        # Neighbor distance threshold
-        self._relocating_dist_neighbor = 0.01 + 0.0001       # Actual inter-word distance + offset
-        # Relocating - pick up point
-        self._relocating_pickup_dwell_steps = int(0.25 * self._reading_target_dwell_interval)
-        self._relocating_pickup_records = None
-        self._relocating_incorrect_num = None
-        self._off_background_step = None
-        self._switch_back_durations = None
+        self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
 
         # Define observation space
-        self._width = 40
-        self._height = 40
+        self._width = self._config['mj_env']['width']
+        self._height = self._config['mj_env']['height']
         self.observation_space = Box(low=0, high=255, shape=(3, self._width, self._height))  # width, height correctly set?
 
         # Define action space
@@ -131,11 +98,19 @@ class SwitchBack(Env):
 
         # Render the image
         rgb, _ = self._eye_cam.render()
+
         # Preprocess
-        rgb_foveated = self._foveate(img=rgb)
-        rgb_foveated = np.transpose(rgb_foveated, [2, 0, 1])
-        rgb_normalize = self.normalise(rgb_foveated, 0, 255, -1, 1)
-        return rgb_normalize
+        # Foveated vision applied
+        if 'foveate' in self._config['rl']['train']['checkpoints_folder_name']:
+            rgb_foveated = self._foveate(img=rgb)
+            rgb_foveated = np.transpose(rgb_foveated, [2, 0, 1])
+            rgb_normalize = self.normalise(rgb_foveated, 0, 255, -1, 1)
+            return rgb_normalize
+        # Foveated vision not applied
+        else:
+            rgb = np.transpose(rgb, [2, 0, 1])
+            rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
+            return rgb_normalize
 
     def reset(self):
 
@@ -144,7 +119,7 @@ class SwitchBack(Env):
 
         # Reset counters
         self._steps = 0
-        self._trials = 0
+        # self._trials = 0
 
         # Reset the scene
         self._reset_scene()
@@ -161,68 +136,7 @@ class SwitchBack(Env):
         # Reset the background scene and variables
         self._background_trials = 0
         self._background_on = False
-        self._background_last_on_steps = 0
         self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-
-        # Relocating / pick-up issues
-        self._relocating_steps = 0
-        self._relocating_neighbors = []
-        self._relocating_pickup_records = []
-        self._relocating_incorrect_num = 0
-        self._off_background_step = 0
-        self._switch_back_durations = []
-
-        # Specify according to the training or non-trainings:
-        #  training simple but generalizable abilities, non-training actual tasks
-        if (self._mode == 'train') or (self._mode == 'continual_train'):
-            # Initialize eye ball rotation angles
-            if 'mid-right' in self._xml_path:
-                eye_x_motor_init_range = [-0.5, 0.5]
-                eye_y_motor_init_range = [-0.5, 0.25]
-            elif 'bottom-center' in self._xml_path:
-                eye_x_motor_init_range = [-0.5, 0.5]
-                eye_y_motor_init_range = [-0.25, 0.25]
-            elif 'inter-line-spacing-50' in self._xml_path:
-                eye_x_motor_init_range = [-0.5, 0.5]
-                eye_y_motor_init_range = [-0.25, 0.25]
-            elif 'inter-line-spacing-100' in self._xml_path:
-                eye_x_motor_init_range = [-0.4, 0.4]
-                eye_y_motor_init_range = [-0.16, 0.16]
-            else:
-                eye_x_motor_init_range = [-0.5, 0.5]
-                eye_y_motor_init_range = [-0.5, 0.5]
-            action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
-                      np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
-            # TODO Aleksi suggested using qpos, try it later
-            for i in range(10):
-                # Set motor control
-                self._data.ctrl[:] = action
-                # Advance the simulation
-                mujoco.mj_step(self._model, self._data, self._frame_skip)
-
-            # Define the target reading grids
-            self._sequence_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
-            self._num_targets = len(self._sequence_target_idxs)
-
-            # Define the background events
-            # self._background_show = True
-            # # self._background_show_timestep = int(0.5 * self._reading_target_dwell_interval)
-            self._background_show_flag = np.random.choice([True, False])
-            # self._background_show_timestep = np.random.randint(0, self._reading_target_dwell_interval)
-
-            # Decide whether or not show the reading grids
-            if self._background_show_flag == False:
-                self._switch_target(idx=self._sequence_target_idxs[0])
-
-        # Non-trainings
-        else:
-            # Reading grids
-            self._sequence_target_idxs = self._reading_target_idxs.tolist()
-            self._sequence_results_idxs = [self._default_idx for _ in self._sequence_target_idxs]
-            self._switch_target(idx=self._sequence_target_idxs[0])
-
-            # Relocating
-            self._relocating_incorrect_steps = 0
 
     def _switch_target(self, idx):
 
@@ -241,78 +155,7 @@ class SwitchBack(Env):
         mujoco.mj_forward(self._model, self._data)
 
     def _update_background(self):
-
-        # Trainings
-        if (self._mode == 'train') or (self._mode == 'continual_train'):
-            if self._background_on == False:
-                if self._background_trials < self._background_max_trials:
-                    # Show the background event by changing to a brighter color
-                    if self._steps >= 0:
-                        self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                        self._background_on = True
-            else:
-                # Identify whether should stop the background event
-                if self._model.geom(self._background_idx0).rgba[2] >= self._b_change:
-                    self._background_trials += 1
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                    self._background_on = False
-
-        # Non-trainings
-        else:
-            if self._background_on == False:
-                if (self._steps - self._background_last_on_steps) >= self._background_show_interval and self._background_trials < self._background_max_trials:
-                    # Background
-                    self._background_on = True
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                    # Reading grids
-                    self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
-                    for idx in self._sequence_target_idxs:
-                        self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                        self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-            else:
-                if self._model.geom(self._background_idx0).rgba[2] >= self._b_change:
-                    # Background
-                    self._background_trials += 1
-                    self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                    self._background_on = False
-                    # Update the step buffer
-                    self._background_last_on_steps = self._steps
-                    # Reading grids distractions
-                    self._find_neighbors()    # TODO baseline vs issues on relocating
-                    # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
-                    # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
-                    # Switch back off background timestamp
-                    if self._off_background_step == 0:
-                        # Only update when last pick up happened and this time stamp was reset to 0
-                        self._off_background_step = self._steps
-                    else:
-                        # The previous trial did not read anything
-                        self._off_background_step += self._background_show_interval
-                        self._relocating_incorrect_num += 1
-                        print(
-                            'One relocating trial was unable to pick up any grid at the target grid {}.'.format(self._reading_target_idx)
-                        )
-
-        # Do a forward so everything will be set
-        mujoco.mj_forward(self._model, self._data)
-
-    def _find_neighbors(self):
-
-        # TODO maybe later the memory mechanism can be added here.
-        target_grid_idx = self._reading_target_idx
-        target_xpos = self._data.geom(target_grid_idx).xpos
-
-        neighbors = []
-
-        for grid_idx in self._sequence_target_idxs:
-            grid_xpos = self._data.geom(grid_idx).xpos
-            dist = np.linalg.norm(grid_xpos - target_xpos)
-            if dist <= self._relocating_dist_neighbor:
-                neighbors.append(grid_idx)
-                self._model.geom(grid_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()   # Continue to avoid infinite loop
-                self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
-
-        self._relocating_neighbors = neighbors.copy()
+        return
 
     def _ray_from_site(self, site_name):
         site = self._data.site(site_name)
@@ -349,6 +192,9 @@ class SwitchBack(Env):
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
 
     def _foveate(self, img):
+        """
+        Foveate the image, note that the shape of image has to be (height, width, 3)
+        """
 
         # Define the blurring level
         sigma = 1
@@ -390,6 +236,93 @@ class SwitchBack(Env):
         return rgb, rgb_eye
 
     def step(self, action):
+        return
+
+
+class SwitchBackTrain(SwitchBack):
+
+    def __init__(self):
+        super().__init__()
+
+        # Initialize the episode length
+        self._ep_len = 100
+
+        # Initialize the counter, and the max number of trials for the reading task
+        self._reading_trials = None
+        self._reading_max_trials = 1
+
+        # Initialize the max number of trials for the background task
+        self._background_max_trials = 1
+
+        # Initialize the flag for the background task - show or not
+        self._background_show_flag = None
+
+    def reset(self):
+        super().reset()
+
+        self._reading_trials = 0
+
+        return self._get_obs()
+
+    def _reset_scene(self):
+        super()._reset_scene()
+
+        # Initialize eye ball rotation angles
+        if 'context-switch-12-mid-right' in self._xml_path:
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.5, 0.25]
+        elif 'context-switch-12-bottom-center' in self._xml_path:
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.25, 0.25]
+        elif 'context-switch-12-inter-line-spacing-50' in self._xml_path:
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.25, 0.25]
+        elif 'context-switch-12-inter-line-spacing-100' in self._xml_path:
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.25, 0.25]
+        else:
+            eye_x_motor_init_range = [-0.5, 0.5]
+            eye_y_motor_init_range = [-0.5, 0.5]
+        action = [np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1]),
+                  np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])]
+
+        for i in range(10):
+            # Set motor control
+            self._data.ctrl[:] = action
+            # Advance the simulation
+            mujoco.mj_step(self._model, self._data, self._frame_skip)
+
+        # Define the target reading grids
+        self._sequence_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
+
+        # Define the background events
+        self._background_show_flag = np.random.choice([True, False])
+
+        # Decide whether or not show the reading grids
+        if self._background_show_flag == False:
+            self._switch_target(idx=self._sequence_target_idxs[0])
+
+    def _update_background(self):
+        super()._update_background()
+
+        if self._background_on == False:
+            if self._background_trials < self._background_max_trials:
+                # Show the background event by changing to a brighter color
+                if self._steps >= 0:
+                    self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                    self._background_on = True
+        else:
+            # Identify whether should stop the background event
+            if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
+                self._background_trials += 1
+                self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
+                self._background_on = False
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def step(self, action):
+        super().step(action)
+
         # Normalise action from [-1, 1] to actuator control range
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
@@ -397,12 +330,7 @@ class SwitchBack(Env):
         # Set motor control
         self._data.ctrl[:] = action
 
-        # Update the background changes, trainings
-        if (self._mode == 'train') or (self._mode == 'continual_train'):
-            if self._background_show_flag == True:
-                self._update_background()
-        # Non-trainings
-        else:
+        if self._background_show_flag == True:
             self._update_background()
 
         # Advance the simulation
@@ -416,22 +344,12 @@ class SwitchBack(Env):
         reward = 0
 
         # Specify the targets on different conditions
-        # Trainings
-        if (self._mode == 'train') or (self._mode == 'continual_train'):
-            if self._background_show_flag == True:
-                target_idx = self._background_idx0
-                acc = self._acc_background
-            else:
-                target_idx = self._reading_target_idx
-                acc = self._acc_reading_target
-        # Non-trainings
+        if self._background_show_flag == True:
+            target_idx = self._background_idx0
+            acc = self._change_rgba_background
         else:
-            if self._background_on == True:
-                target_idx = self._background_idx0
-                acc = self._acc_background
-            else:
-                target_idx = self._reading_target_idx
-                acc = self._acc_reading_target
+            target_idx = self._reading_target_idx
+            acc = self._change_rbga_reading_target
 
         # Focus on targets detection
         if geomid == target_idx:
@@ -448,18 +366,168 @@ class SwitchBack(Env):
         else:
             terminate = False
 
-            # Trainings
-            if (self._mode == 'train') or (self._mode == 'continual_train'):
-                if self._background_show_flag == True:
-                    if self._background_trials >= self._background_max_trials:
-                        terminate = True
-                else:
-                    if self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change:
-                        self._trials += 1
-                        if self._trials >= self._max_trials:
-                            terminate = True
-            # Non-trainings
+            if self._background_show_flag == True:
+                if self._background_trials >= self._background_max_trials:
+                    terminate = True
             else:
+                if self._model.geom(self._reading_target_idx).rgba[2] >= self._rgba_delta:
+                    self._reading_trials += 1
+                    if self._reading_trials >= self._reading_max_trials:
+                        terminate = True
+
+        return self._get_obs(), reward, terminate, {}
+
+
+class SwitchBackTest(SwitchBack):
+
+    def __init__(self):
+        super().__init__()
+
+        self._ep_len = 2000
+
+        self._init_reading_idx = -1
+
+        self._background_max_trials = 4
+
+        self._background_show_interval = 3 * self._reading_target_dwell_timesteps
+        self._background_last_on_steps = None
+
+        # Define the relocation distraction relevant variables
+        self._relocating_dwell_interval = 0.5 * self._reading_target_dwell_timesteps
+        self._relocating_steps = None
+        self._relocating_neighbors = None
+        self._relocating_incorrect_steps = None
+        # Neighbor distance threshold
+        self._relocating_dist_neighbor = 0.010 + 0.0001  # Actual inter-word distance + offset
+        # Relocating - pick up point
+        self._relocating_pickup_dwell_steps = int(0.25 * self._reading_target_dwell_timesteps)
+        self._relocating_pickup_records = None
+        self._relocating_incorrect_num = None
+        self._off_background_step = None
+        self._switch_back_durations = None
+
+    def _reset_scene(self):
+        super()._reset_scene()
+
+        self._background_last_on_steps = 0
+
+        # Relocating / pick-up issues
+        self._relocating_steps = 0
+        self._relocating_neighbors = []
+        self._relocating_pickup_records = []
+        self._relocating_incorrect_num = 0
+        self._off_background_step = 0
+        self._switch_back_durations = []
+
+        # Reading grids
+        self._sequence_target_idxs = self._reading_target_idxs.tolist()
+        self._switch_target(idx=self._sequence_target_idxs[0])
+
+        # Relocating
+        self._relocating_incorrect_steps = 0
+
+    def _update_background(self):
+        super()._update_background()
+
+        if self._background_on == False:
+            if (
+                    self._steps - self._background_last_on_steps) >= self._background_show_interval and self._background_trials < self._background_max_trials:
+                # Background
+                self._background_on = True
+                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
+                # Reading grids
+                self._RUNTIME_TEXT_RGBA = self._model.geom(self._reading_target_idx).rgba[0:4].copy()
+                for idx in self._sequence_target_idxs:
+                    self._model.geom(idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
+                    self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
+        else:
+            if self._model.geom(self._background_idx0).rgba[2] >= self._rgba_delta:
+                # Background
+                self._background_trials += 1
+                self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
+                self._background_on = False
+                # Update the step buffer
+                self._background_last_on_steps = self._steps
+                # Reading grids distractions
+                self._find_neighbors()  # TODO baseline vs issues on relocating
+
+                # Reading without distractions
+                # self._model.geom(self._reading_target_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()
+                # self._model.geom(self._reading_target_idx).size[0:3] = self._HINT_SIZE.copy()
+                # self._relocating_neighbors = [self._reading_target_idx]
+
+                # Switch back off background timestamp
+                if self._off_background_step == 0:
+                    # Only update when last pick up happened and this time stamp was reset to 0
+                    self._off_background_step = self._steps
+
+        mujoco.mj_forward(self._model, self._data)
+
+    def _find_neighbors(self):
+
+        target_grid_idx = self._reading_target_idx
+        target_xpos = self._data.geom(target_grid_idx).xpos
+
+        neighbors = []
+
+        for grid_idx in self._sequence_target_idxs:
+            grid_xpos = self._data.geom(grid_idx).xpos
+            dist = np.linalg.norm(grid_xpos - target_xpos)
+            if dist <= self._relocating_dist_neighbor:
+                neighbors.append(grid_idx)
+                self._model.geom(grid_idx).rgba[0:4] = self._RUNTIME_TEXT_RGBA.copy()   # Continue to avoid infinite loop
+                self._model.geom(grid_idx).size[0:3] = self._HINT_SIZE.copy()
+
+        self._relocating_neighbors = neighbors.copy()
+
+    def step(self, action):
+        super().step(action)
+
+        # Normalise action from [-1, 1] to actuator control range
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        # Set motor control
+        self._data.ctrl[:] = action
+
+        # Update the background changes, non-trainings
+        self._update_background()
+
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data, self._frame_skip)
+        self._steps += 1
+
+        # Eye-sight detection
+        dist, geomid = self._ray_from_site(site_name="rangefinder-site")
+
+        # Estimate reward for each step
+        reward = 0
+
+        # Specify the targets on different conditions
+        if self._background_on == True:
+            target_idx = self._background_idx0
+            change = self._change_rgba_background
+        else:
+            target_idx = self._reading_target_idx
+            change = self._change_rbga_reading_target
+
+        # Focus on targets detection
+        if geomid == target_idx:
+            reward = 1
+            # Update the environment
+            self._model.geom(geomid).rgba[0:3] = [x + y for x, y in
+                                                  zip(self._model.geom(geomid).rgba[0:3], [0, 0, change])]
+            # Do a forward so everything will be set
+            mujoco.mj_forward(self._model, self._data)
+
+        # Check termination conditions
+        if self._steps >= self._ep_len:
+            terminate = True
+        else:
+            terminate = False
+
+            # Check the relocating / pick-up status when the background event is off - version 0328
+            if self._background_on == False:
                 # Check the relocating / pick-up issues - version 0328
                 if geomid in self._relocating_neighbors:
                     self._relocating_pickup_records.append(geomid)
@@ -477,20 +545,14 @@ class SwitchBack(Env):
                             else:
                                 self._relocating_incorrect_num += 1
 
-                            # # Draw all distractions back to normal - version continue reading with target
-                            # for _idx in self._relocating_neighbors:
-                            #     if _idx != self._reading_target_idx:
-                            #         self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
-                            #         self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-
                             # Draw all distractions back to normal - version continue with the current grid
                             for _idx in self._relocating_neighbors:
                                 if _idx != idx:
                                     self._model.geom(_idx).rgba[0:4] = self._DEFAULT_TEXT_RGBA.copy()
                                     self._model.geom(_idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
-                            # Refresh the current target grid and the sequence results idxs
-                            self._reading_target_idx = idx
-                            self._sequence_results_idxs = [grid_id for grid_id in self._sequence_target_idxs if grid_id < idx]
+                            # Refresh the current target grid and the sequence results idxs if idx is not the previous target
+                            if idx != self._reading_target_idx:
+                                self._reading_target_idx = idx
 
                             # Clear the buffer
                             self._relocating_pickup_records = []
@@ -499,44 +561,63 @@ class SwitchBack(Env):
                             # Set to 0 to avoid one empty round of relocating: during one interval of the background task,
                             # it never picked up anything. This is related to the hyper-parameter of self._relocating_pickup_dwell_steps
                             break
+            # Check at the start of the next background event, whether the pervious relocating trial was successful
+            else:
+                # The relocating did not pick up anything at the previous trial
+                if self._off_background_step != 0:
+                    self._relocating_incorrect_num += 1
+                    self._switch_back_durations.append(self._background_show_interval)
+                    print(
+                        'One relocating trial was unable to pick up any grid at the target grid {}. '
+                        'The relocating pickup records is: {}. '
+                        'The switch back duration is: {}. '
+                        'The background trial number is: {}.'
+                            .format(self._reading_target_idx, self._background_show_interval,
+                                    self._relocating_pickup_records, self._background_trials)
+                    )
+                    # Clear the buffer
+                    self._relocating_pickup_records = []
+                    self._relocating_neighbors = []
+                    self._off_background_step = 0
 
-                # Check whether the grid has been fixated for enough time
-                if (self._model.geom(self._reading_target_idx).rgba[2] >= self._b_change) and (self._reading_target_idx not in self._sequence_results_idxs):
+            # Check whether the grid (background or reading) has been fixated for enough time
+            if self._model.geom(self._reading_target_idx).rgba[2] >= self._rgba_delta:
 
-                    # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
-                    if not self._relocating_neighbors:
-                        pass
-                    else:       # When the relocating_neighbor is not empty
-                        # Add new switch back durations
-                        current_step = self._steps
-                        switch_back_duration = current_step - self._off_background_step
-                        self._switch_back_durations.append(switch_back_duration)
+                # Update the intervened relocating where relocating dwell was smaller than the remaining reading time
+                if not self._relocating_neighbors:
+                    pass
+                else:  # When the relocating_neighbor is not empty - the relocation was not over that the relocating dwell was bigger than the remaining reading time
+                    # Add new switch back durations
+                    current_step = self._steps
+                    switch_back_duration = current_step - self._off_background_step
+                    self._switch_back_durations.append(switch_back_duration)
 
-                        # Clear the buffer
-                        self._relocating_pickup_records = []
-                        self._relocating_neighbors = []
-                        self._off_background_step = 0
+                    # Clear the buffer
+                    self._relocating_pickup_records = []
+                    self._relocating_neighbors = []
+                    self._off_background_step = 0
 
-                        print(
-                            'One relocating trial was finished earlier at target grid {}.'.format(self._reading_target_idx)
-                        )
+                    print(
+                        'One relocating trial was finished earlier at target grid {}. The switch back duration is: {}. '
+                        'The background trial is: {}'.
+                            format(self._reading_target_idx, switch_back_duration, self._background_trials)
+                    )
 
-                    for i in range(self._num_targets):
-                        if self._sequence_results_idxs[i] == self._default_idx:
-                            self._sequence_results_idxs[i] = self._reading_target_idx
-                            break
-                    # Terminate the loop if all grids are traversed, or switch to the next grid
-                    if self._reading_target_idx >= self._sequence_target_idxs[-1]:
-                        terminate = True
-                    else:
-                        self._switch_target(idx=self._reading_target_idx + 1)
+                # Terminate the loop if all grids are traversed, or switch to the next grid
+                if self._reading_target_idx >= self._sequence_target_idxs[-1]:
+                    terminate = True
+                else:
+                    self._switch_target(idx=self._reading_target_idx + 1)
 
-                if terminate:
-                    print('The total timesteps is: {}. \n'
-                          'The switch back duration is: {}. \n'
-                          'The reading goodput is: {} (grids per timestep). \n'
-                          'The switch back error rate is: {}%.'.
-                          format(self._steps, np.sum(self._switch_back_durations), round(len(self._sequence_target_idxs) / self._steps, 5),
-                                 round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
+            if terminate:
+                print('The total timesteps is: {}. \n'
+                      'The switch back duration is: {}. The durations are: {} \n'
+                      'The reading goodput is: {} (grids per timestep). \n'
+                      'The switch back error rate is: {}%.'.
+                      format(self._steps, np.sum(self._switch_back_durations), self._switch_back_durations,
+                             round(len(self._sequence_target_idxs) / self._steps, 5),
+                             round(100 * self._relocating_incorrect_num / self._background_max_trials, 2)))
 
         return self._get_obs(), reward, terminate, {}
+
+
