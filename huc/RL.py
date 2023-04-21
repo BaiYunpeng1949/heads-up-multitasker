@@ -25,7 +25,7 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.locomotion.Locomotion import LocomotionTrain, LocomotionRelocationTrain, LocomotionTest, LocomotionTrickyTest, LocomotionRelocationTest
+from huc.envs.locomotion.Locomotion import LocomotionRelocationTrain, LocomotionRelocationTest
 from huc.envs.locomotion.Relocation import RelocationTrain
 
 _MODES = {
@@ -319,7 +319,7 @@ class RL:
                 if self._env._steps <= 3:
                     # print('printed the {}th frame'.format(self._env._steps))
                     # Create a folder if not exist
-                    folder_name = 'C:/Users/91584/Desktop/{}'.format(self._config_rl['train']['checkpoints_folder_name'])
+                    folder_name = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
                     if not os.path.exists(folder_name):
                         os.makedirs(folder_name)
                     path = folder_name + '/{}.png'.format(self._env._steps)
@@ -355,6 +355,7 @@ class RL:
             # Generate the results from the pre-trained model.
             rgb_images, rgb_eye_images = self._test()
             # Write a video. First get the rgb images, then identify the path.
+            # video_folder_path = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
             video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
             if os.path.exists(video_folder_path) is False:
                 os.makedirs(video_folder_path)

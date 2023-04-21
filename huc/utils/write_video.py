@@ -18,4 +18,4 @@ def write_video(filepath, fps, rgb_images, width, height):
     for img in rgb_images:
         out.write(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     out.release()
-    print('\nThe video has been made and released to: {}.'.format(filepath))
+    print(f'The video has been made and released to: {filepath}.\n')
