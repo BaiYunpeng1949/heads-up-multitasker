@@ -27,6 +27,7 @@ from huc.envs.context_switch_replication.ContextSwitchReplication import Context
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
 from huc.envs.locomotion.Locomotion import LocomotionRelocationTrain, LocomotionRelocationTest
 from huc.envs.locomotion.Relocation import RelocationTrain
+from huc.envs.locomotion.RelocationStackFrame import RelocationStackFrame
 
 _MODES = {
     'train': 'train',
@@ -150,10 +151,12 @@ class RL:
         # else:
         #     self._env = RelocationTrain()
 
-        if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-            self._env = LocomotionRelocationTrain()
-        else:
-            self._env = LocomotionRelocationTest()
+        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
+        #     self._env = LocomotionRelocationTrain()
+        # else:
+        #     self._env = LocomotionRelocationTest()
+
+        self._env = RelocationStackFrame()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

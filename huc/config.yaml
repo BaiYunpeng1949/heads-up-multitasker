@@ -1,12 +1,12 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: continual_train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: debug    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 40000000
-    checkpoints_folder_name: 'checkpoints_0421_ils100_120120px_50m'
-    num_workers: 16   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
+    checkpoints_folder_name: 'checkpoints_0421_rlocstkfrm_40m'
+    num_workers: 12   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 4096   # TODO do not change this parameter
     batch_size: 512   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
     ent_coef: 0.03    # Entropy coefficient
@@ -25,5 +25,5 @@ rl:
 
 mj_env:
   xml: 'locomotion-12-3layouts-v1.xml'
-  width: 120
-  height: 120
+  width: 80
+  height: 80
