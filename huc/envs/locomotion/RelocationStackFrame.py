@@ -45,7 +45,7 @@ class RelocationStackFrame(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        self._ep_len = 10       # TODO change this later for true trainings.
+        self._ep_len = 100
         self._trials = None
         self._max_trials = 1
         self._steps_on_target = None
@@ -99,18 +99,18 @@ class RelocationStackFrame(Env):
         # Define the relocation dwell timesteps
         self._reloc_dwell_steps = 4
 
-        # Define observation space
-        self._width = self._config['mj_env']['width']
-        self._height = self._config['mj_env']['height']
-        self.observation_space = Box(low=-1, high=1, shape=(3, self._width, self._height))  # C*W*H
-
-        # Define action space
-        self.action_space = Box(low=-1, high=1, shape=(2,))
-
         # Define the frame stack
         self._frames = None
         self._steps_since_last_frame = 0
-        self._num_stacked_frames = 4
+        self._num_stacked_frames = 2
+
+        # Define observation space
+        self._width = self._config['mj_env']['width']
+        self._height = self._config['mj_env']['height']
+        self.observation_space = Box(low=-1, high=1, shape=(3 * self._num_stacked_frames, self._width, self._height))  # C*W*H
+
+        # Define action space
+        self.action_space = Box(low=-1, high=1, shape=(2,))
 
         # Initialise context, cameras
         self._context = Context(self._model, max_resolution=[1280, 960])
@@ -122,6 +122,8 @@ class RelocationStackFrame(Env):
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
     def _get_obs(self):
+        # TODO try frame skip and stack frame together - more efficient and might reduce the ocsillation of the eyeball
+        #  Ref https://www.reddit.com/r/reinforcementlearning/comments/fucovf/comment/fmc25er/?utm_source=share&utm_medium=web2x&context=3
 
         # Render the image
         rgb, _ = self._eye_cam.render()
@@ -147,6 +149,7 @@ class RelocationStackFrame(Env):
         else:
             self._frames[-1] = rgb_normalize
             obs = np.stack(self._frames, axis=0)
+            obs = obs.reshape((-1, obs.shape[-2], obs.shape[-1]))
 
         return obs
 
@@ -246,7 +249,7 @@ class RelocationStackFrame(Env):
                 if self._steps_on_target >= self._itrpt_read_steps:
                     # Interrupt the reading task and flip to the background dwell task
                     self._task_mode = BG
-                    self._buffer_steps_on_target = self._steps_on_target.copy()
+                    self._buffer_steps_on_target = self._steps_on_target
                     self._steps_on_target = 0
                     # Hide the reading cell
                     self._model.geom(self._read_target_idx).rgba[0:4] = self._DFLT_READ_CELL_RGBA.copy()
@@ -270,7 +273,7 @@ class RelocationStackFrame(Env):
                     self._model.geom(self._read_target_idx).rgba[0:4] = self._HINT_READ_CELL_RGBA.copy()
                     self._model.geom(self._read_target_idx).size[0:3] = self._HINT_READ_CELL_SIZE.copy()
                     self._task_mode = READ
-                    self._steps_on_target = self._buffer_steps_on_target.copy()
+                    self._steps_on_target = self._buffer_steps_on_target
             else:
                 NotImplementedError(f'Unknown task mode: {self._task_mode}')
 

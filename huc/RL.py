@@ -52,11 +52,11 @@ class CustomCNN(BaseFeaturesExtractor):
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
 
-        n_input_channels = observation_space.shape[0]
+        n_input_channels = observation_space.shape[0]   # For non-frame-stacked envs, this is 3. For frame-stacked envs, this is 3 * n_stack.
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=n_input_channels, out_channels=8, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.Conv2d(in_channels=n_input_channels, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2)),
             nn.LeakyReLU(),

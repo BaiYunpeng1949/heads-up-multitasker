@@ -1,11 +1,11 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: debug    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: continual_train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 40000000
-    checkpoints_folder_name: 'checkpoints_0421_rlocstkfrm_40m'
+    total_timesteps: 20000000
+    checkpoints_folder_name: 'checkpoints_0423_rlocstkfrm_20m'
     num_workers: 12   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 4096   # TODO do not change this parameter
     batch_size: 512   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -20,8 +20,8 @@ rl:
   test:
     num_episodes: 1
     layout_name: 'interline-spacing-100'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_2800000_steps'
-    continual_logs_name: 'PPO_88'
+    loaded_model_name: 'rl_model_continual_14147736_steps'
+    continual_logs_name: 'PPO_106'
 
 mj_env:
   xml: 'locomotion-12-3layouts-v1.xml'
