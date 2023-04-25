@@ -93,7 +93,7 @@ class RelocationBase(Env):
         self._alpha_delta = 1 - self._HINT_RGBA[3]
 
         # Define the idx of grids which needs to be traversed sequentially on the smart glass pane
-        self._reading_target_dwell_timesteps = int(2 * self._action_sample_freq)        # TODO this has to be the relocation related variable in locomotion class
+        self._reading_target_dwell_timesteps = int(2 * self._action_sample_freq)        # TODO this has to be the relocation related variable in pseudo_locomotion class
         self._change_rbga_reading_target = self._rgba_delta / self._reading_target_dwell_timesteps
         self._change_alpha_reading_target = self._alpha_delta / self._reading_target_dwell_timesteps
 
@@ -103,7 +103,7 @@ class RelocationBase(Env):
         self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._change_rgba_background = self._rgba_delta / self._background_dwell_timesteps
 
-        # Define the locomotion variables
+        # Define the pseudo_locomotion variables
         self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0].copy()
         self._displacement_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1].copy()
         self._nearest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._displacement_lower_bound
@@ -326,7 +326,7 @@ class RelocationTrain(RelocationBase):
         # Initialize the steps on target
         self._steps_on_target = 0
 
-        # Initialize the locomotion slide displacement
+        # Initialize the pseudo_locomotion slide displacement
         self._data.qpos[self._head_joint_y_idx] = 0.0
 
         mujoco.mj_forward(self._model, self._data)

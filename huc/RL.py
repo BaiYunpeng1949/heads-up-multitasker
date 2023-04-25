@@ -25,8 +25,8 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.locomotion.Locomotion import LocomotionRelocationTrain, LocomotionRelocationTest
-from huc.envs.locomotion.Relocation import RelocationTrain
+from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
+from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 
 _MODES = {
     'train': 'train',
@@ -190,10 +190,10 @@ class RL:
         #     self._env = RelocationTrain()
 
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-            self._env = LocomotionRelocationTrain()
+            self._env = LocoRelocTrain()
         else:
             # self._env = LocomotionRelocationTrain()
-            self._env = LocomotionRelocationTest()
+            self._env = LocoRelocTrain()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
