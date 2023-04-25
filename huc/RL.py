@@ -183,7 +183,7 @@ class RL:
                 features_extractor_class=CustomCNN,
                 features_extractor_kwargs=dict(features_dim=128),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[128, 128],
+                net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )

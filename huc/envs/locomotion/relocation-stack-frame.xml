@@ -59,8 +59,8 @@
                 <geom name="grid-12" pos="0.015 0 -0.0268" class="smart-glass-grid"/>
             </body>
 
-            <joint name="head-joint-y" class="head" axis="0 1 0" />
-            <joint name="head-joint-x" class="head" axis="1 0 0" />
+<!--            <joint name="head-joint-y" class="head" axis="0 1 0" />-->
+<!--            <joint name="head-joint-x" class="head" axis="1 0 0" />-->
         </body>
 
         <body name="background-pane" pos="0 0.12 0">
