@@ -6,7 +6,7 @@ import mujoco
 import os
 
 from gym import Env
-from gym.spaces import Box
+from gym.spaces import Box, Dict
 
 import yaml
 from scipy.ndimage import gaussian_filter
@@ -118,8 +118,13 @@ class LocomotionBase(Env):
         # Define observation space
         self._width = self._config['mj_env']['width']
         self._height = self._config['mj_env']['height']
-        self.observation_space = Box(low=0, high=255,
-                                     shape=(3, self._width, self._height))  # width, height correctly set?
+        # self.observation_space = Box(low=0, high=255,
+        #                              shape=(3, self._width, self._height))  # width, height correctly set?
+        self.observation_space = Dict({
+            "vision": Box(low=0, high=255, shape=(3, self._width, self._height)),
+            "proprioception": Box(low=-1, high=1, shape=(self._model.nq + self._model.nu,))})
+        # TODO set "proprioception" low and high according to joint/control limits, or make sure to output normalized
+        #  joint/control values as observations
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -149,7 +154,12 @@ class LocomotionBase(Env):
         else:
             rgb = np.transpose(rgb, [2, 0, 1])
             rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-            return rgb_normalize
+
+            # Get joint values (qpos) and motor set points (ctrl) -- call them proprioception for now
+            # 0-translation slide joint head-joint-y, 1-hinge joint eye-joint-x, 2-hinge joint eye-joint-y
+            # Ref - Aleksi's code - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L96
+            proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+            return {"vision": rgb_normalize, "proprioception": proprioception}
 
     def reset(self):
 

@@ -7,6 +7,7 @@ import numpy as np
 from typing import Callable
 
 import gym
+from gym import spaces
 
 import torch as th
 from torch import nn
@@ -14,7 +15,6 @@ from torch import nn
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecFrameStack
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -37,7 +37,7 @@ _MODES = {
 }
 
 
-class CustomCNN(BaseFeaturesExtractor):
+class VisionExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
         """
@@ -71,6 +71,45 @@ class CustomCNN(BaseFeaturesExtractor):
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         return self.linear(self.cnn(observations))
+
+
+class ProprioceptionExtractor(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        """
+        Ref: Aleksi - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/RL.py#L75
+        """
+        super().__init__(observation_space, features_dim)
+        # We assume a 1D tensor
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features=observation_space.shape[0], out_features=features_dim),
+            nn.LeakyReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.net(observations)
+
+
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: spaces.Dict, vision_features_dim: int = 256, proprioception_features_dim: int = 256):
+        """
+        Ref: Aleksi's code - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/RL.py#L90
+        """
+        super().__init__(observation_space, features_dim=vision_features_dim+proprioception_features_dim)
+
+        self.extractors = nn.ModuleDict({
+            "vision": VisionExtractor(observation_space["vision"], vision_features_dim),
+            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim)})
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        # self.extractors contain nn.Modules that do all the processing.
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        # Return a (B, features_dim=vision_features_dim+proprioception_features_dim) PyTorch tensor, where B is batch dimension.
+        return th.cat(encoded_tensor_list, dim=1)
 
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
@@ -153,6 +192,7 @@ class RL:
         if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
             self._env = LocomotionRelocationTrain()
         else:
+            # self._env = LocomotionRelocationTrain()
             self._env = LocomotionRelocationTest()
 
         # Initialise parallel environments
@@ -177,15 +217,15 @@ class RL:
             # Configure the model.
             # Initialise model that is run with multiple threads. TODO finalise this later
             policy_kwargs = dict(
-                features_extractor_class=CustomCNN,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[128, 128],
+                net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
             self._model = PPO(
-                policy="CnnPolicy",
+                policy="MultiInputPolicy",     # CnnPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
