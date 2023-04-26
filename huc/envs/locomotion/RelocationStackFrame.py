@@ -99,7 +99,8 @@ class RelocationStackFrame(Env):
         self._reloc_dwell_steps = 4
 
         # Define the frame stack
-        self._frames = None
+        self._vision_frames = None
+        self._qpos_frames = None
         self._steps_since_last_frame = 0
         self._num_stacked_frames = 2
 
@@ -109,7 +110,7 @@ class RelocationStackFrame(Env):
         # self.observation_space = Box(low=-1, high=1, shape=(3 * self._num_stacked_frames, self._width, self._height))  # C*W*H
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stacked_frames, self._width, self._height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._model.nq + self._model.nu,))})
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stacked_frames * self._model.nq + self._model.nu,))})
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -142,25 +143,34 @@ class RelocationStackFrame(Env):
 
         # Stack the frames only in the reading mode, because they are the most useful information
         if self._task_mode == READ:
-            self._frames.append(gray_normalize)
+            self._vision_frames.append(gray_normalize)
+            self._qpos_frames.append(self._data.qpos.copy())
             # Replicate the newest frame if the stack is not full
-            while len(self._frames) < self._num_stacked_frames:
-                self._frames.append(self._frames[-1])
-            vision = np.stack(self._frames, axis=0)
-            vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
-            # TODO learn the most recognized method to play with stacked frames tmr
-            #  Ref https://stats.stackexchange.com/questions/406213/dqn-how-to-feed-the-input-of-4-still-frames-from-a-game-as-one-single-state-in
-            #  Ref https://discuss.pytorch.org/t/how-can-i-process-stack-of-frames/164473
+            while len(self._vision_frames) < self._num_stacked_frames:
+                self._vision_frames.append(self._vision_frames[-1])
+            while len(self._qpos_frames) < self._num_stacked_frames:
+                self._qpos_frames.append(self._qpos_frames[-1])
 
         # Update only the latest frame in background mode and relocation mode
         else:
-            self._frames[-1] = gray_normalize
-            vision = np.stack(self._frames, axis=0)
-            vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
+            self._vision_frames[-1] = gray_normalize
+            self._qpos_frames[-1] = self._data.qpos.copy()
+
+        # Reshape to the observation space shape
+        # TODO learn the most recognized method to play with stacked frames tmr
+        #  Ref https://stats.stackexchange.com/questions/406213/dqn-how-to-feed-the-input-of-4-still-frames-from-a-game-as-one-single-state-in
+        #  Ref https://discuss.pytorch.org/t/how-can-i-process-stack-of-frames/164473
+        vision = np.stack(self._vision_frames, axis=0)
+        vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
+        qpos = np.stack(self._qpos_frames, axis=0)
+        qpos = qpos.reshape((1, -1))
+        ctrl = self._data.ctrl.reshape((1, -1))
+        print(f'ctrl shape: {ctrl.shape}')
 
         # Get joint values (qpos) and motor set points (ctrl) -- call them proprioception for now
         # Ref - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L96
-        proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+        proprioception = np.concatenate([qpos, ctrl], axis=1)
+        print(f'proprioception shape: {proprioception.shape}')
 
         return {"vision": vision, "proprioception": proprioception}
 
@@ -177,7 +187,8 @@ class RelocationStackFrame(Env):
         self._bg_steps = 0
         self._reloc_steps = 0
         self._task_mode = READ
-        self._frames = deque(maxlen=self._num_stacked_frames)
+        self._vision_frames = deque(maxlen=self._num_stacked_frames)
+        self._qpos_frames = deque(maxlen=self._num_stacked_frames)
 
         # Initialize eye ball rotation angles
         self._data.qpos[self._eye_joint_x_idx] = np.random.uniform(-0.5, 0.5)
