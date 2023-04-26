@@ -752,7 +752,7 @@ class LocoRelocTest(LocoRelocBase):
 
                 # Check the termination condition
                 steps_on_relocation_target = self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
-                if steps_on_relocation_target >= self._relocating_limit_steps_thres:
+                if steps_on_relocation_target >= self._relocating_dwell_steps_thres:
                     # Update the switch back duration
                     current_step = self._steps
                     switch_back_duration = current_step - self._off_background_step

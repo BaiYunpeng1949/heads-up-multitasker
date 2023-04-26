@@ -112,14 +112,16 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         return th.cat(encoded_tensor_list, dim=1)
 
 
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
+def linear_schedule(initial_value: float, min_value: float, threshold: float = 1.0) -> Callable[[float], float]:
     """
-    Linear learning rate schedule.
-    Ref: https://stable-baselines3.readthedocs.io/en/master/guide/examples.html#learning-rate-schedule
+    Linear learning rate schedule. Adapted from the example at
+    https://stable-baselines3.readthedocs.io/en/master/guide/examples.html#learning-rate-schedule
 
     :param initial_value: Initial learning rate.
+    :param min_value: Minimum learning rate.
+    :param threshold: Threshold (of progress) when decay begins.
     :return: schedule that computes
-      current learning rate depending on remaining progress
+    current learning rate depending on remaining progress
     """
     def func(progress_remaining: float) -> float:
         """
@@ -128,7 +130,10 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
         :param progress_remaining:
         :return: current learning rate
         """
-        return progress_remaining * initial_value
+        if progress_remaining > threshold:
+            return initial_value
+        else:
+            return min_value + (progress_remaining/threshold) * (initial_value - min_value)
 
     return func
 
@@ -193,7 +198,7 @@ class RL:
             self._env = LocoRelocTrain()
         else:
             # self._env = LocomotionRelocationTrain()
-            self._env = LocoRelocTrain()
+            self._env = LocoRelocTest()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -235,7 +240,11 @@ class RL:
                 # clip_range=linear_schedule(self._config_rl['train']["clip_range"]),
                 # ent_coef=self._config_rl['train']["ent_coef"],
                 # n_epochs=self._config_rl['train']["n_epochs"],
-                learning_rate=self._config_rl['train']["learning_rate"],
+                learning_rate=linear_schedule(
+                    initial_value=float(self._config_rl['train']["learning_rate"]["initial_value"]),
+                    min_value=float(self._config_rl['train']["learning_rate"]["min_value"]),
+                    threshold=float(self._config_rl['train']["learning_rate"]["threshold"]),
+                ),
                 device=self._config_rl['train']["device"],
                 seed=42,
             )
