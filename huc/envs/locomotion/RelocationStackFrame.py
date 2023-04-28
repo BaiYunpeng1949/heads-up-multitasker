@@ -33,7 +33,7 @@ class RelocationStackFrame(Env):
         self._mode = self._config['rl']['mode']
 
         # Open the mujoco model
-        self._xml_path = os.path.join(directory, "relocation-stack-frame.xml")
+        self._xml_path = os.path.join(directory, "reloc-stack-frame.xml")
         self._model = mujoco.MjModel.from_xml_path(self._xml_path)
         self._data = mujoco.MjData(self._model)
         # Forward pass to initialise the model, enable all variables
@@ -110,7 +110,8 @@ class RelocationStackFrame(Env):
         # self.observation_space = Box(low=-1, high=1, shape=(3 * self._num_stacked_frames, self._width, self._height))  # C*W*H
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stacked_frames, self._width, self._height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stacked_frames * self._model.nq + self._model.nu,))})
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stacked_frames * self._model.nq + self._model.nu,))}
+        )
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -132,7 +133,6 @@ class RelocationStackFrame(Env):
         rgb, _ = self._eye_cam.render()
 
         # Preprocess - H*W*C -> C*W*H
-        # rgb = np.transpose(rgb, [2, 0, 1])    # TODO check this with Aleksi
         rgb = np.transpose(rgb, [2, 1, 0])
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
 
@@ -165,12 +165,10 @@ class RelocationStackFrame(Env):
         qpos = np.stack(self._qpos_frames, axis=0)
         qpos = qpos.reshape((1, -1))
         ctrl = self._data.ctrl.reshape((1, -1))
-        print(f'ctrl shape: {ctrl.shape}')
 
         # Get joint values (qpos) and motor set points (ctrl) -- call them proprioception for now
         # Ref - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L96
-        proprioception = np.concatenate([qpos, ctrl], axis=1)
-        print(f'proprioception shape: {proprioception.shape}')
+        proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         return {"vision": vision, "proprioception": proprioception}
 
