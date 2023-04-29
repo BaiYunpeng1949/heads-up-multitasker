@@ -295,4 +295,7 @@ class RelocationStackFrame(Env):
         if self._steps >= self._ep_len or self._trials >= self._max_trials:
             terminate = True
 
+            if self._config['rl']['mode'] == 'test':
+                print(f'The episode is terminated after {self._steps} steps and {self._trials} trials.')
+
         return self._get_obs(), reward, terminate, {}
