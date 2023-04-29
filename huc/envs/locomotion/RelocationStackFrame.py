@@ -45,7 +45,7 @@ class RelocationStackFrame(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        self._ep_len = 100
+        self._ep_len = 150
         self._trials = None
         self._bg_trials = None
         self._max_trials = 1
@@ -96,7 +96,7 @@ class RelocationStackFrame(Env):
             NotImplementedError('Not implemented for max_reading_trials > 1')
 
         # Define the relocation dwell timesteps
-        self._reloc_dwell_steps = 4
+        self._reloc_dwell_steps = int(self._read_dwell_steps * 0.5)
 
         # Define the frame stack
         self._vision_frames = None
@@ -126,8 +126,6 @@ class RelocationStackFrame(Env):
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
     def _get_obs(self):
-        # TODO try frame skip and stack frame together - more efficient and might reduce the ocsillation of the eyeball
-        #  Ref https://www.reddit.com/r/reinforcementlearning/comments/fucovf/comment/fmc25er/?utm_source=share&utm_medium=web2x&context=3
 
         # Render the image
         rgb, _ = self._eye_cam.render()
@@ -157,9 +155,6 @@ class RelocationStackFrame(Env):
             self._qpos_frames[-1] = self._data.qpos.copy()
 
         # Reshape to the observation space shape
-        # TODO learn the most recognized method to play with stacked frames tmr
-        #  Ref https://stats.stackexchange.com/questions/406213/dqn-how-to-feed-the-input-of-4-still-frames-from-a-game-as-one-single-state-in
-        #  Ref https://discuss.pytorch.org/t/how-can-i-process-stack-of-frames/164473
         vision = np.stack(self._vision_frames, axis=0)
         vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
         qpos = np.stack(self._qpos_frames, axis=0)

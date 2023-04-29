@@ -18,7 +18,7 @@
         </default>
 
         <default class="background-grid">
-            <geom type="box" size="0.008 0.0001 0.008" rgba="0.5 0.5 0.5 0.8"/>
+            <geom type="box" size="0.008 0.0001 0.008" rgba="0.5 0.5 0.5 0"/>
         </default>
     </default>
     <asset>
@@ -58,9 +58,6 @@
                 <geom name="grid-11" pos="0.005 0 -0.0268" class="smart-glass-grid"/>
                 <geom name="grid-12" pos="0.015 0 -0.0268" class="smart-glass-grid"/>
             </body>
-
-<!--            <joint name="head-joint-y" class="head" axis="0 1 0" />-->
-<!--            <joint name="head-joint-x" class="head" axis="1 0 0" />-->
         </body>
 
         <body name="background-pane" pos="0 0.12 0">
