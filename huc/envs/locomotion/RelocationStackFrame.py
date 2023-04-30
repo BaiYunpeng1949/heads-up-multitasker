@@ -45,7 +45,7 @@ class RelocationStackFrame(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        self._ep_len = 150
+        self._ep_len = 100
         self._trials = None
         self._bg_trials = None
         self._max_trials = 1
@@ -110,8 +110,9 @@ class RelocationStackFrame(Env):
         # self.observation_space = Box(low=-1, high=1, shape=(3 * self._num_stacked_frames, self._width, self._height))  # C*W*H
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stacked_frames, self._width, self._height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stacked_frames * self._model.nq + self._model.nu,))}
-        )
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stacked_frames * self._model.nq + self._model.nu,)),
+            "stateful information": Box(low=-1, high=1, shape=(1,)),
+        })
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -165,7 +166,10 @@ class RelocationStackFrame(Env):
         # Ref - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L96
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
-        return {"vision": vision, "proprioception": proprioception}
+        # Add the stateful information - the remaining time steps in the episode normalized to [-1, 1]
+        stateful_info = np.array([(self._ep_len - self._steps) / self._ep_len * 2 - 1])
+
+        return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
 
     def reset(self):
 
@@ -300,8 +304,12 @@ class RelocationStackFrame(Env):
 
         # Reward shaping
         reward = 0.1 * (np.exp(
-            -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=target_idx)) - 0)
+            -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=target_idx)) - 1)
+        # TODO according to UitB + my understanding, if the reward shaping function is not subtracted by 1, then it would be always positive,
+        #  then the task could be unnecessarily prolonged. In addition, if in one episode there are multiple trials,
+        #  then use the early termination + stateful information containing training and time information would be useful.
 
+        # Milestone bonus are granted to agent according to UitB
         if self._task_mode == READ:
             if geomid == self._read_target_idx:
                 # reward = 1
@@ -315,9 +323,12 @@ class RelocationStackFrame(Env):
                 # Highlight the background target with the hint color
                 self._model.geom(self._bg_target_idx).rgba[0:4] = self._HINT_BG_RGBA.copy()
 
+                # Give a milestone bonus reward for accomplishing the half reading task and entering the background dwell task
+                reward = 10
+
             # Terminate the reading task if the reading task is done
             if self._read_steps >= self._read_dwell_steps:
-                # Give big reward for accomplishing the reading task
+                # Give the final big reward for accomplishing the reading task
                 reward = 50
                 self._trials += 1
 
@@ -332,7 +343,7 @@ class RelocationStackFrame(Env):
                 # Update the background event trial counter
                 self._bg_trials += 1
 
-                # Give big reward for accomplishing the background dwell task
+                # Give a milestone bonus reward for accomplishing the background dwell task
                 reward = 10
 
         elif self._task_mode == RELOC:
@@ -345,7 +356,7 @@ class RelocationStackFrame(Env):
                 self._model.geom(self._read_target_idx).size[0:3] = self._HINT_READ_CELL_SIZE.copy()
                 self._task_mode = READ
 
-                # Give big reward for accomplishing the relocation task
+                # Give a milestone bonus big reward for accomplishing the relocation task
                 reward = 10
         else:
             NotImplementedError(f'Unknown task mode: {self._task_mode}')

@@ -93,16 +93,33 @@ class ProprioceptionExtractor(BaseFeaturesExtractor):
         return self.net(observations)
 
 
+class StatefulInformationExtractor(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        super().__init__(observation_space, features_dim)
+        # We assume a 1D tensor
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features=observation_space.shape[0], out_features=features_dim),
+            nn.LeakyReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.net(observations)
+
+
 class CustomCombinedExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, vision_features_dim: int = 256, proprioception_features_dim: int = 256):
+    def __init__(self, observation_space: spaces.Dict, vision_features_dim: int = 256, proprioception_features_dim: int = 256, stateful_information_features_dim: int = 256):
         """
         Ref: Aleksi's code - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/RL.py#L90
         """
-        super().__init__(observation_space, features_dim=vision_features_dim+proprioception_features_dim)
+        super().__init__(observation_space, features_dim=vision_features_dim+proprioception_features_dim+stateful_information_features_dim)
 
         self.extractors = nn.ModuleDict({
             "vision": VisionExtractor(observation_space["vision"], vision_features_dim),
-            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim)})
+            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim),
+            "stateful information": StatefulInformationExtractor(observation_space["stateful information"], stateful_information_features_dim),
+        })
 
     def forward(self, observations) -> th.Tensor:
         encoded_tensor_list = []
@@ -202,7 +219,7 @@ class RL:
             # Initialise model that is run with multiple threads.
             policy_kwargs = dict(
                 features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32),
+                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32, stateful_information_features_dim=4),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
