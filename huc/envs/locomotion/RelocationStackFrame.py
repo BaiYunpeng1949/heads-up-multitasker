@@ -223,6 +223,31 @@ class RelocationStackFrame(Env):
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
 
+    @staticmethod
+    def angle_between(v1, v2):
+        # https://stackoverflow.com/questions/2827393/angles-between-two-n-dimensional-vectors-in-python/13849249#13849249
+        def unit_vector(vec):
+            return vec / np.linalg.norm(vec)
+
+        v1_u = unit_vector(v1)
+        v2_u = unit_vector(v2)
+        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+    def _angle_from_target(self, site_name, target_idx):
+
+        # Get vector pointing direction from site
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = pnt + site.xmat.reshape((3, 3))[:, 2]
+
+        # Get vector pointing direction to target
+        target_vec = self._data.geom(target_idx).xpos - pnt
+
+        # Estimate distance as angle
+        angle = self.angle_between(vec, target_vec)
+
+        return angle
+
     def render(self, mode="rgb_array"):
         rgb, _ = self._env_cam.render()
         rgb_eye, _ = self._eye_cam.render()
@@ -244,11 +269,42 @@ class RelocationStackFrame(Env):
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
         # Reward
-        reward = 0
+        # TODO figure out how to interpret the reward - what exactly is the agent learning? (the question asked by Prof David).
+        #  Right now, the agent is learning to move the eye ball to the target cell by applying a sparse reward at each time step.
+        #  In the relocation task, the agent is expected to track the target, but most importantly, learns to pick up the target cell from the background scene.
+        #  The latest configurations of the relocation is using the explicit img and pos inputs stored in the stacked frames. I don't think it is the POMDP.
+        #  But later, if we model the human memory as a decaying function of time, the adjacent words/cells around the target (observation model),
+        #  and the actions are stochastic follows a probability distribution within a certain area (transition model), then it would be a POMDP model worthwile to be solved by RL.
+
+        # TODO previous reward - the dense reward - might speed up the training, but not lead to the exact desired behaviors.
+
+        # TODO the choice of the reward function will depend on the desired behavior and learning properties.
+
+        # TODO To encourage the agent to read, focus on the background event, and relocate,
+        #  I will try applying big rewards for accomplishing the task, and shaping on non-finish states.
+        #  Will use the the sparse reward without breaking it down into pieces,
+        #  but also combine it with the reward function to balance between the learning speed and achieving the desired behavior.
+        #  Determine whether adding the color decaying inference of the process of fixation is necessary in the next version.
+
+        # Dense sparse reward
+        # reward = 0
+
+        if self._task_mode == READ:
+            target_idx = self._read_target_idx
+        elif self._task_mode == BG:
+            target_idx = self._bg_target_idx
+        elif self._task_mode == RELOC:
+            target_idx = self._read_target_idx
+        else:
+            raise ValueError("Unknown task mode.")
+
+        # Reward shaping
+        reward = 0.1 * (np.exp(
+            -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=target_idx)) - 0)
 
         if self._task_mode == READ:
             if geomid == self._read_target_idx:
-                reward = 1
+                # reward = 1
                 self._read_steps += 1
             # Interrupt the reading task and flip to the background dwell task
             if self._read_steps >= self._itrpt_read_steps and self._bg_trials < self._max_trials:
@@ -258,13 +314,16 @@ class RelocationStackFrame(Env):
                 self._model.geom(self._read_target_idx).size[0:3] = self._DFLT_READ_CELL_SIZE.copy()
                 # Highlight the background target with the hint color
                 self._model.geom(self._bg_target_idx).rgba[0:4] = self._HINT_BG_RGBA.copy()
+
             # Terminate the reading task if the reading task is done
             if self._read_steps >= self._read_dwell_steps:
+                # Give big reward for accomplishing the reading task
+                reward = 50
                 self._trials += 1
 
         elif self._task_mode == BG:
             if geomid == self._bg_target_idx:
-                reward = 1
+                # reward = 1
                 self._bg_steps += 1
             # Flip to the relocation task
             if self._bg_steps >= self._bg_dwell_steps:
@@ -273,15 +332,21 @@ class RelocationStackFrame(Env):
                 # Update the background event trial counter
                 self._bg_trials += 1
 
+                # Give big reward for accomplishing the background dwell task
+                reward = 10
+
         elif self._task_mode == RELOC:
             if geomid == self._read_target_idx:
-                reward = 1
+                # reward = 1
                 self._reloc_steps += 1
             # Resume the reading task
             if self._reloc_steps >= self._reloc_dwell_steps:
                 self._model.geom(self._read_target_idx).rgba[0:4] = self._HINT_READ_CELL_RGBA.copy()
                 self._model.geom(self._read_target_idx).size[0:3] = self._HINT_READ_CELL_SIZE.copy()
                 self._task_mode = READ
+
+                # Give big reward for accomplishing the relocation task
+                reward = 10
         else:
             NotImplementedError(f'Unknown task mode: {self._task_mode}')
 
