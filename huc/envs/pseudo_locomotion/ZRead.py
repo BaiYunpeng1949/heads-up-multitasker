@@ -50,7 +50,7 @@ class ZReadBase(Env):
 
         # Define the target in this z-reading task
         self._target_idx = None         # The current cell - target to read
-        self._sequence_idxs = None      # The sequence of cells to read
+        self._remain_read_seq_idxs = None      # The sequence of cells to read
         self._UNREAD_CELL_RGBA = [1, 0, 1, 1]
         self._READ_CELL_RGBA = [1, 1, 1, 1]
         self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
@@ -81,10 +81,10 @@ class ZReadBase(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        self._trials = None
-        self._max_trials = 5
-        self._ep_len = self._max_trials * (2 * self._dwell_steps)
+        self._len_read_seq = 3
+        self._ep_len = self._len_read_seq * (2 * self._dwell_steps)
         self._on_target_steps = None
+        self._final_read_seq_idx = None
 
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
@@ -117,8 +117,8 @@ class ZReadBase(Env):
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_steps_ep = (self._ep_len - self._steps) / self._ep_len * 2 - 1
         remaining_steps_target = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
-        remaining_num_targets = (self._max_trials - self._trials) / self._max_trials * 2 - 1
-        include_final_cell_boolean = 1 if self._sequence_idxs[-1] == self._ils100_idxs[-1] else -1
+        remaining_num_targets = len(self._remain_read_seq_idxs) / self._len_read_seq * 2 - 1
+        include_final_cell_boolean = 1 if self._final_read_seq_idx == self._ils100_idxs[-1] else -1
         stateful_info = np.array([remaining_steps_ep, remaining_steps_target, remaining_num_targets, include_final_cell_boolean])
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
@@ -132,7 +132,6 @@ class ZReadBase(Env):
 
         # Reset the variables and counters
         self._steps = 0
-        self._trials = 0
         self._on_target_steps = 0
 
         # Initialize eyeball rotation angles
@@ -148,16 +147,20 @@ class ZReadBase(Env):
         # Randomly select a cell as the starting target
         self._target_idx = np.random.choice(cells_idxs)
         # Update the sequence of cells to read - the following (max_trials - 1) cells will be chosen in order and stop at the last cell
-        self._sequence_idxs = cells_idxs[cells_idxs >= self._target_idx][:self._max_trials]
+        self._remain_read_seq_idxs = cells_idxs[cells_idxs >= self._target_idx][:self._len_read_seq]
+        # Get the final read sequence idx
+        self._final_read_seq_idx = self._remain_read_seq_idxs[-1].copy()
 
-        # Initialize all cells before the target cell as read, and the rest as unread
-        read_cells_idxs = cells_idxs[cells_idxs <= self._target_idx]
+        # Initialize and render all cells before the target cell as read, and the rest as unread
+        read_cells_idxs = cells_idxs[cells_idxs < self._target_idx]
         for idx in read_cells_idxs:
             self._model.geom(idx).rgba[0:4] = self._READ_CELL_RGBA.copy()
 
-        unread_cells_idxs = cells_idxs[cells_idxs > self._target_idx]
+        unread_cells_idxs = cells_idxs[cells_idxs >= self._target_idx]
         for idx in unread_cells_idxs:
             self._model.geom(idx).rgba[0:4] = self._UNREAD_CELL_RGBA.copy()
+
+        # print(f'Target cell: {self._target_idx}, remaining cells: {self._remain_read_seq_idxs}')
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -233,22 +236,24 @@ class ZReadBase(Env):
                 # Update the target
                 self._model.geom(geomid).rgba[0:4] = self._READ_CELL_RGBA.copy()
                 self._on_target_steps = 0
-                self._trials += 1
 
-                if len(self._sequence_idxs) <= 1:
+                # Update the target and the remain_read_seq_idxs
+                if len(self._remain_read_seq_idxs) > 1:
+                    self._target_idx = self._remain_read_seq_idxs[1].copy()
+                    self._remain_read_seq_idxs = self._remain_read_seq_idxs[1:]
+                else:
+                    # Clear the remain_read_seq_idxs
+                    self._remain_read_seq_idxs = np.array([], dtype=np.int32)
                     # Grant a big bonus for finishing the last target - but reaching before this target, the agent has to traverse the previous ones
                     if self._target_idx == self._ils100_idxs[-1]:
                         reward = 100
-                else:
-                    self._target_idx = self._sequence_idxs[1] if len(self._sequence_idxs) > 1 else self._sequence_idxs[0]
-                    self._sequence_idxs = self._sequence_idxs[1:] if len(self._sequence_idxs) > 1 else self._sequence_idxs
 
         # Update the scene to reflect the transition function
         mujoco.mj_forward(self._model, self._data)
 
         # Get termination condition
         terminate = False
-        if self._steps >= self._ep_len or self._trials >= self._max_trials:
+        if self._steps >= self._ep_len or len(self._remain_read_seq_idxs) <= 0:
             terminate = True
 
         return self._get_obs(), reward, terminate, {}
