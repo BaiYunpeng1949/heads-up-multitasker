@@ -46,11 +46,10 @@ class ZReadBase(Env):
                                                       "smart-glass-pane-interline-spacing-100")
 
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
-        self._ils100_idxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_idx)[0]
+        self._ils100_cells_idxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_idx)[0]
 
         # Define the target in this z-reading task
         self._target_idx = None         # The current cell - target to read
-        self._remain_read_seq_idxs = None      # The sequence of cells to read
         self._UNREAD_CELL_RGBA = [1, 0, 1, 1]
         self._READ_CELL_RGBA = [1, 1, 1, 1]
         self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
@@ -61,7 +60,7 @@ class ZReadBase(Env):
         # Origin - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/c9ef14a91febfcb258c4990ebef2246c972e8aaa/huc/envs/locomotion/RelocationStackFrame.py#L111
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
         self._num_stk_frm = 1
-        self._num_stateful_info = 4
+        self._num_stateful_info = 3
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
@@ -69,7 +68,7 @@ class ZReadBase(Env):
             })
 
         # Define the action space
-        self.action_space = Box(low=-1, high=1, shape=(self._model.nu,))    # TODO check if the num of nu is correct
+        self.action_space = Box(low=-1, high=1, shape=(self._model.nu,))
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
@@ -81,10 +80,9 @@ class ZReadBase(Env):
 
         # Initialise thresholds and counters
         self._steps = None
-        self._len_read_seq = 3
-        self._ep_len = self._len_read_seq * (2 * self._dwell_steps)
+        self._ep_len = int(30 * self._action_sample_freq)  # 30 seconds - should be covering the whole sequence
         self._on_target_steps = None
-        self._final_read_seq_idx = None
+        self._num_remain_unread_cells = None
 
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
@@ -115,11 +113,10 @@ class ZReadBase(Env):
         proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
 
         # Get the stateful information observation - normalize to [-1, 1]
-        remaining_steps_ep = (self._ep_len - self._steps) / self._ep_len * 2 - 1
-        remaining_steps_target = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
-        remaining_num_targets = len(self._remain_read_seq_idxs) / self._len_read_seq * 2 - 1
-        include_final_cell_boolean = 1 if self._final_read_seq_idx == self._ils100_idxs[-1] else -1
-        stateful_info = np.array([remaining_steps_ep, remaining_steps_target, remaining_num_targets, include_final_cell_boolean])
+        remaining_ep_steps = (self._ep_len - self._steps) / self._ep_len * 2 - 1
+        remaining_dwell_steps = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
+        remaining_num_unread_cells = self._num_remain_unread_cells / len(self._unread_cells_idxs.copy()) * 2 - 1
+        stateful_info = np.array([remaining_ep_steps, remaining_dwell_steps, remaining_num_unread_cells])
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
 
@@ -140,27 +137,24 @@ class ZReadBase(Env):
 
         # Initialize the targets
         # Get all geom idxs for the cells
-        cells_idxs = self._ils100_idxs.copy()
+        cells_idxs = self._ils100_cells_idxs.copy()
 
         # To boost training, we separate the original zigzag reading task into subtasks containing only parts of cells, which number is determined by the max_trials
         # The sequential reading was framed as a MDP, where the agent has to read all cells in a fixed order
         # Randomly select a cell as the starting target
         self._target_idx = np.random.choice(cells_idxs)
-        # Update the sequence of cells to read - the following (max_trials - 1) cells will be chosen in order and stop at the last cell
-        self._remain_read_seq_idxs = cells_idxs[cells_idxs >= self._target_idx][:self._len_read_seq]
-        # Get the final read sequence idx
-        self._final_read_seq_idx = self._remain_read_seq_idxs[-1].copy()
+        # Split the cells into two groups: read and unread - initialize the training at a random cell
+        self._read_cells_idxs = cells_idxs[cells_idxs < self._target_idx].copy()
+        self._unread_cells_idxs = cells_idxs[cells_idxs >= self._target_idx].copy()
+        self._num_remain_unread_cells = len(self._unread_cells_idxs)
 
         # Initialize and render all cells before the target cell as read, and the rest as unread
-        read_cells_idxs = cells_idxs[cells_idxs < self._target_idx]
-        for idx in read_cells_idxs:
+        for idx in self._read_cells_idxs:
             self._model.geom(idx).rgba[0:4] = self._READ_CELL_RGBA.copy()
-
-        unread_cells_idxs = cells_idxs[cells_idxs >= self._target_idx]
-        for idx in unread_cells_idxs:
+        for idx in self._unread_cells_idxs:
             self._model.geom(idx).rgba[0:4] = self._UNREAD_CELL_RGBA.copy()
 
-        # print(f'Target cell: {self._target_idx}, remaining cells: {self._remain_read_seq_idxs}')
+        # print(f'Unread cells: {self._unread_cells_idxs}, the target cell: {self._target_idx}')
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -229,34 +223,32 @@ class ZReadBase(Env):
             self._on_target_steps += 1
             self._model.geom(geomid).rgba[1] += self._rgba_diff_ps
 
-            if self._on_target_steps >= self._dwell_steps:
-                # Apply a milestone bonus for finish reading a cell
-                reward = 10
-
-                # Update the target
-                self._model.geom(geomid).rgba[0:4] = self._READ_CELL_RGBA.copy()
-                self._on_target_steps = 0
-
-                # Update the target and the remain_read_seq_idxs
-                if len(self._remain_read_seq_idxs) > 1:
-                    self._target_idx = self._remain_read_seq_idxs[1].copy()
-                    self._remain_read_seq_idxs = self._remain_read_seq_idxs[1:]
-                else:
-                    # Clear the remain_read_seq_idxs
-                    self._remain_read_seq_idxs = np.array([], dtype=np.int32)
-                    # Grant a big bonus for finishing the last target - but reaching before this target, the agent has to traverse the previous ones
-                    if self._target_idx == self._ils100_idxs[-1]:
-                        reward = 100
-
         # Update the scene to reflect the transition function
         mujoco.mj_forward(self._model, self._data)
 
+        # Get the observation before update
+        obs = self._get_obs()
+
+        # Update the transitions
+        if self._on_target_steps >= self._dwell_steps:
+            # Update the milestone bonus reward for finish reading a cell
+            reward = 10
+            # Reset the counter
+            self._on_target_steps = 0
+            # Reset the rendering scene
+            self._model.geom(self._target_idx).rgba[0:4] = self._READ_CELL_RGBA.copy()
+            # Update the number of remaining unread cells
+            self._num_remain_unread_cells -= 1
+            # Update the target
+            if self._target_idx < self._ils100_cells_idxs[-1]:
+                self._target_idx = self._target_idx + 1
+
         # Get termination condition
         terminate = False
-        if self._steps >= self._ep_len or len(self._remain_read_seq_idxs) <= 0:
+        if self._steps >= self._ep_len or self._num_remain_unread_cells <= 0:
             terminate = True
 
-        return self._get_obs(), reward, terminate, {}
+        return obs, reward, terminate, {}
 
 
 # class ZReadTrain(ZReadBase)
