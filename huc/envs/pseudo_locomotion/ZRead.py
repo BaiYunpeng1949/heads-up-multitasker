@@ -215,9 +215,6 @@ class ZReadBase(Env):
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
-        # Get rewards
-        reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
-
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
@@ -228,6 +225,9 @@ class ZReadBase(Env):
 
         # Get the observation before update
         obs = self._get_obs()
+
+        # Get rewards
+        reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
 
         # Update the transitions
         if self._on_target_steps >= self._dwell_steps:
