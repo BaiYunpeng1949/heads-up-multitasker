@@ -80,6 +80,7 @@ class ZReadBase(Env):
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
         # Initialise thresholds and counters
+        self.ep_len = 600
         self._steps = None
         self._on_target_steps = None
         self._off_target_steps = None
@@ -208,7 +209,7 @@ class ZReadBase(Env):
         # Update the target
         # Get self._target_idx's index in self._toread_idxs
         idx = np.where(self._toread_idxs == self._target_idx)[0][0]
-        self._target_idx = self._toread_idxs[idx + 1] if idx + 1 < self._max_toread_cells else self._toread_idxs[-1]
+        self._target_idx = self._toread_idxs[idx + 1] if idx + 1 < self._max_toread_cells else self._toread_idxs[-1]  # TODO there is a buggy state here
         # Update the scene
         self._model.geom(self._target_idx).rgba[0:4] = self._HINT_RGBA.copy()
 
@@ -245,7 +246,7 @@ class ZReadBase(Env):
             self._get_next_target()
 
         # Early termination
-        if self._off_target_steps >= self._max_off_target_steps:
+        if self._off_target_steps >= self._max_off_target_steps:    # TODO I think the model was trapped in a local sub-optimal by ending the episode ASAP by using early termination this way - continuous negative rewards.
             # Get the next target
             self._get_next_target()
 

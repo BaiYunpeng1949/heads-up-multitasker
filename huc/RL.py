@@ -260,7 +260,7 @@ class RL:
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
             self._num_episodes = self._config_rl['test']['num_episodes']
-            self._num_steps = self._env._ep_len
+            self._num_steps = self._env.ep_len
             # Load the model
             if self._mode == _MODES['test']:
                 self._model = PPO.load(self._loaded_model_path, self._env)
