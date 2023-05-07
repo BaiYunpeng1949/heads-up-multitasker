@@ -78,7 +78,7 @@ class LocomotionBase(Env):
 
         # Define the default text grid size and rgba from a sample grid idx=0, define the hint text size and rgba
         sample_grid_idx = self._ils100_reading_target_idxs[0].copy()
-        self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:4].copy()
+        self._DEFAULT_TEXT_SIZE = self._model.geom(sample_grid_idx).size[0:3].copy()
         self._DEFAULT_TEXT_RGBA = [0, 0, 0, 1]
         self._RUNTIME_TEXT_RGBA = None
         self._HINT_SIZE = [self._DEFAULT_TEXT_SIZE[0] * 4 / 3, self._DEFAULT_TEXT_SIZE[1],
@@ -90,7 +90,7 @@ class LocomotionBase(Env):
         self._background_idxs = np.where(self._model.geom_bodyid == self._bgp_body_idx)[0]
         self._background_idx0 = self._background_idxs[0].copy()
         # Define the default background grid size and rgba from a sample grid idx=0, define the event text size and rgba
-        self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:4].copy()
+        self._DEFAULT_BACKGROUND_SIZE = self._model.geom(self._background_idx0).size[0:3].copy()
         self._DEFAULT_BACKGROUND_RGBA = self._model.geom(self._background_idx0).rgba[0:4].copy()
         self._EVENT_RGBA = [1, 0, 0, 1]
 

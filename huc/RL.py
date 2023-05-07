@@ -7,6 +7,7 @@ import numpy as np
 from typing import Callable
 
 import gym
+from gym import spaces
 
 import torch as th
 from torch import nn
@@ -27,6 +28,7 @@ from huc.envs.context_switch_replication.ContextSwitchReplication import Context
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
 from huc.envs.locomotion.Locomotion import LocomotionRelocationTrain, LocomotionRelocationTest
 from huc.envs.locomotion.Relocation import RelocationTrain
+from huc.envs.locomotion.RelocationStackFrame import RelocationStackFrame
 
 _MODES = {
     'train': 'train',
@@ -37,7 +39,7 @@ _MODES = {
 }
 
 
-class CustomCNN(BaseFeaturesExtractor):
+class VisionExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
         """
@@ -73,14 +75,72 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.linear(self.cnn(observations))
 
 
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
+class ProprioceptionExtractor(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        """
+        Ref: Aleksi - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/RL.py#L75
+        """
+        super().__init__(observation_space, features_dim)
+        # We assume a 1D tensor
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features=observation_space.shape[0], out_features=features_dim),
+            nn.LeakyReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.net(observations)
+
+
+class StatefulInformationExtractor(BaseFeaturesExtractor):
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256):
+        super().__init__(observation_space, features_dim)
+        # We assume a 1D tensor
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features=observation_space.shape[0], out_features=features_dim),
+            nn.LeakyReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.net(observations)
+
+
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: spaces.Dict, vision_features_dim: int = 256, proprioception_features_dim: int = 256, stateful_information_features_dim: int = 256):
+        """
+        Ref: Aleksi's code - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/RL.py#L90
+        """
+        super().__init__(observation_space, features_dim=vision_features_dim+proprioception_features_dim+stateful_information_features_dim)
+
+        self.extractors = nn.ModuleDict({
+            "vision": VisionExtractor(observation_space["vision"], vision_features_dim),
+            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim),
+            "stateful information": StatefulInformationExtractor(observation_space["stateful information"], stateful_information_features_dim),
+        })
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        # self.extractors contain nn.Modules that do all the processing.
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        # Return a (B, features_dim=vision_features_dim+proprioception_features_dim) PyTorch tensor, where B is batch dimension.
+        return th.cat(encoded_tensor_list, dim=1)
+
+
+def linear_schedule(initial_value: float, min_value: float, threshold: float = 1.0) -> Callable[[float], float]:
     """
-    Linear learning rate schedule.
-    Ref: https://stable-baselines3.readthedocs.io/en/master/guide/examples.html#learning-rate-schedule
+    Linear learning rate schedule. Adapted from the example at
+    https://stable-baselines3.readthedocs.io/en/master/guide/examples.html#learning-rate-schedule
 
     :param initial_value: Initial learning rate.
+    :param min_value: Minimum learning rate.
+    :param threshold: Threshold (of progress) when decay begins.
     :return: schedule that computes
-      current learning rate depending on remaining progress
+    current learning rate depending on remaining progress
     """
     def func(progress_remaining: float) -> float:
         """
@@ -89,7 +149,10 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
         :param progress_remaining:
         :return: current learning rate
         """
-        return progress_remaining * initial_value
+        if progress_remaining > threshold:
+            return initial_value
+        else:
+            return min_value + (progress_remaining/threshold) * (initial_value - min_value)
 
     return func
 
@@ -130,30 +193,8 @@ class RL:
                 f"    The loaded model checkpoint is: {self._config_rl['test']['loaded_model_name']}\n"
             )
 
-        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        # self._env = MovingEye()
-        # self._env = ReadingEye()
-        # self._env = ContextSwitch()
-
-        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-        #     self._env = SwitchBackTrain()
-        # else:
-        #     self._env = SwitchBackTest()
-
-        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-        #     self._env = LocomotionTrain()
-        # else:
-        #     self._env = LocomotionTrickyTest()
-
-        # if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-        #     self._env = RelocationTrain()
-        # else:
-        #     self._env = RelocationTrain()
-
-        if self._mode == _MODES['train'] or self._mode == _MODES['continual_train']:
-            self._env = LocomotionRelocationTrain()
-        else:
-            self._env = LocomotionRelocationTest()
+        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!
+        self._env = RelocationStackFrame()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -163,7 +204,7 @@ class RL:
             vec_env_cls=SubprocVecEnv,
         )
 
-        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
+        # Identify the modes and specify corresponding initiates.
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
             # Pipeline related variables.
@@ -175,17 +216,17 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
-            # Initialise model that is run with multiple threads. TODO finalise this later
+            # Initialise model that is run with multiple threads.
             policy_kwargs = dict(
-                features_extractor_class=CustomCNN,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32, stateful_information_features_dim=4),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[128, 128],
+                net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
             self._model = PPO(
-                policy="CnnPolicy",
+                policy="MultiInputPolicy",  # CnnPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -195,7 +236,11 @@ class RL:
                 # clip_range=linear_schedule(self._config_rl['train']["clip_range"]),
                 # ent_coef=self._config_rl['train']["ent_coef"],
                 # n_epochs=self._config_rl['train']["n_epochs"],
-                learning_rate=self._config_rl['train']["learning_rate"],
+                learning_rate=linear_schedule(
+                    initial_value=float(self._config_rl['train']["learning_rate"]["initial_value"]),
+                    min_value=float(self._config_rl['train']["learning_rate"]["min_value"]),
+                    threshold=float(self._config_rl['train']["learning_rate"]["threshold"]),
+                ),
                 device=self._config_rl['train']["device"],
                 seed=42,
             )
