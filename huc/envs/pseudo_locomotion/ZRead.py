@@ -55,6 +55,7 @@ class ZReadBase(Env):
         self._DFLT_RGBA = [1, 1, 1, 1]
 
         self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
+        self._rgba_diff_ps = float((self._DFLT_RGBA[1] - self._HINT_RGBA[1]) / self._dwell_steps)
 
         # Define the observation space
         # Origin - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/c9ef14a91febfcb258c4990ebef2246c972e8aaa/huc/envs/locomotion/RelocationStackFrame.py#L111
@@ -82,7 +83,7 @@ class ZReadBase(Env):
         self._steps = None
         self._on_target_steps = None
         self._num_read_cells = None     # Cells are already been read
-        self._max_toread_cells = 5
+        self._max_toread_cells = 1     # Maximum number of cells to read
 
         self.ep_len = int(self._max_toread_cells * self._dwell_steps * 2)
 
@@ -226,6 +227,7 @@ class ZReadBase(Env):
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
+            self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
