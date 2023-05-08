@@ -232,7 +232,7 @@ class ZReadBase(Env):
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
         # Estimate the reward: -0.1 is the penalty for each step
-        reward = -0.1
+        reward = 0
 
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
