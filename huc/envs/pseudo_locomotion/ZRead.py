@@ -51,7 +51,7 @@ class ZReadBase(Env):
         # Define the target in this z-reading task
         self._toread_idxs = None
         self._target_idx = None         # The current cell - target to read
-        self._HINT_RGBA = [1, 1, 0, 1]      # Yellow. The transitions would be yellow (110) --> black (000)
+        self._HINT_RGBA = [1, 0, 0, 1]      # Red. The transitions would be Red (100) --> yellow (110) --> black (000)
         self._DFLT_RGBA = [0, 0, 0, 1]      # White
 
         self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
@@ -231,28 +231,20 @@ class ZReadBase(Env):
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
-        # Estimate the reward: -0.1 is the penalty for each step
-        reward = 0
-
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
-            # self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps      # TODO might be more helpful in reward shapings
-            reward += 1
+            self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
 
+        # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
+            # Update the milestone bonus reward for finish reading a cell
+            reward = 10
             # Get the next target
             self._get_next_target()
-
-        # # Update the transitions - get rewards and next state
-        # if self._on_target_steps >= self._dwell_steps:
-        #     # Update the milestone bonus reward for finish reading a cell
-        #     reward = 10
-        #     # Get the next target
-        #     self._get_next_target()
-        # else:
-        #     reward = 0.1 * (np.exp(
-        #         -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
+        else:
+            reward = 0.01 * (np.exp(
+                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
 
         # Get termination condition
         terminate = False
