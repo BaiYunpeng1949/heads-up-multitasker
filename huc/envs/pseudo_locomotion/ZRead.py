@@ -258,6 +258,7 @@ class ZReadBase(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_read_cells >= self._max_toread_cells:
             terminate = True
+            # print(f"Episode terminated after {self._steps} steps.")
 
         # Update the scene to reflect the transition function
         mujoco.mj_forward(self._model, self._data)
