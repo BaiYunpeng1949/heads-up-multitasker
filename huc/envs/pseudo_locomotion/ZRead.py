@@ -83,7 +83,7 @@ class ZReadBase(Env):
         self._steps = None
         self._on_target_steps = None
         self._num_read_cells = None     # Cells are already been read
-        self._max_toread_cells = 1     # Maximum number of cells to read
+        self._max_toread_cells = 5     # Maximum number of cells to read - more trials in one episode will boost the convergence
 
         self.ep_len = int(self._max_toread_cells * self._dwell_steps * 2)
 
@@ -224,20 +224,28 @@ class ZReadBase(Env):
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
+        # Estimate the reward: -0.1 is the penalty for each step
+        reward = -0.1
+
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
             self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
+            reward += 1
 
-        # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
-            # Update the milestone bonus reward for finish reading a cell
-            reward = 10
             # Get the next target
             self._get_next_target()
-        else:
-            reward = 0.1 * (np.exp(
-                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
+
+        # # Update the transitions - get rewards and next state
+        # if self._on_target_steps >= self._dwell_steps:
+        #     # Update the milestone bonus reward for finish reading a cell
+        #     reward = 10
+        #     # Get the next target
+        #     self._get_next_target()
+        # else:
+        #     reward = 0.1 * (np.exp(
+        #         -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
 
         # Get termination condition
         terminate = False
