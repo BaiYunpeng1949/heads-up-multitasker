@@ -51,11 +51,11 @@ class ZReadBase(Env):
         # Define the target in this z-reading task
         self._toread_idxs = None
         self._target_idx = None         # The current cell - target to read
-        self._HINT_RGBA = [1, 0, 1, 1]
-        self._DFLT_RGBA = [1, 1, 1, 1]
+        self._HINT_RGBA = [1, 1, 0, 1]      # Yellow. The transitions would be yellow (110) --> black (000)
+        self._DFLT_RGBA = [0, 0, 0, 1]      # White
 
         self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
-        self._rgba_diff_ps = float((self._DFLT_RGBA[1] - self._HINT_RGBA[1]) / self._dwell_steps)
+        self._rgba_diff_ps = float(1 / self._dwell_steps)
 
         # Define the observation space
         # Origin - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/c9ef14a91febfcb258c4990ebef2246c972e8aaa/huc/envs/locomotion/RelocationStackFrame.py#L111
@@ -142,6 +142,8 @@ class ZReadBase(Env):
         # Initialize the targets
         # Randomly select a number of cells as the target cells
         self._toread_idxs = np.random.choice(self._ils100_cells_idxs.copy(), size=self._max_toread_cells, replace=False)
+
+        # Initialize the target idx
         self._target_idx = self._toread_idxs[0]
 
         # Initialize and render all cells before the target cell as read, and the rest as unread
@@ -198,16 +200,21 @@ class ZReadBase(Env):
     def _get_next_target(self):
         # Reset the counter
         self._on_target_steps = 0
-        # Reset the rendering scene
-        self._model.geom(self._target_idx).rgba[0:4] = self._DFLT_RGBA.copy()
         # Update the number of remaining unread cells
         self._num_read_cells += 1
-        # Update the target from the toread_idxs list and scene
-        idx = np.where(self._toread_idxs == self._target_idx)[0][0]
-        if (idx + 1) < self._max_toread_cells:
-            self._target_idx = self._toread_idxs[idx + 1]
+
+        # Update the target from the toread_idxs and the scene
+        if self._num_read_cells < self._max_toread_cells:
+            self._target_idx = self._toread_idxs[self._num_read_cells]
             # Update the scene
-            self._model.geom(self._target_idx).rgba[0:4] = self._HINT_RGBA.copy()
+            for idx in self._ils100_cells_idxs.copy():
+                if idx == self._target_idx:
+                    self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
+                else:
+                    self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
+        else:
+            for idx in self._ils100_cells_idxs.copy():
+                self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
 
     def step(self, action):
         # Normalise action from [-1, 1] to actuator control range
@@ -230,7 +237,7 @@ class ZReadBase(Env):
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
-            self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
+            # self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps      # TODO might be more helpful in reward shapings
             reward += 1
 
         if self._on_target_steps >= self._dwell_steps:
