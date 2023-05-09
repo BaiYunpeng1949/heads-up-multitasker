@@ -239,12 +239,12 @@ class ZReadBase(Env):
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
             # Update the milestone bonus reward for finish reading a cell
-            reward = int(1*self._dwell_steps)
+            reward = 10
             # Get the next target
             self._get_next_target()
         else:
             reward = 0.1 * (np.exp(
-                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
+                -3 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
 
         # Get termination condition
         terminate = False
