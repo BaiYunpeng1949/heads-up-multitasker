@@ -54,7 +54,7 @@ class ZReadBase(Env):
         self._HINT_RGBA = [1, 0, 0, 1]      # Red. The transitions would be Red (100) --> yellow (110) --> black (000)
         self._DFLT_RGBA = [0, 0, 0, 1]      # White
 
-        self._dwell_steps = int(2 * self._action_sample_freq)  # 2 seconds
+        self._dwell_steps = int(1 * self._action_sample_freq)  # 1 seconds
         self._rgba_diff_ps = float(1 / self._dwell_steps)
 
         # Define the observation space
@@ -239,7 +239,7 @@ class ZReadBase(Env):
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
             # Update the milestone bonus reward for finish reading a cell
-            reward = 100
+            reward = int(1*self._dwell_steps)
             # Get the next target
             self._get_next_target()
         else:
