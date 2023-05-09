@@ -51,7 +51,7 @@ class ZReadBase(Env):
         # Define the target in this z-reading task
         self._toread_idxs = None
         self._target_idx = None         # The current cell - target to read
-        self._HINT_RGBA = [1, 0, 0, 1]      # Red. The transitions would be Red (100) --> yellow (110) --> black (000)
+        self._HINT_RGBA = [1, 1, 0, 1]      # Red. The transitions would be Red (100) --> yellow (110) --> black (000)
         self._DFLT_RGBA = [0, 0, 0, 1]      # White
 
         self._dwell_steps = int(1 * self._action_sample_freq)  # 1 seconds
@@ -115,7 +115,7 @@ class ZReadBase(Env):
         # Get the proprioception observation
         proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
 
-        # Get the stateful information observation - normalize to [-1, 1]
+        # Get the stateful information observation - normalize to [-1, 1]   # TODO what about remove the stateful information
         remaining_ep_len = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         remaining_cells = (self._max_toread_cells - self._num_read_cells) / self._max_toread_cells * 2 - 1
@@ -133,25 +133,14 @@ class ZReadBase(Env):
         # Reset the variables and counters
         self._steps = 0
         self._on_target_steps = 0
-        self._num_read_cells = 0
+        self._num_read_cells = -1
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_idx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_idx] = np.random.uniform(-0.5, 0.5)
 
         # Initialize the targets
-        # Randomly select a number of cells as the target cells
-        self._toread_idxs = np.random.choice(self._ils100_cells_idxs.copy(), size=self._max_toread_cells, replace=False)
-
-        # Initialize the target idx
-        self._target_idx = self._toread_idxs[0]
-
-        # Initialize and render all cells before the target cell as read, and the rest as unread
-        for idx in self._ils100_cells_idxs.copy():
-            if idx == self._target_idx:
-                self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
-            else:
-                self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
+        self._sample_target()
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -197,23 +186,21 @@ class ZReadBase(Env):
 
         return angle
 
-    def _get_next_target(self):
+    def _sample_target(self):
+        # Sample a target from the toread_idxs and the scene
+        self._target_idx = np.random.choice(self._ils100_cells_idxs.copy())
+
         # Reset the counter
         self._on_target_steps = 0
+
         # Update the number of remaining unread cells
         self._num_read_cells += 1
 
-        # Update the target from the toread_idxs and the scene
-        if self._num_read_cells < self._max_toread_cells:
-            self._target_idx = self._toread_idxs[self._num_read_cells]
-            # Update the scene
-            for idx in self._ils100_cells_idxs.copy():
-                if idx == self._target_idx:
-                    self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
-                else:
-                    self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
-        else:
-            for idx in self._ils100_cells_idxs.copy():
+        # Update the target cell color
+        for idx in self._ils100_cells_idxs.copy():
+            if idx == self._target_idx:
+                self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
+            else:
                 self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
 
     def step(self, action):
@@ -234,17 +221,17 @@ class ZReadBase(Env):
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._target_idx:
             self._on_target_steps += 1
-            self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
+            # self._model.geom(self._target_idx).rgba[1] += self._rgba_diff_ps
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
             # Update the milestone bonus reward for finish reading a cell
             reward = 10
             # Get the next target
-            self._get_next_target()
+            self._sample_target()
         else:
             reward = 0.1 * (np.exp(
-                -3 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
+                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._target_idx)) - 1)
 
         # Get termination condition
         terminate = False
