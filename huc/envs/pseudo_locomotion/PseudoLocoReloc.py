@@ -6,19 +6,19 @@ import mujoco
 import os
 
 from gym import Env
-from gym.spaces import Box
+from gym.spaces import Box, Dict
 
 import yaml
 from scipy.ndimage import gaussian_filter
 
 from huc.utils.rendering import Camera, Context
 
-READING_MODE = 'reading'
-BACKGROUND_MODE = 'background'
-RELOCATING_MODE = 'relocating'
+READ = 'reading'
+BG = 'background'
+RELOC = 'relocating'
 
 
-class LocomotionBase(Env):
+class LocoRelocBase(Env):
 
     def __init__(self):
 
@@ -99,7 +99,6 @@ class LocomotionBase(Env):
         self._reading_rgb_change_per_step = self._rgba_delta / self._reading_target_dwell_timesteps
 
         # Define the events on the background pane
-        self._background_on = None
         self._background_trials = None
         self._background_dwell_timesteps = self._reading_target_dwell_timesteps
         self._background_rgba_change_per_step = self._rgba_delta / self._background_dwell_timesteps
@@ -107,19 +106,32 @@ class LocomotionBase(Env):
         # Define the tasks variables for the relocation task
         self._neighbor_dist_thres = 0.0101
 
-        # Define the locomotion variables
-        self._displacement_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0].copy()
-        self._displacement_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1].copy()
-        self._nearest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._displacement_lower_bound
+        # Define the tasks variables for the relocation task
+        self._relocation_target_idx = None
+        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
+        self._RELOCATION_HINT_RGBA = [1, 0, 1, 0.5]
+        self._relocation_rgb_change_per_step = 1 / self._relocating_dwell_steps_thres
+        self._relocation_alpha_change_per_step = (1 - self._RELOCATION_HINT_RGBA[
+            3]) / self._relocating_dwell_steps_thres
+
+        # Define the pseudo_locomotion variables
+        self._disp_lower_bound = self._model.jnt_range[self._head_joint_y_idx][0].copy()
+        self._disp_upper_bound = self._model.jnt_range[self._head_joint_y_idx][1].copy()
+        self._nearest_head_xpos_y = self._data.body(self._head_body_idx).xpos[1].copy() + self._disp_lower_bound
         self._furthest_head_xpos_y = self._data.body(self._head_body_idx).xpos[
-                                         1].copy() + self._displacement_upper_bound
-        self._head_disp_per_timestep = (self._displacement_upper_bound - self._displacement_lower_bound) / 400
+                                         1].copy() + self._disp_upper_bound
+        self._head_disp_per_step = (self._disp_upper_bound - self._disp_lower_bound) / 400
 
         # Define observation space
         self._width = self._config['mj_env']['width']
         self._height = self._config['mj_env']['height']
-        self.observation_space = Box(low=0, high=255,
-                                     shape=(3, self._width, self._height))  # width, height correctly set?
+        # self.observation_space = Box(low=0, high=255,
+        #                              shape=(3, self._width, self._height))  # width, height correctly set?
+        self.observation_space = Dict({
+            "vision": Box(low=-1, high=1, shape=(3, self._width, self._height)),
+            "proprioception": Box(low=-1, high=1, shape=(self._model.nq + self._model.nu,))})
+        # TODO set "proprioception" low and high according to joint/control limits, or make sure to output normalized
+        #  joint/control values as observations
 
         # Define action space
         self.action_space = Box(low=-1, high=1, shape=(2,))
@@ -149,7 +161,12 @@ class LocomotionBase(Env):
         else:
             rgb = np.transpose(rgb, [2, 0, 1])
             rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-            return rgb_normalize
+
+            # Get joint values (qpos) and motor set points (ctrl) -- call them proprioception for now
+            # 0-translation slide joint head-joint-y, 1-hinge joint eye-joint-x, 2-hinge joint eye-joint-y
+            # Ref - Aleksi's code - https://github.com/BaiYunpeng1949/uitb-headsup-computing/blob/bf58d715b99ffabae4c2652f20898bac14a532e2/huc/envs/context_switch_replication/SwitchBackLSTM.py#L96
+            proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+            return {"vision": rgb_normalize, "proprioception": proprioception}
 
     def reset(self):
 
@@ -308,12 +325,12 @@ class LocomotionBase(Env):
         return
 
 
-class LocomotionRelocationTrain(LocomotionBase):
+class LocoRelocTrain(LocoRelocBase):        # TODO initialize more transitions to train
     def __init__(self):
         super().__init__()
 
         # Initialize the episode length and training trial thresholds
-        self._ep_len = 400
+        self._ep_len = 100
         self._max_trials = 1
         self._trials = 0
 
@@ -322,23 +339,12 @@ class LocomotionRelocationTrain(LocomotionBase):
 
         # Initialize the relocation relevant variables
         self._relocating_center_grid_idx = None
-        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
         self._neighbors = None
         self._neighbors_steps = None
-
-        # Color settings for relocation
-        self._relocation_target_idx = None
-        self._RELOCATION_HINT_RGBA = [1, 0, 1, 0.5]
-        self._relocation_rgb_change_per_fixation = 1 / self._relocating_dwell_steps_thres
-        self._relocation_alpha_change_per_fixation = (1 - self._RELOCATION_HINT_RGBA[
-            3]) / self._relocating_dwell_steps_thres
 
         # Define the transition of 3 modes: 1-reading, 2-background, 3-relocation
         self._task_mode = None
         self._layout = None
-
-        # Define the initial displacement of the agent's head
-        self._head_init_displacement_y = None
 
     def _reset_scene(self):
         super()._reset_scene()
@@ -349,14 +355,8 @@ class LocomotionRelocationTrain(LocomotionBase):
 
         # Eyeball rotation initialization
         # Initialize eye ball rotation angles
-        eye_x_motor_init_range = [-0.5, 0.5]
-        eye_y_motor_init_range = [-0.5, 0.4]
-
-        init_angle_x = np.random.uniform(eye_x_motor_init_range[0], eye_x_motor_init_range[1])
-        init_angle_y = np.random.uniform(eye_y_motor_init_range[0], eye_y_motor_init_range[1])
-
-        self._data.qpos[self._eye_joint_x_idx] = init_angle_x
-        self._data.qpos[self._eye_joint_y_idx] = init_angle_y
+        self._data.qpos[self._eye_joint_x_idx] = np.random.uniform(-0.5, 0.5)
+        self._data.qpos[self._eye_joint_y_idx] = np.random.uniform(-0.5, 0.5)
 
         # Define the target reading layouts, randomly choose one list to copy from self._ils100_reading_target_idxs, self._bc_reading_target_idxs, self._mr_reading_target_idxs
         # self._layout = np.random.choice(['interline-spacing-100', 'bottom-center', 'middle-right'], 1)
@@ -376,37 +376,31 @@ class LocomotionRelocationTrain(LocomotionBase):
             self._model.geom(idx).size[0:3] = self._DEFAULT_TEXT_SIZE.copy()
             mujoco.mj_forward(self._model, self._data)
 
-        # Define the task mode: 1-reading, 2-background, 3-relocation
-        self._task_mode = np.random.choice([1, 2, 3], 1).copy()
+        # Define the task mode: 1-reading, 2-background, 3-relocation (60%, 30%, 10%) respectively
+        self._task_mode = np.random.choice([READ, BG, RELOC], 1, p=[0.6, 0.3, 0.1]).copy()
         # Reading task
-        if self._task_mode == 1:
-            random_reading_target_idxs = np.random.choice(self._reading_target_idxs.tolist(), 3, False)
+        if self._task_mode == READ:
             # Highlight the target reading grids
-            self._switch_target(idx=random_reading_target_idxs[0])
+            self._switch_target(idx=np.random.choice(self._reading_target_idxs.tolist()))
+            # Initialize the locomotion position - randomize the head joint y position within the valid range
+            self._data.qpos[self._head_joint_y_idx] = np.random.uniform(self._disp_lower_bound,
+                                                                        self._disp_upper_bound)
         # Background task
-        elif self._task_mode == 2:
-            # Define the background events
-            self._background_on = False
+        elif self._task_mode == BG:
+            # Initialize the locomotion position - always at the upper bound
+            self._data.qpos[self._head_joint_y_idx] = self._disp_upper_bound
         # Relocation task
-        elif self._task_mode == 3:
+        elif self._task_mode == RELOC:
             # Randomize the center grid index for evoking neighbors
-            self._center_grid_idx = np.random.choice(self._reading_target_idxs.tolist().copy(), 3, False)[0]
+            # Choose one grid from the reading target grids
+            self._center_grid_idx = np.random.choice(self._reading_target_idxs.tolist().copy())
             self._neighbors, self._neighbors_steps = [], []
             # Find the neighbors and set up the scene
             self._find_neighbors()
+            # Initialize the locomotion position - Always start from the lower bound
+            self._data.qpos[self._head_joint_y_idx] = self._disp_lower_bound
         else:
             raise NotImplementedError('The task mode is not defined! Should be 1-reading, 2-background, 3-relocation!')
-
-        # Initialize the locomotion head position
-        self._data.qpos[self._head_joint_y_idx] = 0
-        # Reading and Relocation task
-        if self._task_mode == 1 or self._task_mode == 3:
-            self._head_init_displacement_y = np.random.uniform(self._displacement_lower_bound,
-                                                               self._displacement_upper_bound)
-            self._data.qpos[self._head_joint_y_idx] = self._head_init_displacement_y
-        # Background task
-        else:
-            self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -432,23 +426,25 @@ class LocomotionRelocationTrain(LocomotionBase):
         # Initialize the steps on each neighbor
         self._neighbors_steps = [0] * len(neighbors)
 
-        if self._mode == "test":  # TODO debug delete later - get the own tests
-            self._relocation_target_idx = self._center_grid_idx
-
     def _update_background(self):
         super()._update_background()
 
         # The background pane is showing events - the red color events show
-        if self._task_mode == 2:
-            if self._background_on == False:
-                # Show the background event by changing to a brighter color
-                self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
-                self._background_on = True
+        if self._task_mode == BG:
+            # Show the background event by changing to a brighter color
+            self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
         # The background pane is not showing events - the head is moving
         else:
             # Move the head if it has not getting close to the background enough
             if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
-                self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep
+                # Move the head towards the background pane
+                if self._data.qpos[self._head_joint_y_idx] + self._head_disp_per_step.copy() >= self._furthest_head_xpos_y:
+                    self._data.qpos[self._head_joint_y_idx] = self._disp_upper_bound.copy()
+                else:
+                    self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_step.copy()
+            else:
+                # Update the trial counter and terminate the episode when the head is close enough to the background
+                self._trials += 1
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -476,18 +472,23 @@ class LocomotionRelocationTrain(LocomotionBase):
         reward = 0
 
         # Specify the targets on different conditions
-        if self._task_mode == 1:
+        if self._task_mode == READ:
             target_idx = self._reading_target_idx
             change_rgba = 0  # self._reading_rgb_change_per_step
-        elif self._task_mode == 2:
+            thres = self._reading_target_dwell_timesteps
+        elif self._task_mode == BG:
             target_idx = self._background_idx0
             change_rgba = self._background_rgba_change_per_step
-        else:
+            thres = self._background_dwell_timesteps
+        elif self._task_mode == RELOC:
             target_idx = self._relocation_target_idx
-            change_rgba = self._relocation_rgb_change_per_fixation
+            change_rgba = self._relocation_rgb_change_per_step
+            thres = self._relocating_dwell_steps_thres
+        else:
+            raise NotImplementedError('The task mode is not defined! Should be reading, background, relocation!')
 
         # Single target scenarios - 1 reading and 2 background
-        if self._task_mode == 1 or self._task_mode == 2:
+        if self._task_mode == READ or self._task_mode == BG:
             # Focus on targets detection
             if geomid == target_idx:
                 # Sparse reward
@@ -497,9 +498,7 @@ class LocomotionRelocationTrain(LocomotionBase):
                 # Update the environment
                 self._model.geom(geomid).rgba[2] += change_rgba
                 # Check if the target has been fixated enough
-                if self._steps_on_target >= self._background_dwell_timesteps and self._task_mode == 2:
-                    self._trials += 1
-                if self._steps_on_target >= self._reading_target_dwell_timesteps and self._task_mode == 1:
+                if self._steps_on_target >= thres:
                     self._trials += 1
 
         # Multiple targets scenarios - 3 relocation
@@ -514,14 +513,14 @@ class LocomotionRelocationTrain(LocomotionBase):
                     # Update the steps on target
                     self._steps_on_target += 1
                     # Update the reading target - becomes more opaque
-                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_fixation
+                    self._model.geom(geomid).rgba[3] += self._relocation_alpha_change_per_step
                 else:
                     # Update the distractions - becomes dimmer
-                    self._model.geom(geomid).rgba[1] += self._relocation_rgb_change_per_fixation
+                    self._model.geom(geomid).rgba[1] += self._relocation_rgb_change_per_step
 
                 # Update the environment
                 # De-highlight the geom if it has been fixated enough
-                if self._neighbors_steps[self._neighbors.index(geomid)] >= self._relocating_dwell_steps_thres:
+                if self._neighbors_steps[self._neighbors.index(geomid)] >= thres:
                     # Update the neighbors list
                     self._neighbors[self._neighbors.index(geomid)] = -2
 
@@ -542,7 +541,7 @@ class LocomotionRelocationTrain(LocomotionBase):
         return self._get_obs(), reward, terminate, {}
 
 
-class LocomotionRelocationTest(LocomotionBase):
+class LocoRelocTest(LocoRelocBase):
 
     def __init__(self):
         super().__init__()
@@ -564,15 +563,6 @@ class LocomotionRelocationTest(LocomotionBase):
         # Initialize the relocation relevant variables
         self._neighbors = None
         self._neighbors_steps = None
-
-        self._relocation_target_idx = None
-        self._relocating_dwell_steps_thres = self._reading_target_dwell_timesteps
-        self._relocating_limit_steps_thres = self._relocating_dwell_steps_thres
-
-        self._RELOCATION_HINT_RGBA = [1, 0, 1, 0.5]
-        self._relocation_rgb_change_per_step = 1 / self._relocating_dwell_steps_thres
-        self._relocation_alpha_change_per_step = (1 - self._RELOCATION_HINT_RGBA[
-            3]) / self._relocating_dwell_steps_thres
 
         # Initialize the context switch relevant variables
         self._off_background_step = None
@@ -620,10 +610,10 @@ class LocomotionRelocationTest(LocomotionBase):
         # Reading grids
         self._reading_target_idxs = self._reading_target_idxs.tolist()
         self._switch_target(idx=self._reading_target_idxs[0])
-        self._task_mode = READING_MODE
+        self._task_mode = READ
 
         # Locomotion
-        self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
+        self._data.qpos[self._head_joint_y_idx] = self._disp_lower_bound.copy()
 
     def _update_background(self):
         super()._update_background()
@@ -632,17 +622,16 @@ class LocomotionRelocationTest(LocomotionBase):
         # If the head is not on the furthest position, it will move towards the background pane
         if self._data.body(self._head_body_idx).xpos[1] < self._furthest_head_xpos_y:
             # Move the head towards the background pane
-            self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_timestep.copy()
+            if self._data.qpos[self._head_joint_y_idx] + self._head_disp_per_step.copy() >= self._furthest_head_xpos_y:
+                self._data.qpos[self._head_joint_y_idx] = self._disp_upper_bound.copy()
+            else:
+                self._data.qpos[self._head_joint_y_idx] += self._head_disp_per_step.copy()
 
         # If the head is on the furthest position, i.e., near the background, starts the red color event
         else:
-            # Prevent the head from moving further - stop at the furthest position
-            if self._data.body(self._head_body_idx).xpos[1] > self._furthest_head_xpos_y:
-                self._data.qpos[self._head_joint_y_idx] = self._displacement_upper_bound.copy()
-
             # Start the red color event
-            if self._task_mode != BACKGROUND_MODE:
-                self._task_mode = BACKGROUND_MODE
+            if self._task_mode != BG:
+                self._task_mode = BG
                 # Set the red color
                 self._model.geom(self._background_idx0).rgba[0:4] = self._EVENT_RGBA.copy()
                 # De-highlight the previous job - reading
@@ -699,7 +688,7 @@ class LocomotionRelocationTest(LocomotionBase):
         reward = 0
 
         # Check the tasks and update accordingly
-        if self._task_mode == READING_MODE:
+        if self._task_mode == READ:
             if geomid == self._reading_target_idx:
                 # Grant an instant reward
                 reward = 1
@@ -709,17 +698,17 @@ class LocomotionRelocationTest(LocomotionBase):
                 # Update the reading target color
                 self._model.geom(geomid).rgba[2] += self._reading_rgb_change_per_step
                 # Check the termination condition
-                if self._steps_on_reading_target >= self._reading_target_dwell_timesteps:
+                if self._steps_on_reading_target >= self._relocating_dwell_steps_thres:
                     # Update the number of reading target
                     self._num_read_cells += 1
 
                     # Reset the grid color
                     self._switch_target(idx=self._reading_target_idx + 1)
-                    self._task_mode = READING_MODE
+                    self._task_mode = READ
                     # Reset the reading target counter
                     self._steps_on_reading_target = 0
 
-        elif self._task_mode == BACKGROUND_MODE:
+        elif self._task_mode == BG:
             if geomid == self._background_idx0:
                 # Sparse reward
                 reward = 1
@@ -738,14 +727,14 @@ class LocomotionRelocationTest(LocomotionBase):
                     self._steps_on_background_target = 0
                     # Reset the background variables: the color, status flag, the counter, and the head position
                     self._model.geom(self._background_idx0).rgba[0:4] = self._DEFAULT_BACKGROUND_RGBA.copy()
-                    # Reset the locomotion position
-                    self._data.qpos[self._head_joint_y_idx] = self._displacement_lower_bound.copy()
+                    # Reset the pseudo_locomotion position
+                    self._data.qpos[self._head_joint_y_idx] = self._disp_lower_bound.copy()
 
                     # Jump into the relocation task
                     self._find_neighbors()
-                    self._task_mode = RELOCATING_MODE
+                    self._task_mode = RELOC
 
-        elif self._task_mode == RELOCATING_MODE:
+        elif self._task_mode == RELOC:
             if geomid in self._neighbors:
                 # Update the steps on target
                 self._neighbors_steps[self._neighbors.index(geomid)] += 1
@@ -763,7 +752,7 @@ class LocomotionRelocationTest(LocomotionBase):
 
                 # Check the termination condition
                 steps_on_relocation_target = self._neighbors_steps[self._neighbors.index(self._relocation_target_idx)]
-                if steps_on_relocation_target >= self._relocating_limit_steps_thres:
+                if steps_on_relocation_target >= self._relocating_dwell_steps_thres:
                     # Update the switch back duration
                     current_step = self._steps
                     switch_back_duration = current_step - self._off_background_step
@@ -779,7 +768,7 @@ class LocomotionRelocationTest(LocomotionBase):
                     self._steps_on_relocation_target = 0
 
                     # Get back to the reading mode
-                    self._task_mode = READING_MODE
+                    self._task_mode = READ
                     # Update the reading target
                     self._switch_target(idx=self._reading_target_idx + 1)
                     # Reset the reading target counter

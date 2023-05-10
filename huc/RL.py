@@ -15,7 +15,6 @@ from torch import nn
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecFrameStack
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -26,9 +25,9 @@ from huc.envs.reading_eye.ReadingEye import ReadingEye
 from huc.envs.context_switch.ContextSwitch import ContextSwitch
 from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
 from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.locomotion.Locomotion import LocomotionRelocationTrain, LocomotionRelocationTest
-from huc.envs.locomotion.Relocation import RelocationTrain
-from huc.envs.locomotion.RelocationStackFrame import RelocationStackFrame
+from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
+from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
+from huc.envs.pseudo_locomotion.ZRead import ZReadBase
 
 _MODES = {
     'train': 'train',
@@ -193,8 +192,8 @@ class RL:
                 f"    The loaded model checkpoint is: {self._config_rl['test']['loaded_model_name']}\n"
             )
 
-        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!
-        self._env = RelocationStackFrame()
+        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
+        self._env = ZReadBase()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -204,7 +203,7 @@ class RL:
             vec_env_cls=SubprocVecEnv,
         )
 
-        # Identify the modes and specify corresponding initiates.
+        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
             # Pipeline related variables.
@@ -216,17 +215,19 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
-            # Initialise model that is run with multiple threads.
+            # Initialise model that is run with multiple threads. TODO finalise this later
             policy_kwargs = dict(
                 features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128, proprioception_features_dim=32, stateful_information_features_dim=4),
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=8),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
             self._model = PPO(
-                policy="MultiInputPolicy",  # CnnPolicy
+                policy="MultiInputPolicy",     # CnnPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -253,7 +254,7 @@ class RL:
             self._loaded_model_path = os.path.join(self._models_save_path, self._loaded_model_name)
             # RL testing related variable: number of episodes and number of steps in each episodes.
             self._num_episodes = self._config_rl['test']['num_episodes']
-            self._num_steps = self._env._ep_len
+            self._num_steps = self._env.ep_len
             # Load the model
             if self._mode == _MODES['test']:
                 self._model = PPO.load(self._loaded_model_path, self._env)
