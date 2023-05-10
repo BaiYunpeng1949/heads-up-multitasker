@@ -1,11 +1,11 @@
 simulator_name: 'moving_eye'
 
 rl:
-  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 100000000
-    checkpoints_folder_name: 'checkpoints_0509_ils100_100m_night'
+    checkpoints_folder_name: 'checkpoints_0510_ils100_100m'
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # TODO do not change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -14,7 +14,7 @@ rl:
     clip_range: 0.2   # Clipping range
     clip_range_vf: None   # Clipping range for the value function
     learning_rate:   # Learning rate
-      initial_value: 1e-4
+      initial_value: 5e-5
       min_value: 1e-7
       threshold: 0.8
     device: 'cuda'     # 'cuda' for default
