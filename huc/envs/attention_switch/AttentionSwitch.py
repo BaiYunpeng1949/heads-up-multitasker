@@ -135,7 +135,6 @@ class Read(Env):
         self._steps = 0
         self._on_target_steps = 0
         self._num_trials = 0
-        self._target_idx_prob = np.zeros(len(self._ils100_cells_idxs.copy()))
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_idx] = np.random.uniform(-0.5, 0.5)
@@ -193,10 +192,15 @@ class Read(Env):
 
     def _update_target_idx_prob(self, mj_target_idx):
         """TODO the memory and belief model will be built upon this later"""
+        # Initialize the target idx probability distribution - make sure probability sum to 1
+        self._target_idx_prob = np.zeros(len(self._ils100_cells_idxs.copy()))
         # Get the idx of mj_target_idx in self._ils100_cells_idxs
         idx = np.where(self._ils100_cells_idxs == mj_target_idx)[0][0]
         # Update the target idx probability distribution by assigning the probability of the target idx at the given mj_target_idx to be 1
         self._target_idx_prob[idx] = 1
+        # Check whether the probability sum to 1
+        if np.sum(self._target_idx_prob) != 1:
+            raise ValueError("The target idx probability distribution does not sum to 1!")
 
     def _sample_target(self):
         # Sample a target from the cells according to the target idx probability distribution
