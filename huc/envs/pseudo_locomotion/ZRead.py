@@ -197,10 +197,15 @@ class ZReadBase(Env):
         self._num_read_cells += 1
 
         # Update the target cell color
-        for idx in self._ils100_cells_idxs.copy():
-            if idx == self._target_idx:
-                self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
-            else:
+        if self._num_read_cells < self._max_toread_cells:
+            for idx in self._ils100_cells_idxs.copy():
+                if idx == self._target_idx:
+                    self._model.geom(idx).rgba[0:4] = self._HINT_RGBA.copy()
+                else:
+                    self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
+        # Dim all cells if reaches the max number of trials
+        else:
+            for idx in self._ils100_cells_idxs.copy():
                 self._model.geom(idx).rgba[0:4] = self._DFLT_RGBA.copy()
 
     def step(self, action):
@@ -237,7 +242,6 @@ class ZReadBase(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_read_cells >= self._max_toread_cells:
             terminate = True
-            # print(f"Episode terminated after {self._steps} steps.")
 
         # Update the scene to reflect the transition function
         mujoco.mj_forward(self._model, self._data)
