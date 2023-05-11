@@ -227,12 +227,13 @@ class Read(Env):
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
+        # Reset the scene first
+        for mj_idx in self._ils100_cells_idxs:
+            self._model.geom(mj_idx).rgba = self._DFLT_RGBA
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._sampled_target_idx:
             self._on_target_steps += 1
             self._model.geom(self._sampled_target_idx).rgba = self._VISUALIZE_RGBA
-        else:
-            self._model.geom(self._sampled_target_idx).rgba = self._DFLT_RGBA
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
@@ -248,7 +249,7 @@ class Read(Env):
 
         # Get termination condition
         terminate = False
-        if self._steps >= self.ep_len or self._num_trials >= self._max_trials:
+        if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
 
         # Update the scene to reflect the transition function
