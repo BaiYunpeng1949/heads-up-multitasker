@@ -300,16 +300,24 @@ class AttentionSwitch(Env):
         # Concatenate cell idxs and background idx
         self._fixations_mjidxs = np.concatenate((self._ils100_cells_mjidxs, self._bg_mjidx))
 
-        # Define the target idx probability distribution
+        # Get the min and max x and y positions of the possible fixation cells
+        self._fixation_cells_x_min = np.min([self._data.geom(mjidx).xpos[0] for mjidx in self._fixations_mjidxs])
+        self._fixation_cells_x_max = np.max([self._data.geom(mjidx).xpos[0] for mjidx in self._fixations_mjidxs])
+        self._fixation_cells_y_min = np.min([self._data.geom(mjidx).xpos[1] for mjidx in self._fixations_mjidxs])
+        self._fixation_cells_y_max = np.max([self._data.geom(mjidx).xpos[1] for mjidx in self._fixations_mjidxs])
+
+        # Define the target idx probability distribution - TODO 2 stages of belief - stage 1 sample a target idx, stage 2 sample a fixation idx
         self._true_target_idx = None               # The true target MuJoCo idx
+        self._target_mjidx_memory = None           # The memory of where should the sampled target mjidx be - TODO specify the prob distribution later
         self._sampled_target_mjidx = None          # The target MuJoCo idx, should be sampled from memory
-        self._target_mjidx_belief = None           # 'Belief': The dynamic target MuJoCo idx probability distribution, should be updated at each step
+        self._target_mjidx_belief = None           # 'Belief': The dynamic target MuJoCo idx probability distribution
         self._sampled_fixation_mjidx = None        # The fixation MuJoCo idx, should be sampled from belief
 
         self._VIS_CELL_RGBA = [1, 1, 0, 1]
         self._DFLT_CELL_RGBA = [0, 0, 0, 1]
         self._VIS_BG_RGBA = [1, 0, 0, 1]
         self._DFLT_BG_RGBA = [1, 1, 1, 0]
+        self._VIS_RELOC_RGBA = [1, 0, 0, 1]
 
         self._dwell_cell_steps = int(2 * self._action_sample_freq)  # 2 seconds
         self._dwell_bg_steps = int(1 * self._action_sample_freq)  # 1 second
@@ -323,7 +331,7 @@ class AttentionSwitch(Env):
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         self._neighbour_radius = 0.0101     # Obtained empirically
-        self._neighbors_mjidxs = None       # The MuJoCo idxs of the neighbors of the sampled target idx
+        self._neighbors_mjidxs_list = None       # The MuJoCo idxs of the neighbors of the sampled target idx
 
         # Initialise thresholds and counters
         self._steps = None
@@ -335,7 +343,7 @@ class AttentionSwitch(Env):
         # Define the observation space
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
         self._num_stk_frm = 1
-        self._num_stateful_info = 4
+        self._num_stateful_info = 5
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
@@ -385,8 +393,12 @@ class AttentionSwitch(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_cell_steps - self._fixation_steps) / self._dwell_cell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1], -1, 1)
-        stateful_info = np.array([remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm])
+        # sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1], -1, 1)
+        sampled_fixation_x = self._data.geom(self._sampled_fixation_mjidx).xpos[0]  # TODO check whether the index of xpos is correct or not
+        sampled_fixation_x_norm = self.normalise(sampled_fixation_x, self._fixation_cells_x_min, self._fixation_cells_x_max, -1, 1)
+        sampled_fixation_y = self._data.geom(self._sampled_fixation_mjidx).xpos[1]
+        sampled_fixation_y_norm = self.normalise(sampled_fixation_y, self._fixation_cells_y_min, self._fixation_cells_y_max, -1, 1)
+        stateful_info = np.array([remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_fixation_x_norm, sampled_fixation_y_norm])
 
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
@@ -406,22 +418,18 @@ class AttentionSwitch(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
+        # Initialize the task mode
+        self._task_mode = READ
+
+        # Sample a target mjidx
+        self._sample_target()
+
         # Initialize whether this trial includes the attention switch
         # TODO to simplify, the attention switch always happen after a cell has been fixated for enough time
         self._attention_switch = np.random.choice([True, False])
 
-        # Initialize the task mode
-        self._task_mode = READ
-
-        # Initialize the target mjidx belief - probability distribution
-        self._target_mjidx_belief = np.zeros(len(self._fixations_mjidxs))
-
-        # Update the target idx probability distribution - randomly select one target
-        # TODO later sample from the memory function
-        self._update_target_mjidx_belief(target_mjidx=np.random.choice(self._ils100_cells_mjidxs.copy()))
-
         # Sample a target according to the target idx probability distribution
-        self._sample_fixation()
+        self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -467,65 +475,6 @@ class AttentionSwitch(Env):
 
         return angle
 
-    def _update_target_mjidx_belief(self, target_mjidx, fixation_mjidx=None):
-        """TODO update the target mjidx under different tasks"""
-        # TODO use the fixation_mjidx to update the target mjidx belief
-        if self._task_mode == READ or self._task_mode == BG:
-            # Determinist belief
-            if fixation_mjidx == target_mjidx:
-                # Reset the target idx probability distribution to all 0 in the reading mode
-                self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
-                # Allocate the probability of the sampled target mjidx to be 1
-                idx = np.where(self._ils100_cells_mjidxs == target_mjidx)[0][0]
-                self._target_mjidx_belief[idx] = 1
-        elif self._task_mode == RELOC:
-            # Initializations - Determine the neighbours by identifying all cells that are within the preset neighbour radius
-            # TODO maybe move this to somewhere else
-            if fixation_mjidx == None:
-                self._neighbors_mjidxs = []
-                center_xpos = self._data.geom(target_mjidx).xpos
-                for mjidx in self._ils100_cells_mjidxs:
-                    xpos = self._data.geom(mjidx).xpos
-                    dist = np.linalg.norm(xpos - center_xpos)
-                    if dist <= self._neighbour_radius:
-                        self._neighbors_mjidxs.append(mjidx)
-                # Leak probability to the neighbours
-                # TODO make it a function of the elapsed time later
-                center_prob = 0.5
-                leak_prob_per_neighbour = float((1 - center_prob) / (len(self._neighbors_mjidxs) - 1))
-                # Assign the probability to the neighbours and the center
-                for mjidx in self._neighbors_mjidxs:
-                    if mjidx == target_mjidx:
-                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
-                        self._target_mjidx_belief[idx] = center_prob
-                    else:
-                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
-                        self._target_mjidx_belief[idx] = leak_prob_per_neighbour
-
-            # Update the belief of according to actual fixations
-            else:   # TODO fix the bug later.
-                idx = np.where(self._fixations_mjidxs == fixation_mjidx)[0][0]
-                if fixation_mjidx != target_mjidx:
-                    prob = self._target_mjidx_belief[idx]
-                    # Set 0 to the current fixation mjidx
-                    self._target_mjidx_belief[idx] = 0
-                    # Remove it from the neighbors_mjidx
-                    self._neighbors_mjidxs.remove(fixation_mjidx)
-                    # Reallocate the probability to assure they sum to 1
-                    leak_prob_per_neighbour = float(prob / (len(self._neighbors_mjidxs)))
-                    for mjidx in self._neighbors_mjidxs:
-                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
-                        self._target_mjidx_belief[idx] += leak_prob_per_neighbour
-                    # Make sure they sum to 1
-                    self._target_mjidx_belief /= np.sum(self._target_mjidx_belief)
-                else:
-                    self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
-                    self._target_mjidx_belief[idx] = 1
-                    # TODO find the sampled target mjidx and set the prob to 1
-
-        else:
-            raise ValueError("The task mode is not correct!")
-
     def _sample_target(self):
         if self._task_mode == READ:
             self._sampled_target_mjidx = np.random.choice(self._ils100_cells_mjidxs.copy())
@@ -538,11 +487,73 @@ class AttentionSwitch(Env):
 
         return self._sampled_target_mjidx
 
-    def _sample_fixation(self):
+    def _sample_fixation(self, target_mjidx, fixation_mjidx=None):
+        # Update the target mjidx belief
+        fixate_target = False
+        # TODO use the fixation_mjidx to update the target mjidx belief
+        # Deterministic belief on the READ and BG task
+        if self._task_mode == READ or self._task_mode == BG:
+            # Determinist belief
+            if fixation_mjidx == target_mjidx:
+                # Reset the target idx probability distribution to all 0 in the reading mode
+                self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
+                # Allocate the probability of the sampled target mjidx to be 1
+                idx = np.where(self._ils100_cells_mjidxs == target_mjidx)[0][0]
+                self._target_mjidx_belief[idx] = 1
+        elif self._task_mode == RELOC:
+            # Initializations - Determine the neighbours by identifying all cells that are within the preset neighbour radius
+            if fixation_mjidx == None:
+                self._neighbors_mjidxs_list = []
+                center_xpos = self._data.geom(target_mjidx).xpos
+                for mjidx in self._ils100_cells_mjidxs:
+                    xpos = self._data.geom(mjidx).xpos
+                    dist = np.linalg.norm(xpos - center_xpos)
+                    if dist <= self._neighbour_radius:
+                        self._neighbors_mjidxs_list.append(mjidx)
+                # Leak probability to the neighbours
+                # TODO make it a function of the elapsed time later
+                center_prob = 0.5
+                leak_prob_per_neighbour = float((1 - center_prob) / (len(self._neighbors_mjidxs_list) - 1))
+                # Assign the probability to the neighbours and the center
+                for mjidx in self._neighbors_mjidxs_list:
+                    if mjidx == target_mjidx:
+                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
+                        self._target_mjidx_belief[idx] = center_prob
+                    else:
+                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
+                        self._target_mjidx_belief[idx] = leak_prob_per_neighbour
+
+            # Update the belief of according to actual fixations
+            else:
+                idx = np.where(self._fixations_mjidxs == fixation_mjidx)[0][0]
+                # When the current fixation mjidx is not the sampled target mjidx
+                if fixation_mjidx != target_mjidx:
+                    prob = self._target_mjidx_belief[idx]
+                    # Set 0 to the current fixation mjidx
+                    self._target_mjidx_belief[idx] = 0
+                    # Remove it from the neighbors_mjidx
+                    self._neighbors_mjidxs_list.remove(fixation_mjidx)
+                    # Reallocate the probability to assure they sum to 1
+                    leak_prob_per_neighbour = float(prob / (len(self._neighbors_mjidxs_list)))
+                    for mjidx in self._neighbors_mjidxs_list:
+                        idx = np.where(self._fixations_mjidxs == mjidx)[0][0]
+                        self._target_mjidx_belief[idx] += leak_prob_per_neighbour
+                    # Make sure they sum to 1
+                    self._target_mjidx_belief /= np.sum(self._target_mjidx_belief)
+                # When the sampled fixation mjidx is the sampled target mjidx
+                else:
+                    self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
+                    self._target_mjidx_belief[idx] = 1
+                    fixate_target = True
+        else:
+            raise ValueError("The task mode is not correct!")
+
         # Sample a fixation mjidx from the cells according to the target mjidx probability distribution (belief)
-        self._sampled_fixation_mjidx = np.random.choice(self._ils100_cells_mjidxs.copy(), p=self._target_mjidx_belief)
+        self._sampled_fixation_mjidx = np.random.choice(self._fixations_mjidxs.copy(), p=self._target_mjidx_belief)
         # Reset the counter
         self._fixation_steps = 0
+
+        return fixate_target
 
     def step(self, action):
         # Normalise action from [-1, 1] to actuator control range
@@ -564,6 +575,9 @@ class AttentionSwitch(Env):
             self._model.geom(mj_idx).rgba = self._DFLT_CELL_RGBA
         self._model.geom(self._bg_body_mjidx).rgba = self._DFLT_BG_RGBA
 
+        # Initialize the reward
+        reward = 0
+
         # Step with different task modes
         if self._task_mode == READ:
             if geomid == self._sampled_fixation_mjidx:
@@ -578,45 +592,59 @@ class AttentionSwitch(Env):
                 if self._attention_switch == True:
                     self._task_mode = BG
                     self._true_target_idx = self._sampled_target_mjidx
-                    # Update the target idx probability distribution - choose the background pane
-                    self._update_target_mjidx_belief(target_mjidx=self._sample_target())
                     # Get the next target
-                    self._sample_fixation()
+                    self._sample_target()
+                    self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
                 else:
-                    # Update the target idx probability distribution - randomly choose a new target idx
-                    self._update_target_mjidx_belief(target_mjidx=self._sample_target())
-                    # Get the next target
-                    self._sample_fixation()
                     # Update the number of trials
                     self._num_trials += 1
+                    # Sample the next target and fixation
+                    self._task_mode = READ
+                    self._attention_switch = np.random.choice([True, False])
+                    # Sample a new target mjidx in the READ mode
+                    self._sample_target()
+                    # Get the next target
+                    self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
             else:
-                reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
+                reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site",
+                                                                     target_idx=self._sampled_fixation_mjidx)) - 1)
         elif self._task_mode == BG:
             if geomid == self._sampled_fixation_mjidx:
                 self._fixation_steps += 1
                 self._model.geom(self._sampled_fixation_mjidx).rgba = self._VIS_BG_RGBA
+
             if self._fixation_steps >= self._dwell_bg_steps:
                 reward = 10
                 self._task_mode = RELOC
+                # Sample a new target mjidx in the RELOC mode
+                self._sample_target()
                 # Update the target idx probability distribution - randomly choose a new target idx
-                self._update_target_mjidx_belief(target_mjidx=self._sample_target())
-
-                # Check whether the prob becomes deterministic by checking whether the max prob is 1
-                if np.max(self._target_mjidx_belief) == 1:
-                    self._task_mode = READ
-
-                # Get the next target
-                self._sample_fixation()
-
-                # Update the number of trials
-                self._num_trials += 1
+                self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
+            else:
+                reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site",
+                                                                     target_idx=self._sampled_fixation_mjidx)) - 1)
 
         elif self._task_mode == RELOC:
             if geomid == self._sampled_fixation_mjidx:
                 self._fixation_steps += 1
+                self._model.geom(self._sampled_fixation_mjidx).rgba = self._VIS_RELOC_RGBA
+
             if self._fixation_steps >= self._dwell_reloc_steps:
-                self._update_target_mjidx_belief(target_mjidx=self._sampled_target_mjidx, fixation_mjidx=geomid)
-                self._sample_fixation()     # TODO finish this later
+                # TODO not sure need to grant milestone bonus to the agent for searching a fixation
+                fixate_target = self._sample_fixation(target_mjidx=self._sampled_target_mjidx, fixation_mjidx=geomid)
+                if fixate_target == True:
+                    # Find the target
+                    reward = 10
+                    # Update the number of trials
+                    self._num_trials += 1
+                    # Sample another target for the reading task
+                    self._task_mode = READ
+                    self._attention_switch = np.random.choice([True, False])
+                    self._sample_target()
+                    self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
+            else:
+                reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site",
+                                                                     target_idx=self._sampled_fixation_mjidx)) - 1)
         else:
             raise ValueError("The task mode is not correct!")
 
