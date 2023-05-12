@@ -28,7 +28,7 @@ from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBac
 from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
 from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 from huc.envs.pseudo_locomotion.ZRead import ZReadBase
-from huc.envs.attention_switch.AttentionSwitch import Read
+from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch
 
 _MODES = {
     'train': 'train',
@@ -194,7 +194,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = Read()
+        self._env = AttentionSwitch()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -204,7 +204,7 @@ class RL:
             vec_env_cls=SubprocVecEnv,
         )
 
-        # Identify the modes and specify corresponding initiates. TODO add valueError raisers as insurance later
+        # Identify the modes and specify corresponding initiates.
         # Train the model, and save the logs and modes at each checkpoints.
         if self._mode == _MODES['train']:
             # Pipeline related variables.
@@ -216,7 +216,7 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model.
-            # Initialise model that is run with multiple threads. TODO finalise this later
+            # Initialise model that is run with multiple threads.
             policy_kwargs = dict(
                 features_extractor_class=CustomCombinedExtractor,
                 features_extractor_kwargs=dict(vision_features_dim=128,
