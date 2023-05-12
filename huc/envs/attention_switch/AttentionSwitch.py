@@ -298,7 +298,7 @@ class AttentionSwitch(Env):
         self._bg_pane_mjidxs = np.where(self._model.geom_bodyid == self._bg_body_mjidx)[0]
         self._bg_mjidx = self._bg_pane_mjidxs[0]
         # Concatenate cell idxs and background idx
-        self._fixations_mjidxs = np.concatenate((self._ils100_cells_mjidxs, self._bg_mjidx))
+        self._fixations_mjidxs = np.concatenate((self._ils100_cells_mjidxs, np.array(self._bg_mjidx)))
 
         # Get the min and max x and y positions of the possible fixation cells
         self._fixation_cells_x_min = np.min([self._data.geom(mjidx).xpos[0] for mjidx in self._fixations_mjidxs])
