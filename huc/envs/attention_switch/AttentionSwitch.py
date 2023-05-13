@@ -344,13 +344,13 @@ class AttentionSwitch(Env):
         self._steps = None
         self._fixation_steps = None
         self._num_trials = None
-        self._max_trials = 6
+        self._max_trials = 5
         self.ep_len = int(self._max_trials * self._dwell_cell_steps * 2)
 
         # Define the observation space
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
         self._num_stk_frm = 1
-        self._num_stateful_info = 6
+        self._num_stateful_info = 7
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
@@ -404,21 +404,19 @@ class AttentionSwitch(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         task_mode_norm = self._task_mode
         attention_switch_norm = 1 if self._attention_switch == True else -1
-
-        sampled_fixation_mjidx_norm = self.normalise(self._sampled_fixation_mjidx, self._fixations_mjidxs[0], self._fixations_mjidxs[-1], -1, 1)
-        # TODO later transfer the sampled_fixation_mjidx_norm into the 2d x y relative locations
-        # sampled_fixation_x = self._data.geom(self._sampled_fixation_mjidx).xpos[0]
-        # sampled_fixation_x_norm = self.normalise(sampled_fixation_x, self._fixation_cells_x_min, self._fixation_cells_x_max, -1, 1)
-        # sampled_fixation_z = self._data.geom(self._sampled_fixation_mjidx).xpos[2]
-        # sampled_fixation_z_norm = self.normalise(sampled_fixation_z, self._fixation_cells_z_min, self._fixation_cells_z_max, -1, 1)
+        # sampled_fixation_mjidx_norm = self.normalise(self._sampled_fixation_mjidx, self._fixations_mjidxs[0], self._fixations_mjidxs[-1], -1, 1)
+        sampled_fixation_x = self._data.geom(self._sampled_fixation_mjidx).xpos[0]
+        sampled_fixation_x_norm = self.normalise(sampled_fixation_x, self._fixation_cells_x_min, self._fixation_cells_x_max, -1, 1)
+        sampled_fixation_z = self._data.geom(self._sampled_fixation_mjidx).xpos[2]
+        sampled_fixation_z_norm = self.normalise(sampled_fixation_z, self._fixation_cells_z_min, self._fixation_cells_z_max, -1, 1)
         # TODO if I am explicitly telling the agent where the target/fixation is, why bother to use RL to learn to fixate?
         # TODO what about the rough layout information? e.g. the target is in the left/right half of the screen
         # TODO thus later we can add a belief of target location, but blur it with a Gaussian - I was roughly at the 4th line..., this can be integrated into the memory model.
         # TODO the agent should be able to figure out where he should look at with just some relative information, not the exact coordinators that can be done by rule based manner
-
+        # TODO but I found that if just use idx, hard to train to switch to the env.
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
-             sampled_fixation_mjidx_norm, task_mode_norm, attention_switch_norm]
+             sampled_fixation_x_norm, sampled_fixation_z_norm, task_mode_norm, attention_switch_norm]
         )
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
@@ -600,6 +598,8 @@ class AttentionSwitch(Env):
             self._model.geom(mj_idx).rgba = self._DFLT_CELL_RGBA
         if self._task_mode == BG:
             self._model.geom(self._bg_mjidx).rgba = self._SHOW_BG_RGBA
+        else:
+            self._model.geom(self._bg_mjidx).rgba = self._DFLT_BG_RGBA
 
         # Step with different task modes
         if self._task_mode == READ:

@@ -23,7 +23,7 @@ rl:
   test:
     num_episodes: 1
     layout_name: 'interline-spacing-100'    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_38000000_steps'
+    loaded_model_name: 'rl_model_15000000_steps'
     continual_logs_name: 'PPO_118'
 
 mj_env:
