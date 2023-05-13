@@ -15,9 +15,10 @@ from scipy.ndimage import gaussian_filter
 from huc.utils.rendering import Camera, Context
 from collections import deque
 
-READ = 'read'
-BG = 'background'
-RELOC = 'relocation'
+# Normalised the task modes -1 to 1
+READ = 1
+BG = 0
+RELOC = -1
 
 
 class Read(Env):
@@ -53,8 +54,8 @@ class Read(Env):
         self._ils100_cells_idxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_idx)[0]
 
         # Define the target idx probability distribution
-        self._target_idx_prob = None           # The dynamic target idx probability distribution, should be updated with transition function
-        self._sampled_target_idx = None     # The sampled target idx
+        self._target_idx_prob = None  # The dynamic target idx probability distribution, should be updated with transition function
+        self._sampled_target_idx = None  # The sampled target idx
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
@@ -69,14 +70,15 @@ class Read(Env):
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
-            })
+        })
 
         # Define the action space
         self.action_space = Box(low=-1, high=1, shape=(self._model.nu,))
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
-        self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height], maxgeom=100,
+        self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height],
+                               maxgeom=100,
                                dt=1 / self._action_sample_freq)
         self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
                                dt=1 / self._action_sample_freq)
@@ -85,8 +87,8 @@ class Read(Env):
         # Initialise thresholds and counters
         self._steps = None
         self._on_target_steps = None
-        self._num_trials = None     # Cells are already been read
-        self._max_trials = 5     # Maximum number of cells to read - more trials in one episode will boost the convergence
+        self._num_trials = None  # Cells are already been read
+        self._max_trials = 5  # Maximum number of cells to read - more trials in one episode will boost the convergence
 
         self.ep_len = int(self._max_trials * self._dwell_steps * 2)
 
@@ -111,7 +113,8 @@ class Read(Env):
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
 
         # Convert the rgb to grayscale - boost the training speed
-        gray_normalize = rgb_normalize[0:1, :, :] * 0.299 + rgb_normalize[1:2, :, :] * 0.587 + rgb_normalize[2:3, :, :] * 0.114
+        gray_normalize = rgb_normalize[0:1, :, :] * 0.299 + rgb_normalize[1:2, :, :] * 0.587 + rgb_normalize[2:3, :,
+                                                                                               :] * 0.114
         gray_normalize = np.squeeze(gray_normalize, axis=0)
         vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
 
@@ -122,8 +125,10 @@ class Read(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        sampled_target_idx_norm = self.normalise(self._sampled_target_idx, self._ils100_cells_idxs[0], self._ils100_cells_idxs[-1], -1, 1)
-        stateful_info = np.array([remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_idx_norm])
+        sampled_target_idx_norm = self.normalise(self._sampled_target_idx, self._ils100_cells_idxs[0],
+                                                 self._ils100_cells_idxs[-1], -1, 1)
+        stateful_info = np.array(
+            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_idx_norm])
 
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
@@ -307,21 +312,23 @@ class AttentionSwitch(Env):
         self._fixation_cells_z_max = np.max([self._data.geom(mjidx).xpos[2] for mjidx in self._fixations_mjidxs])
 
         # Define the target idx probability distribution - TODO 2 stages of belief - stage 1 sample a target idx, stage 2 sample a fixation idx
-        self._true_target_idx = None               # The true target MuJoCo idx
-        self._target_mjidx_memory = None           # The memory of where should the sampled target mjidx be - TODO specify the prob distribution later
-        self._sampled_target_mjidx = None          # The target MuJoCo idx, should be sampled from memory
-        self._target_mjidx_belief = None           # 'Belief': The dynamic target MuJoCo idx probability distribution
-        self._sampled_fixation_mjidx = None        # The fixation MuJoCo idx, should be sampled from belief
+        self._true_target_idx = None  # The true target MuJoCo idx
+        self._target_mjidx_memory = None  # The memory of where should the sampled target mjidx be - TODO specify the prob distribution later
+        self._sampled_target_mjidx = None  # The target MuJoCo idx, should be sampled from memory
+        self._target_mjidx_belief = None  # 'Belief': The dynamic target MuJoCo idx probability distribution
+        self._sampled_fixation_mjidx = None  # The fixation MuJoCo idx, should be sampled from belief
 
         self._VIS_CELL_RGBA = [1, 1, 0, 1]
         self._DFLT_CELL_RGBA = [0, 0, 0, 1]
-        self._VIS_BG_RGBA = [1, 0, 0, 1]
-        self._DFLT_BG_RGBA = [1, 1, 1, 0]
+        self._SHOW_BG_RGBA = [1, 1, 1, 1]
+        self._VIS_BG_RGBA = [0, 0, 1, 1]
+        self._DFLT_BG_RGBA = [0, 0, 0, 0]
         self._VIS_RELOC_RGBA = [1, 0, 0, 1]
 
         self._dwell_cell_steps = int(2 * self._action_sample_freq)  # 2 seconds
         self._dwell_bg_steps = int(1 * self._action_sample_freq)  # 1 second
-        self._dwell_reloc_steps = int(1 * self._action_sample_freq)  # 1 second     # TODO use Hick's law to determine this
+        self._dwell_reloc_steps = int(
+            1 * self._action_sample_freq)  # 1 second     # TODO use Hick's law to determine this
 
         # Task mode
         self._task_mode = None
@@ -330,32 +337,33 @@ class AttentionSwitch(Env):
         self._attention_switch = None
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
-        self._neighbour_radius = 0.0101     # Obtained empirically
-        self._neighbors_mjidxs_list = None       # The MuJoCo idxs of the neighbors of the sampled target idx
+        self._neighbour_radius = 0.0101  # Obtained empirically
+        self._neighbors_mjidxs_list = None  # The MuJoCo idxs of the neighbors of the sampled target idx
 
         # Initialise thresholds and counters
         self._steps = None
         self._fixation_steps = None
         self._num_trials = None
-        self._max_trials = 5
+        self._max_trials = 6
         self.ep_len = int(self._max_trials * self._dwell_cell_steps * 2)
 
         # Define the observation space
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
         self._num_stk_frm = 1
-        self._num_stateful_info = 5
+        self._num_stateful_info = 6
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
-            })
+        })
 
         # Define the action space
         self.action_space = Box(low=-1, high=1, shape=(self._model.nu,))
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
-        self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height], maxgeom=100,
+        self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height],
+                               maxgeom=100,
                                dt=1 / self._action_sample_freq)
         self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
                                dt=1 / self._action_sample_freq)
@@ -382,7 +390,8 @@ class AttentionSwitch(Env):
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
 
         # Convert the rgb to grayscale - boost the training speed
-        gray_normalize = rgb_normalize[0:1, :, :] * 0.299 + rgb_normalize[1:2, :, :] * 0.587 + rgb_normalize[2:3, :, :] * 0.114
+        gray_normalize = rgb_normalize[0:1, :, :] * 0.299 + rgb_normalize[1:2, :, :] * 0.587 + rgb_normalize[2:3, :,
+                                                                                               :] * 0.114
         gray_normalize = np.squeeze(gray_normalize, axis=0)
         vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
 
@@ -393,13 +402,24 @@ class AttentionSwitch(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_cell_steps - self._fixation_steps) / self._dwell_cell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        # sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1], -1, 1)
-        sampled_fixation_x = self._data.geom(self._sampled_fixation_mjidx).xpos[0]
-        sampled_fixation_x_norm = self.normalise(sampled_fixation_x, self._fixation_cells_x_min, self._fixation_cells_x_max, -1, 1)
-        sampled_fixation_z = self._data.geom(self._sampled_fixation_mjidx).xpos[2]
-        sampled_fixation_z_norm = self.normalise(sampled_fixation_z, self._fixation_cells_z_min, self._fixation_cells_z_max, -1, 1)
-        stateful_info = np.array([remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_fixation_x_norm, sampled_fixation_z_norm])
+        task_mode_norm = self._task_mode
+        attention_switch_norm = 1 if self._attention_switch == True else -1
 
+        sampled_fixation_mjidx_norm = self.normalise(self._sampled_fixation_mjidx, self._fixations_mjidxs[0], self._fixations_mjidxs[-1], -1, 1)
+        # TODO later transfer the sampled_fixation_mjidx_norm into the 2d x y relative locations
+        # sampled_fixation_x = self._data.geom(self._sampled_fixation_mjidx).xpos[0]
+        # sampled_fixation_x_norm = self.normalise(sampled_fixation_x, self._fixation_cells_x_min, self._fixation_cells_x_max, -1, 1)
+        # sampled_fixation_z = self._data.geom(self._sampled_fixation_mjidx).xpos[2]
+        # sampled_fixation_z_norm = self.normalise(sampled_fixation_z, self._fixation_cells_z_min, self._fixation_cells_z_max, -1, 1)
+        # TODO if I am explicitly telling the agent where the target/fixation is, why bother to use RL to learn to fixate?
+        # TODO what about the rough layout information? e.g. the target is in the left/right half of the screen
+        # TODO thus later we can add a belief of target location, but blur it with a Gaussian - I was roughly at the 4th line..., this can be integrated into the memory model.
+        # TODO the agent should be able to figure out where he should look at with just some relative information, not the exact coordinators that can be done by rule based manner
+
+        stateful_info = np.array(
+            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
+             sampled_fixation_mjidx_norm, task_mode_norm, attention_switch_norm]
+        )
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
 
@@ -502,6 +522,8 @@ class AttentionSwitch(Env):
         elif self._task_mode == RELOC:
             # Initializations - Determine the neighbours by identifying all cells that are within the preset neighbour radius
             if previous_fixation_mjidx == None:
+                # Reset the target idx probability distribution to all 0 in the reading mode
+                self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
                 self._neighbors_mjidxs_list = []
                 center_xpos = self._data.geom(target_mjidx).xpos
                 for mjidx in self._ils100_cells_mjidxs:
@@ -543,6 +565,8 @@ class AttentionSwitch(Env):
                     self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
                     self._target_mjidx_belief[idx] = 1
                     fixate_target = True
+                    # Clear the list of neighbours
+                    self._neighbors_mjidxs_list = []
         else:
             raise ValueError("The task mode is not correct!")
 
@@ -574,7 +598,8 @@ class AttentionSwitch(Env):
         # Reset the scene first - TODO optimize this part for the training speed
         for mj_idx in self._ils100_cells_mjidxs:
             self._model.geom(mj_idx).rgba = self._DFLT_CELL_RGBA
-        self._model.geom(self._bg_mjidx).rgba = self._DFLT_BG_RGBA
+        if self._task_mode == BG:
+            self._model.geom(self._bg_mjidx).rgba = self._SHOW_BG_RGBA
 
         # Step with different task modes
         if self._task_mode == READ:
@@ -594,6 +619,8 @@ class AttentionSwitch(Env):
                     # Get the next target
                     self._sample_target()
                     self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
+                    # Show the background pane
+                    self._model.geom(self._bg_mjidx).rgba = self._SHOW_BG_RGBA
                 else:
                     # Update the number of trials
                     self._num_trials += 1
@@ -619,6 +646,8 @@ class AttentionSwitch(Env):
                 self._sample_target()
                 # Update the target idx probability distribution - randomly choose a new target idx
                 self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
+                # Hide the background pane
+                self._model.geom(self._bg_mjidx).rgba = self._DFLT_BG_RGBA
             else:
                 reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site",
                                                                      target_idx=self._sampled_fixation_mjidx)) - 1)
