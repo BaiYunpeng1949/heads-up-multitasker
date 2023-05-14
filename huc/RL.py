@@ -28,7 +28,7 @@ from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBac
 from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
 from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 from huc.envs.pseudo_locomotion.ZRead import ZReadBase
-from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch
+from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch, AttentionSwitch3Layouts
 
 _MODES = {
     'train': 'train',
@@ -194,7 +194,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = AttentionSwitch()
+        self._env = AttentionSwitch3Layouts()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
