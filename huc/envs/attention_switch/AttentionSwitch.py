@@ -700,7 +700,7 @@ class AttentionSwitch3Layouts(Env):
 
     def __init__(self):
         """ Model the reading, attention switch, switch back, relocation, resume reading with a belief model/function
-        Train on three layouts mentioned in the paper"""
+        Train on three layouts mentioned in the paper, TODO reconstruct this later"""
         # Get directory of this file
         directory = os.path.dirname(os.path.realpath(__file__))
 
@@ -760,10 +760,12 @@ class AttentionSwitch3Layouts(Env):
         self._fixation_mr_z_max = np.max([self._data.geom(mjidx).xpos[2] for mjidx in self._fixations_mr_mjidxs])
 
         # Define the target idx probability distribution -
-        # TODO 2 stages of belief - stage 1 sample a target idx, stage 2 sample a fixation idx
         # TODO the believed target idx in the relocation is the sampled fixation
-        self._true_target_idx = None  # The true target MuJoCo idx
-        self._target_mjidx_memory = None  # The memory of where should the sampled target mjidx be - TODO specify the prob distribution later
+        # TODO consolidate these terminologies later - memory - belief - fixation - target
+        self._true_target_mjidx = None  # The true target MuJoCo idx
+        self._target_mjidx_memory = None  # The perceived target MuJoCo idx, should be sampled from memory, which decays as time goes by, but the element should be the same as neighboring elements and the target belief
+        self._memory_decay_rate = 0.2  # The memory decay rate - TODO a hyper-parameter, might need to fit to human data
+        self._elapsed_visual_search_cells = None  # The number of visual search trials elapsed
         self._sampled_target_mjidx = None  # The target MuJoCo idx, should be sampled from memory
         self._target_mjidx_belief = None  # 'Belief': The dynamic target MuJoCo idx probability distribution
         self._sampled_fixation_mjidx = None  # The fixation MuJoCo idx, should be sampled from belief
@@ -800,7 +802,7 @@ class AttentionSwitch3Layouts(Env):
         self._fixation_steps = None
         self._num_trials = None
         self._max_trials = 5
-        self.ep_len = int(self._max_trials * self._dwell_cell_steps * 2)
+        self.ep_len = int(self._max_trials * self._dwell_cell_steps * 4)        # Make sure enough steps for tasks
 
         # Define the observation space
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
@@ -932,6 +934,11 @@ class AttentionSwitch3Layouts(Env):
 
         # Reset and initialize the target belief
         self._target_mjidx_belief = np.zeros(self._layout_fixations_mjidxs.shape[0])
+        # Reset and initialize the target memory
+        self._target_mjidx_memory = np.zeros(self._layout_fixations_mjidxs.shape[0])
+
+        # Reset the frequently updated variables
+        self._elapsed_visual_search_cells = 0
 
         # Initialize the task mode
         self._task_mode = READ
@@ -996,14 +1003,21 @@ class AttentionSwitch3Layouts(Env):
             self._sampled_target_mjidx = self._bg_mjidx
         elif self._task_mode == RELOC:
             # Update the memory function - belief on which cell should be the target mjidx
+            # Reset
+            self._elapsed_visual_search_cells = 0
+            # Update the target mjidx memory - before time cost on the visual search, there is no memory decay, the agent remembers where the target was with 1 prob
+            self._target_mjidx_memory = np.zeros(self._target_mjidx_memory.shape[0])
             # TODO to start with a simplified version, the target mjidx are determinist - the cut off cell/word
-            self._sampled_target_mjidx = self._true_target_idx
+            self._sampled_target_mjidx = self._true_target_mjidx
+            idx = np.where(self._layout_fixations_mjidxs == self._sampled_target_mjidx)[0][0]
+            self._target_mjidx_memory[idx] = 1
+
 
         return self._sampled_target_mjidx
 
     def _sample_fixation(self, target_mjidx, previous_fixation_mjidx=None):
         # Update the target mjidx belief
-        fixate_target = False
+        fixate_on_target = False
         # Deterministic belief on the READ and BG task
         if self._task_mode == READ or self._task_mode == BG:
             # Reset the target idx probability distribution to all 0 in the reading mode
@@ -1017,7 +1031,7 @@ class AttentionSwitch3Layouts(Env):
                 # Reset the target idx probability distribution to all 0 in the reading mode
                 self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
                 self._neighbors_mjidxs_list = []
-                center_xpos = self._data.geom(target_mjidx).xpos
+                center_xpos = self._data.geom(self._true_target_mjidx).xpos
                 for mjidx in self._layout_cells_mjidxs:
                     xpos = self._data.geom(mjidx).xpos
                     dist = np.linalg.norm(xpos - center_xpos)
@@ -1035,7 +1049,8 @@ class AttentionSwitch3Layouts(Env):
                 #     else:
                 #         idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
                 #         self._target_mjidx_belief[idx] = leak_prob_per_neighbour
-                # Apply the even prob across all cells in the neighbour list
+                # Apply the even prob across all cells in the neighbour list -
+                # TODO figure out a better way to do this - is it necessarily the even prob distribution?
                 even_prob = float(1 / len(self._neighbors_mjidxs_list))
                 for mjidx in self._neighbors_mjidxs_list:
                     idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
@@ -1045,25 +1060,95 @@ class AttentionSwitch3Layouts(Env):
             else:
                 # Find the index of the previous fixation mjidx in the fixation mjidx list
                 idx = np.where(self._layout_fixations_mjidxs == previous_fixation_mjidx)[0][0]
-                # When the current fixation mjidx is not the sampled target mjidx
-                if previous_fixation_mjidx != target_mjidx:
-                    prob = self._target_mjidx_belief[idx]
+                # Seems right now does not matter whether the previous fixation mjidx is the target mjidx, since the target mjidix is updated along the visual search with fixations :>
+                certainty_prob = self._target_mjidx_memory[idx]
+                target_boolean = np.random.choice([True, False], p=[certainty_prob, 1 - certainty_prob])
+                # If the previous fixation mjidx is regarded as the target mjidx
+                if target_boolean == True:
+                    return True
+                else:
+                    # Update the belief of the target mjidx - fixations
+                    fixation_prob = self._target_mjidx_belief[idx]
                     # Set 0 to the current fixation mjidx
                     self._target_mjidx_belief[idx] = 0
+                    self._target_mjidx_memory[idx] = 0
                     # Remove it from the neighbors_mjidx
                     self._neighbors_mjidxs_list.remove(previous_fixation_mjidx)
-                    # Reallocate the probability to assure they sum to 1
-                    leak_prob_per_neighbour = float(prob / (len(self._neighbors_mjidxs_list)))
+                    leak_prob_per_neighbour = float(fixation_prob / (len(self._neighbors_mjidxs_list)))
                     for mjidx in self._neighbors_mjidxs_list:
                         index = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
                         self._target_mjidx_belief[index] += leak_prob_per_neighbour
-                # When the sampled fixation mjidx is the sampled target mjidx
-                else:
-                    # Reset the belief buffer and the neighbours list
-                    self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
-                    self._neighbors_mjidxs_list = []
-                    fixate_target = True
-                    return fixate_target
+                    # Update the memory - the certainty prob states
+                    true_target_idx = np.where(self._layout_fixations_mjidxs == self._true_target_mjidx)[0][0]
+                    # If not the true target idx discarded
+                    if self._true_target_mjidx in self._neighbors_mjidxs_list:
+                        # self._target_mjidx_memory[idx] = 0
+                        # Memory decay update to the true target idx
+                        true_target_memory_after_decay = 1 * np.exp(-self._memory_decay_rate * self._elapsed_visual_search_cells)
+                        self._target_mjidx_memory[true_target_idx] = true_target_memory_after_decay
+                        # Update the rest certainty prob
+                        for mjidx in self._neighbors_mjidxs_list:
+                            if mjidx != self._true_target_mjidx:
+                                index = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                                self._target_mjidx_memory[index] = float((1 - true_target_memory_after_decay) / (len(self._neighbors_mjidxs_list) - 1))
+                    # If the true target idx is discarded
+                    else:
+                        # True target memory update - only useful for the first time
+                        self._target_mjidx_memory[true_target_idx] = 0
+                        # self._target_mjidx_memory[idx] = 0
+                        # Update the rest certainty prob
+                        for mjidx in self._neighbors_mjidxs_list:
+                            index = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                            self._target_mjidx_memory[index] = float(1 / (len(self._neighbors_mjidxs_list)))
+                    # Make sure the belief and memory sum to 1
+                    self._target_mjidx_belief = self._target_mjidx_belief / np.sum(self._target_mjidx_belief)
+                    self._target_mjidx_memory = self._target_mjidx_memory / np.sum(self._target_mjidx_memory)
+
+                # # When the current fixation mjidx is not the sampled target mjidx
+                # if previous_fixation_mjidx != target_mjidx:
+                #     # Visual search starts by allocating various cells to be the fixations
+                #     prob = self._target_mjidx_belief[idx]
+                #     # Set 0 to the current fixation mjidx
+                #     self._target_mjidx_belief[idx] = 0
+                #     # Remove it from the neighbors_mjidx
+                #     self._neighbors_mjidxs_list.remove(previous_fixation_mjidx)
+                #     # Reallocate the probability to assure they sum to 1
+                #     # TODO debug delete later
+                #     if len(self._neighbors_mjidxs_list) == 0:
+                #         print(f"Noooooooooo  The fixation mjidx is {previous_fixation_mjidx}, "
+                #               f"the target memory is {self._target_mjidx_memory}, the target belief is {self._target_mjidx_belief}")
+                #
+                #     leak_prob_per_neighbour = float(prob / (len(self._neighbors_mjidxs_list)))
+                #     for mjidx in self._neighbors_mjidxs_list:
+                #         index = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                #         self._target_mjidx_belief[index] += leak_prob_per_neighbour
+                #     # The memory decay happens after the visual search -
+                #     # TODO use the number of trials intead of the actual steps to simplify the problem and speed up training
+                #     # memory_after_decay = 1 * np.exp(-self._memory_decay_rate * self._elapsed_visual_search_cells)   # TODO non-linearly
+                #     memory_after_decay = 1 * (1 - self._memory_decay_rate * self._elapsed_visual_search_cells)   # TODO linearly
+                #     if len(self._neighbors_mjidxs_list) - 1 > 0:
+                #         # Update the memory after the visual search - leak the certainty of the true target to other visual search cell candidates
+                #         certainty_leak = float(memory_after_decay / (len(self._neighbors_mjidxs_list) - 1))
+                #         # Allocate the certainty to the neighbours
+                #         for mjidx in self._neighbors_mjidxs_list:
+                #             if mjidx == self._true_target_idx:
+                #                 idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                #                 self._target_mjidx_memory[idx] = memory_after_decay
+                #             else:
+                #                 idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                #                 self._target_mjidx_memory[idx] = certainty_leak
+                #     # Make sure the memory prob sum to 1
+                #     self._target_mjidx_memory /= np.sum(self._target_mjidx_memory)
+                #     # Sample a new target
+                #     self._sampled_target_mjidx = np.random.choice(self._layout_fixations_mjidxs.copy(), p=self._target_mjidx_memory)
+                # # When the sampled fixation mjidx is the sampled target mjidx
+                # else:
+                #     # Reset the belief buffer and the neighbours list
+                #     self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
+                #     self._neighbors_mjidxs_list = []
+                #     self._target_mjidx_memory = np.zeros(self._target_mjidx_memory.shape[0])
+                #     fixate_on_target = True
+                #     return fixate_on_target
         else:
             raise ValueError("The task mode is not correct!")
 
@@ -1075,12 +1160,18 @@ class AttentionSwitch3Layouts(Env):
         # Reset the counter
         self._fixation_steps = 0
 
-        return fixate_target
+        return False
 
     def step(self, action):
         # Normalise action from [-1, 1] to actuator control range
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+
+        # # TODO debug delete/comment this part later
+        # mjidx = self._sampled_fixation_mjidx
+        # xpos = self._data.geom(mjidx).xpos
+        # x, y, z = xpos[0], xpos[1], xpos[2]
+        # action = [z/y, -x/y]
 
         # Set motor control
         self._data.ctrl[:] = action
@@ -1114,7 +1205,7 @@ class AttentionSwitch3Layouts(Env):
                 # TODO to simplify, the attention switch always happen after a cell has been fixated for enough time
                 if self._attention_switch == True:
                     self._task_mode = BG
-                    self._true_target_idx = self._sampled_target_mjidx
+                    self._true_target_mjidx = self._sampled_target_mjidx
                     # Get the next target
                     self._sample_target()
                     self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
@@ -1147,6 +1238,13 @@ class AttentionSwitch3Layouts(Env):
                 self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
                 # Hide the background pane
                 self._model.geom(self._bg_mjidx).rgba = self._DFLT_BG_RGBA
+
+                # # TODO debug delete it later
+                # print(
+                #     f"The true target is {self._true_target_mjidx}, the sampled target is {self._sampled_target_mjidx}, The sampled fixation is {self._sampled_fixation_mjidx},"
+                #     f"The target mjidx memory is {self._target_mjidx_memory}, the target idx belief is {self._target_mjidx_belief},"
+                # )
+
             else:
                 reward = 0.1 * (np.exp(-10 * self._angle_from_target(site_name="rangefinder-site",
                                                                      target_idx=self._sampled_fixation_mjidx)) - 1)
@@ -1157,12 +1255,26 @@ class AttentionSwitch3Layouts(Env):
                 self._model.geom(self._sampled_fixation_mjidx).rgba = self._VIS_RELOC_RGBA
 
             if self._fixation_steps >= self._dwell_reloc_steps:
+                # Update the fixation trials during the relocation visual search
+                self._elapsed_visual_search_cells += 1
                 # Relocation needs to sample fixations multiple times because it is doing the visual search
-                fixate_target = self._sample_fixation(target_mjidx=self._sampled_target_mjidx,
+                fixate_on_target = self._sample_fixation(target_mjidx=self._sampled_target_mjidx,
                                                       previous_fixation_mjidx=self._sampled_fixation_mjidx)
-                if fixate_target == True:
-                    # Pick up the target
+
+                # # TODO debug delete it later
+                # print(
+                #     f"The true target is {self._true_target_mjidx}, the sampled target is {self._sampled_target_mjidx}, The sampled fixation is {self._sampled_fixation_mjidx},"
+                #     f"The target mjidx memory is {self._target_mjidx_memory}, the target idx belief is {self._target_mjidx_belief},"
+                # )
+
+                if fixate_on_target == True:
+                    # Pick up the target -
+                    # TODO since we are modeling both correct and incorrect relocations,
+                    #  we should also give rewards for incorrect relocations, try punish this later -
+                    #  but I guess the agent will develop a policy of cutting off at some points, which is not my objective of modeling it, too detailed
                     reward = 10
+                    # Reset the counter
+                    self._elapsed_visual_search_cells = 0
                     # Update the number of trials
                     self._num_trials += 1
                     # Sample another target for the reading task
