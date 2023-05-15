@@ -1025,16 +1025,21 @@ class AttentionSwitch3Layouts(Env):
                         self._neighbors_mjidxs_list.append(mjidx)
                 # Leak probability to the neighbours
                 # TODO make it a function of the elapsed time later
-                center_prob = 0.5   # TODO a hyper-parameter, determine later
-                leak_prob_per_neighbour = float((1 - center_prob) / (len(self._neighbors_mjidxs_list) - 1))
-                # Assign the probability to the neighbours and the center
+                # center_prob = 0.5   # TODO a hyper-parameter, determine later
+                # leak_prob_per_neighbour = float((1 - center_prob) / (len(self._neighbors_mjidxs_list) - 1))
+                # # Assign the probability to the neighbours and the center
+                # for mjidx in self._neighbors_mjidxs_list:
+                #     if mjidx == target_mjidx:
+                #         idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                #         self._target_mjidx_belief[idx] = center_prob
+                #     else:
+                #         idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                #         self._target_mjidx_belief[idx] = leak_prob_per_neighbour
+                # Apply the even prob across all cells in the neighbour list
+                even_prob = float(1 / len(self._neighbors_mjidxs_list))
                 for mjidx in self._neighbors_mjidxs_list:
-                    if mjidx == target_mjidx:
-                        idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
-                        self._target_mjidx_belief[idx] = center_prob
-                    else:
-                        idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
-                        self._target_mjidx_belief[idx] = leak_prob_per_neighbour
+                    idx = np.where(self._layout_fixations_mjidxs == mjidx)[0][0]
+                    self._target_mjidx_belief[idx] = even_prob
 
             # Update the belief of according to actual fixations - the previous fixation mjidx is not None
             else:
@@ -1054,11 +1059,11 @@ class AttentionSwitch3Layouts(Env):
                         self._target_mjidx_belief[index] += leak_prob_per_neighbour
                 # When the sampled fixation mjidx is the sampled target mjidx
                 else:
+                    # Reset the belief buffer and the neighbours list
                     self._target_mjidx_belief = np.zeros(self._target_mjidx_belief.shape[0])
-                    self._target_mjidx_belief[idx] = 1
-                    fixate_target = True
-                    # Clear the list of neighbours
                     self._neighbors_mjidxs_list = []
+                    fixate_target = True
+                    return fixate_target
         else:
             raise ValueError("The task mode is not correct!")
 
