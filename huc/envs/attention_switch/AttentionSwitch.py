@@ -804,6 +804,11 @@ class AttentionSwitch3Layouts(Env):
         self._max_trials = 5
         self.ep_len = int(self._max_trials * self._dwell_cell_steps * 4)        # Make sure enough steps for tasks
 
+        # Test-related variables
+        self._test_switch_back_duration_list = None
+        self._test_switch_back_step = None
+        self._test_switch_back_error_list = None
+
         # Define the observation space
         width, height = self._config['mj_env']['width'], self._config['mj_env']['height']
         self._num_stk_frm = 1
@@ -913,8 +918,14 @@ class AttentionSwitch3Layouts(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
+        # Reset some test-related variables
+        self._test_switch_back_duration_list = []
+        self._test_switch_back_step = self._steps
+        self._test_switch_back_error_list = []
+
         # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        self._layout_idx = np.random.choice([ILS100, BC, MR])
+        # self._layout_idx = np.random.choice([ILS100, BC, MR])
+        self._layout_idx = BC   # TODO debug and test, choose from ILS100, BC, MR
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
@@ -1065,7 +1076,7 @@ class AttentionSwitch3Layouts(Env):
                 target_boolean = np.random.choice([True, False], p=[certainty_prob, 1 - certainty_prob])
                 # If the previous fixation mjidx is regarded as the target mjidx
                 if target_boolean == True:
-                    return True
+                    return True, previous_fixation_mjidx
                 else:
                     # Update the belief of the target mjidx - fixations
                     fixation_prob = self._target_mjidx_belief[idx]
@@ -1160,7 +1171,7 @@ class AttentionSwitch3Layouts(Env):
         # Reset the counter
         self._fixation_steps = 0
 
-        return False
+        return False, previous_fixation_mjidx
 
     def step(self, action):
         # Normalise action from [-1, 1] to actuator control range
@@ -1232,6 +1243,7 @@ class AttentionSwitch3Layouts(Env):
             if self._fixation_steps >= self._dwell_bg_steps:
                 reward = 10
                 self._task_mode = RELOC
+                self._test_switch_back_step = self._steps
                 # Sample a new target mjidx in the RELOC mode
                 self._sample_target()
                 # Update the target idx probability distribution - randomly choose a new target idx
@@ -1258,7 +1270,7 @@ class AttentionSwitch3Layouts(Env):
                 # Update the fixation trials during the relocation visual search
                 self._elapsed_visual_search_cells += 1
                 # Relocation needs to sample fixations multiple times because it is doing the visual search
-                fixate_on_target = self._sample_fixation(target_mjidx=self._sampled_target_mjidx,
+                fixate_on_target, pre_fixation_mjidx = self._sample_fixation(target_mjidx=self._sampled_target_mjidx,
                                                       previous_fixation_mjidx=self._sampled_fixation_mjidx)
 
                 # # TODO debug delete it later
@@ -1279,6 +1291,8 @@ class AttentionSwitch3Layouts(Env):
                     self._num_trials += 1
                     # Sample another target for the reading task
                     self._task_mode = READ
+                    self._test_switch_back_duration_list.append(self._steps - self._test_switch_back_step)
+                    self._test_switch_back_error_list.append(np.abs(pre_fixation_mjidx - self._true_target_mjidx))
                     self._attention_switch = np.random.choice([True, False])
                     self._sample_target()
                     self._sample_fixation(target_mjidx=self._sampled_target_mjidx)
@@ -1295,6 +1309,10 @@ class AttentionSwitch3Layouts(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_trials >= self._max_trials:
             terminate = True
+            # TODO print the switch back error rate and the switch back durations - testify whether such modelings make sense
+            if self._config["rl"]["mode"] == "test":
+                print(f"The switch back avg duration is {np.mean(self._test_switch_back_duration_list)}, "
+                      f"The switch back avg error is {np.mean(self._test_switch_back_error_list)}")
 
         # Update the scene to reflect the transition function
         mujoco.mj_forward(self._model, self._data)
