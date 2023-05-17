@@ -1554,8 +1554,7 @@ class AttentionSwitchMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
-        self._sampled_layout_idx = ILS100
+        self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -1684,7 +1683,8 @@ class AttentionSwitchMemory(Env):
                 # Store the initial neighbour list in the buffer - in case the agent never find a target and need to sample one
                 self._neighbors_mjidxs_list_buffer = self._neighbors_mjidxs_list.copy()
                 # Apply the even prob across all cells in the neighbour list -
-                # TODO figure out a better way to do this - is it necessarily the even prob distribution?
+                # TODO figure out a better way to do this - is it necessarily the even prob distribution? -
+                #  Apply a Gaussian distribution based on the geometric distances of neighbours
                 even_prob = float(1 / len(self._neighbors_mjidxs_list))
                 for mjidx in self._neighbors_mjidxs_list:
                     idx = np.where(self._sampled_layout_sg_bg_mjidx_list == mjidx)[0][0]
