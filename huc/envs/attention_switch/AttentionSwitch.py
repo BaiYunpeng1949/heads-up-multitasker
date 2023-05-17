@@ -1387,8 +1387,7 @@ class AttentionSwitchMemory(Env):
         self._fixation_mr_z_max = np.max([self._data.geom(mjidx).xpos[2] for mjidx in self._fixations_mr_mjidxs])
 
         # Define the target idx probability distribution -
-        # TODO the believed target idx in the relocation is the sampled fixation
-        # TODO consolidate these terminologies later - memory - belief - fixation - target
+        # TODO Apply the Gaussian distribution to the belief and confidence distributions
         self._true_target_mjidx = None  # The true target MuJoCo idx
         self._buffer_true_target_mjidx = None  # The buffer for the true target MuJoCo idx
         self._target_confidence_distribution = None  # The perceived target MuJoCo idx, should be sampled from memory, which decays as time goes by, but the element should be the same as neighboring elements and the target belief
@@ -1406,8 +1405,14 @@ class AttentionSwitchMemory(Env):
 
         self._dwell_sg_steps = int(2 * self._action_sample_freq)  # 2 seconds
         self._dwell_bg_steps = int(1 * self._action_sample_freq)  # 1 second
-        self._dwell_reloc_steps = int(
-            1 * self._action_sample_freq)  # 1 second     # TODO use Hick's law to determine this
+        self._reloc_identification_steps = int(
+            1 * self._action_sample_freq)  # 1 second
+        # TODO In terms of mathematical representation, crowding could be modeled as a function of the distance between
+        #  the intended focus word and its neighboring words, the size of the words, and the contrast between words and the background.
+        #  However, the exact form of this function would depend on the specific details of the crowding phenomenon,
+        #  which are still under investigation.
+        # TODO: Characterize this way: the required identification time of a given word/cell is reversely proportional
+        #  to the distance between the intended focus and its surrounding flankers [Visual Crowding].
 
         # Task mode
         self._task_mode = None
@@ -1494,7 +1499,7 @@ class AttentionSwitchMemory(Env):
         elif self._task_mode == BG:
             dwell_cell_steps = self._dwell_bg_steps
         elif self._task_mode == RELOC:
-            dwell_cell_steps = self._dwell_reloc_steps
+            dwell_cell_steps = self._reloc_identification_steps
         else:
             raise ValueError("Invalid task mode!")
         remaining_dwell_steps_norm = (dwell_cell_steps - self._focus_steps) / dwell_cell_steps * 2 - 1
@@ -1719,6 +1724,7 @@ class AttentionSwitchMemory(Env):
                         # Memory decay update to the true target idx
                         true_target_idx = np.where(self._sampled_layout_sg_bg_mjidx_list == self._true_target_mjidx)[0][
                             0]
+                        # TODO Advancement: use self._num_elapsed_visual_searched_cells * self._reloc_identification_steps to update the memory decay rate
                         true_target_confidence_after_memory_decay = 1 * np.exp(-self._memory_decay_rate * self._num_elapsed_visual_searched_cells)
                         self._target_confidence_distribution[true_target_idx] = true_target_confidence_after_memory_decay
                         # Update the rest certainty prob
@@ -1839,7 +1845,7 @@ class AttentionSwitchMemory(Env):
                 self._focus_steps += 1
                 self._model.geom(self._sampled_intended_focus_mjidx).rgba = self._VIS_RELOC_RGBA
 
-            if self._focus_steps >= self._dwell_reloc_steps:
+            if self._focus_steps >= self._reloc_identification_steps:
                 # Update the fixation trials during the relocation visual search
                 self._num_elapsed_visual_searched_cells += 1
 
