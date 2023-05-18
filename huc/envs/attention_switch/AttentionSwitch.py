@@ -1559,8 +1559,8 @@ class AttentionSwitchMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
-        self._sampled_layout_idx = ILS100       # TODO debug and test delete later
+        self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        # self._sampled_layout_idx = ILS100       # TODO debug and test delete later
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -1871,14 +1871,17 @@ class AttentionSwitchMemory(Env):
                     self._test_switch_back_error_list.append(
                         np.abs(focused_mjidx_buffer - self._true_target_mjidx))
 
-                    # TODO debug delete later
-                    print(f"I was here, the focus boolean is {focused_is_regarded_as_target_boolean}, "
-                          f"The determination action is {action[2]}, "
-                          f"the finish trial is {finish_trial}")
+                    # # TODO debug delete later
+                    # print(f"I was here, the focus boolean is {focused_is_regarded_as_target_boolean}, "
+                    #       f"The determination action is {action[2]}, "
+                    #       f"the finish trial is {finish_trial}")
 
                     # Only reward the agent if the previous focused item is the same as the true target
                     if focused_mjidx_buffer == self._true_target_mjidx:
-                        reward = 10
+                        reward = 25
+                    else:
+                        # Punish the agent if makes the incorrect relocations - provide incentives to make wiser decisions
+                        reward = -25
 
                         # # TODO debug delete later
                         # print(f"I was also here, the sampled intended focus is {focused_mjidx_buffer}, "
