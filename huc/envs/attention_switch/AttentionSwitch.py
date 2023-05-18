@@ -1559,7 +1559,8 @@ class AttentionSwitchMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        self._sampled_layout_idx = ILS100       # TODO debug and test delete later
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -1848,6 +1849,8 @@ class AttentionSwitchMemory(Env):
             if self._focus_steps >= self._reloc_identification_steps:
                 # Update the fixation trials during the relocation visual search
                 self._num_elapsed_visual_searched_cells += 1
+                # Store the mjidx before being re-sampled
+                focused_mjidx_buffer = self._sampled_intended_focus_mjidx
 
                 # # TODO debug delete it later
                 # print(
@@ -1857,6 +1860,7 @@ class AttentionSwitchMemory(Env):
                 #     f"the target position belief is {self._target_position_belief_distribution},"
                 # )
 
+                # Re-sample the intended focus
                 finish_trial = self._sample_intended_focus(visual_search_in_progress=True)
 
                 # Perceive the focused cell is the target - or force to sample a target after searching all but had no luck
@@ -1865,11 +1869,20 @@ class AttentionSwitchMemory(Env):
                     # Update some testing statistics TODO do this before the updates
                     self._test_switch_back_duration_list.append(self._steps - self._test_switch_back_step)
                     self._test_switch_back_error_list.append(
-                        np.abs(self._sampled_intended_focus_mjidx - self._true_target_mjidx))
+                        np.abs(focused_mjidx_buffer - self._true_target_mjidx))
 
-                    # Only reward the agent if it has found the true target
-                    if self._sampled_intended_focus_mjidx == self._true_target_mjidx:
+                    # TODO debug delete later
+                    print(f"I was here, the focus boolean is {focused_is_regarded_as_target_boolean}, "
+                          f"The determination action is {action[2]}, "
+                          f"the finish trial is {finish_trial}")
+
+                    # Only reward the agent if the previous focused item is the same as the true target
+                    if focused_mjidx_buffer == self._true_target_mjidx:
                         reward = 10
+
+                        # # TODO debug delete later
+                        # print(f"I was also here, the sampled intended focus is {focused_mjidx_buffer}, "
+                        #       f"the true target is {self._true_target_mjidx}")
 
                     # Reset the counter
                     self._num_elapsed_visual_searched_cells = 0
