@@ -28,7 +28,7 @@ from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBac
 from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
 from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 from huc.envs.pseudo_locomotion.ZRead import ZReadBase
-from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory
+from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory, RelocationMemory
 
 _MODES = {
     'train': 'train',
@@ -131,6 +131,26 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         return th.cat(encoded_tensor_list, dim=1)
 
 
+class NoVisionCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: spaces.Dict, proprioception_features_dim: int = 256, stateful_information_features_dim: int = 256):
+
+        super().__init__(observation_space, features_dim=proprioception_features_dim+stateful_information_features_dim)
+
+        self.extractors = nn.ModuleDict({
+            "proprioception": ProprioceptionExtractor(observation_space["proprioception"], proprioception_features_dim),
+            "stateful information": StatefulInformationExtractor(observation_space["stateful information"], stateful_information_features_dim),
+        })
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        # self.extractors contain nn.Modules that do all the processing.
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        # Return a (B, features_dim=vision_features_dim+proprioception_features_dim) PyTorch tensor, where B is batch dimension.
+        return th.cat(encoded_tensor_list, dim=1)
+
+
 def linear_schedule(initial_value: float, min_value: float, threshold: float = 1.0) -> Callable[[float], float]:
     """
     Linear learning rate schedule. Adapted from the example at
@@ -194,7 +214,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = AttentionSwitchMemory()
+        self._env = RelocationMemory()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -215,12 +235,20 @@ class RL:
                                                         self._config_rl['train']['checkpoints_folder_name'])
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
-            # Configure the model.
-            # Initialise model that is run with multiple threads.
+            # Configure the model - Initialise model that is run with multiple threads - TODO resume when training with vision
+            # policy_kwargs = dict(
+            #     features_extractor_class=CustomCombinedExtractor,
+            #     features_extractor_kwargs=dict(vision_features_dim=128,
+            #                                    proprioception_features_dim=32,
+            #                                    stateful_information_features_dim=16),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
             policy_kwargs = dict(
-                features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128,
-                                               proprioception_features_dim=32,
+                features_extractor_class=NoVisionCombinedExtractor,
+                features_extractor_kwargs=dict(proprioception_features_dim=32,
                                                stateful_information_features_dim=16),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
