@@ -2085,8 +2085,8 @@ class RelocationMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        self._sampled_layout_idx = np.random.choice([ILS100, BC])
-        # self._sampled_layout_idx = ILS100       # TODO debug and test delete later
+        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        self._sampled_layout_idx = BC       # TODO debug and test delete later
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2186,6 +2186,13 @@ class RelocationMemory(Env):
                 dist = np.linalg.norm(xpos - center_xpos)
                 if dist <= self._neighbour_radius:
                     self._neighbors_mjidxs_list.append(mjidx)
+                    # # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
+                    # idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
+                # # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
+                # idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
+            #     self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._neighbour_radius) ** 2)
+            # self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
+
             # Store the initial neighbour list in the buffer - in case the agent never find a target and need to sample one
             self._neighbors_mjidxs_list_buffer = self._neighbors_mjidxs_list.copy()
 
@@ -2249,6 +2256,8 @@ class RelocationMemory(Env):
         if np.sum(self._target_position_belief_distribution) == 0:
             self._sampled_intended_focus_mjidx = np.random.choice(self._neighbors_mjidxs_list_buffer)
             finish_trial = True
+            print(f"Target not found, sampled a new target mjidx: {self._sampled_intended_focus_mjidx}")
+            # TODO debug delete later
         else:
             # Make sure they sum to 1
             self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
@@ -2322,7 +2331,7 @@ class RelocationMemory(Env):
 
                 # Reset the counter
                 self._num_elapsed_visual_searched_cells = 0
-                self._neighbors_mjidxs_list_buffer = []
+                self._test_switch_back_step = self._steps
                 # Update the number of trials
                 self._num_trials += 1
                 # Sample the new target and the new intended focus for the next trial
