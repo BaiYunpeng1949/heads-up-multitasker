@@ -1964,12 +1964,11 @@ class RelocationMemory(Env):
                                                              self._mr_cells_mjidxs))
 
         # Define the target idx probability distribution -
-        # TODO Apply the Gaussian distribution to the belief and confidence distributions
         self._true_target_mjidx = None  # The true target MuJoCo idx
         self._buffer_true_target_mjidx = None  # The buffer for the true target MuJoCo idx
         self._target_confidence_distribution = None  # The perceived target MuJoCo idx, should be sampled from memory, which decays as time goes by, but the element should be the same as neighboring elements and the target belief
-        self._memory_decay_rate = 0.4  # The memory decay rate - TODO a hyper-parameter, might need to fit to human data
-        self._num_elapsed_visual_searched_cells = None  # The number of visual search trials elapsed
+        self._memory_decay_rate = 0.2  # The memory decay rate - TODO a hyper-parameter, might need to fit to human data
+        self._num_visual_search = None  # The number of visual search trials elapsed
         self._target_position_belief_distribution = None  # 'Belief': The dynamic target MuJoCo idx probability distribution
         self._sampled_intended_focus_mjidx = None  # The fixation MuJoCo idx, should be sampled from belief
 
@@ -1992,9 +1991,10 @@ class RelocationMemory(Env):
         self._sampled_layout_sg_mjidx_list = None
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
-        self._neighbour_radius = 0.0101  # Obtained empirically TODO make it more valid using text crowding and central vision models later
+        self._neighbour_radius = 0.0101  # Obtained empirically
         self._neighbors_mjidxs_list = None  # The MuJoCo idxs of the neighbors of the sampled target idx
         self._neighbors_mjidxs_list_buffer = None
+        self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
 
         # Initialise thresholds and counters
         self._steps = None
@@ -2003,7 +2003,7 @@ class RelocationMemory(Env):
         self._max_trials = 5
         self.ep_len = int(self._max_trials * self._reloc_identification_steps * 8)
 
-        # Test-related variables - TODO delete later
+        # Test-related variables
         self._test_switch_back_duration_list = None
         self._test_switch_back_step = None
         self._test_switch_back_error_list = None
@@ -2046,14 +2046,13 @@ class RelocationMemory(Env):
         proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
 
         # Get the stateful information observation - normalize to [-1, 1]
-        remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
-        dwell_cell_steps = self._reloc_identification_steps
-        remaining_identification_steps_norm = (dwell_cell_steps - self._focus_steps) / dwell_cell_steps * 2 - 1
-        remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
+        remaining_ep_len_norm = self.normalise((self.ep_len - self._steps), 0, self.ep_len, -1, 1)
+        remaining_identification_steps_norm = self.normalise((self._reloc_identification_steps - self._focus_steps), 0, self._reloc_identification_steps, -1, 1)
+        remaining_trials_norm = self.normalise((self._max_trials - self._num_trials), 0, self._max_trials, -1, 1)
 
         # attention_switch_norm = 1 if self._attention_switch == True else -1
         current_focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
-        current_focus_confidence_norm = self._target_confidence_distribution[current_focus_idx]
+        current_focus_confidence_norm = self.normalise(self._target_confidence_distribution[current_focus_idx], 0, 1, -1, 1)
         layout_norm = self._sampled_layout_idx
 
         stateful_info = np.array(
@@ -2079,14 +2078,13 @@ class RelocationMemory(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
-        # Reset some test-related variables - TODO debug delete later
+        # Reset some test-related variables
         self._test_switch_back_duration_list = []
         self._test_switch_back_step = self._steps
         self._test_switch_back_error_list = []
 
-        # Initialize the layout - TODO to simplify the training, the layouts only refreshed once in one episode
-        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
-        self._sampled_layout_idx = BC       # TODO debug and test delete later
+        # Initialize the layout
+        self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2109,7 +2107,7 @@ class RelocationMemory(Env):
         self._target_confidence_distribution = np.zeros(self._sampled_layout_sg_mjidx_list.shape[0])
 
         # Reset the frequently updated variables
-        self._num_elapsed_visual_searched_cells = 0
+        self._num_visual_search = 0
 
         # Get the true target mjidx
         self._get_true_target()
@@ -2163,9 +2161,65 @@ class RelocationMemory(Env):
 
     def _get_true_target(self):
         # Reset
-        self._num_elapsed_visual_searched_cells = 0
+        self._num_visual_search = 0
         # Randomly sample a target mjidx
         self._true_target_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy())
+
+    def _init_distributions(self):
+        # Reset the neighobours mjidxs list and the visual searched mjidx list
+        self._neighbors_mjidxs_list = []
+        self._visual_searched_mjidx_list = []
+
+        # Reset the target idx probability distribution to all 0 in the reading mode
+        mujoco.mj_forward(self._model, self._data)
+        self._target_position_belief_distribution = np.zeros(self._target_position_belief_distribution.shape[0])
+        # self._neighbors_mjidxs_list = []
+        # self._neighbors_mjidxs_list_buffer = []
+        center_xpos = self._data.geom(self._true_target_mjidx).xpos
+        for mjidx in self._sampled_layout_sg_mjidx_list:
+            xpos = self._data.geom(mjidx).xpos
+            dist = np.linalg.norm(xpos - center_xpos)
+            # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
+            idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
+            self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._neighbour_radius) ** 2)
+
+            # Update the neighbors mjidx for visualization
+            if dist <= self._neighbour_radius:
+                self._neighbors_mjidxs_list.append(mjidx)
+
+        # Update the target mjidx memory - before time cost on the visual search, there is no memory decay, the agent remembers where the target was with 1 prob
+        self._target_confidence_distribution = np.zeros(self._target_confidence_distribution.shape[0])
+        idx = np.where(self._sampled_layout_sg_mjidx_list == self._true_target_mjidx)[0][0]
+        self._target_confidence_distribution[idx] = 1
+
+        # Normalize distributions
+        self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
+        self._target_confidence_distribution /= np.sum(self._target_confidence_distribution)
+
+    def _update_distributions(self):
+        # Find the index of the sampled intended focus mjidx in the layout candidate list
+        focused_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
+        # Update the position belief distribution - Set 0 to the current fixation mjidx
+        self._target_position_belief_distribution[focused_idx] = 0
+
+        # Update the confidence distribution
+        true_target_confidence_after_memory_decay = 1 * np.exp(
+            -self._memory_decay_rate * self._num_visual_search)
+        # Update the confidence of the cells with a Gaussian distribution centered at the true target mjidx
+        for mjidx in self._sampled_layout_sg_mjidx_list:
+            idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
+            dist = np.linalg.norm(self._data.geom(mjidx).xpos - self._data.geom(self._true_target_mjidx).xpos)
+            self._target_confidence_distribution[idx] = true_target_confidence_after_memory_decay * np.exp(
+                -0.5 * (dist / self._neighbour_radius) ** 2)
+        # Set 0 to those cells that are already visual searched
+        for mjidx in self._visual_searched_mjidx_list:
+            idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
+            self._target_confidence_distribution[idx] = 0
+
+        # Normalize distributions
+        if np.sum(self._target_position_belief_distribution) != 0 and np.sum(self._target_confidence_distribution) != 0:
+            self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
+            self._target_confidence_distribution /= np.sum(self._target_confidence_distribution)
 
     def _sample_intended_focus(self, visual_search_in_progress=False):
         """
@@ -2173,102 +2227,40 @@ class RelocationMemory(Env):
         both target confidence and target position belief are updated here.
         """
         # Initializations - The visual search has not started yet
-        # Determine the neighbours by identifying all cells that are within the preset neighbour radius
         if visual_search_in_progress == False:
-            # Reset the target idx probability distribution to all 0 in the reading mode
-            mujoco.mj_forward(self._model, self._data)
-            self._target_position_belief_distribution = np.zeros(self._target_position_belief_distribution.shape[0])
-            self._neighbors_mjidxs_list = []
-            self._neighbors_mjidxs_list_buffer = []
-            center_xpos = self._data.geom(self._true_target_mjidx).xpos
-            for mjidx in self._sampled_layout_sg_mjidx_list:
-                xpos = self._data.geom(mjidx).xpos
-                dist = np.linalg.norm(xpos - center_xpos)
-                if dist <= self._neighbour_radius:
-                    self._neighbors_mjidxs_list.append(mjidx)
-                    # # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
-                    # idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-                # # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
-                # idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-            #     self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._neighbour_radius) ** 2)
-            # self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
-
-            # Store the initial neighbour list in the buffer - in case the agent never find a target and need to sample one
-            self._neighbors_mjidxs_list_buffer = self._neighbors_mjidxs_list.copy()
-
-            # Apply the even prob across all cells in the neighbour list -
-            # TODO figure out a better way to do this - is it necessarily the even prob distribution? -
-            #  Apply a Gaussian distribution based on the geometric distances of neighbours
-            even_prob = float(1 / len(self._neighbors_mjidxs_list))
-            for mjidx in self._neighbors_mjidxs_list:
-                idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-                self._target_position_belief_distribution[idx] = even_prob
-
-            # Update the target mjidx memory - before time cost on the visual search, there is no memory decay, the agent remembers where the target was with 1 prob
-            self._target_confidence_distribution = np.zeros(self._target_confidence_distribution.shape[0])
-            idx = np.where(self._sampled_layout_sg_mjidx_list == self._true_target_mjidx)[0][0]
-            self._target_confidence_distribution[idx] = 1
-
+            self._init_distributions()
         # Update the belief and confidence - the previous fixation mjidx is not None
-        elif visual_search_in_progress == True:
-            # Find the index of the sampled intended focus mjidx in the layout candidate list
-            focused_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
-            # Update the belief of the target mjidx - intended focus cell mjidx
-            focused_cell_prob = self._target_position_belief_distribution[focused_idx]
-            # Set 0 to the current fixation mjidx
-            self._target_position_belief_distribution[focused_idx] = 0
-            # Update the confidence based on the memory decay
-            self._target_confidence_distribution[focused_idx] = 0
-            # Remove it from the neighbors_mjidx
-            self._neighbors_mjidxs_list.remove(self._sampled_intended_focus_mjidx)
-            # Only update the belief and confidence if there are still neighbours left
-            if len(self._neighbors_mjidxs_list) > 0:
-                leak_prob_per_neighbour = float(focused_cell_prob / (len(self._neighbors_mjidxs_list)))
-                for mjidx in self._neighbors_mjidxs_list:
-                    index = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-                    self._target_position_belief_distribution[index] += leak_prob_per_neighbour
-
-                # If not the true target idx discarded
-                if self._true_target_mjidx in self._neighbors_mjidxs_list:
-                    # Memory decay update to the true target idx
-                    true_target_idx = np.where(self._sampled_layout_sg_mjidx_list == self._true_target_mjidx)[0][
-                        0]
-                    # TODO Advancement: use self._num_elapsed_visual_searched_cells * self._reloc_identification_steps to update the memory decay rate
-                    true_target_confidence_after_memory_decay = 1 * np.exp(-self._memory_decay_rate * self._num_elapsed_visual_searched_cells)
-                    self._target_confidence_distribution[true_target_idx] = true_target_confidence_after_memory_decay
-                    # Update the rest certainty prob
-                    for mjidx in self._neighbors_mjidxs_list:
-                        if mjidx != self._true_target_mjidx:
-                            index = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-                            self._target_confidence_distribution[index] = float((1 - true_target_confidence_after_memory_decay) / (len(self._neighbors_mjidxs_list) - 1))
-                # If the true target idx was discarded
-                else:
-                    # Update the rest cells' confidence
-                    for mjidx in self._neighbors_mjidxs_list:
-                        index = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-                        self._target_confidence_distribution[index] = float(1 / (len(self._neighbors_mjidxs_list)))
-
-        # Sample a fixation mjidx from the cells according to the target mjidx probability distribution (belief)
-        # If all probs are 0, then sample from the neighbors_mjidxs_list_buffer,
-        #  and force to perceive this as the true target mjidx thus end the trial
-        #  no need to focus on that cell anymore because it has been focused before
-        finish_trial = False
-        if np.sum(self._target_position_belief_distribution) == 0:
-            self._sampled_intended_focus_mjidx = np.random.choice(self._neighbors_mjidxs_list_buffer)
-            finish_trial = True
-            print(f"Target not found, sampled a new target mjidx: {self._sampled_intended_focus_mjidx}")
-            # TODO debug delete later
         else:
-            # Make sure they sum to 1
-            self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
-            self._target_confidence_distribution = self._target_confidence_distribution / np.sum(
-                self._target_confidence_distribution)
+            self._update_distributions()
+
+        # Randomly sample a target if the agent has visual searched all the cells but still not found the target
+        randomly_sampled_target = None
+        if np.sum(self._target_position_belief_distribution) == 0:
+            self._init_distributions()
+            randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
+        else:
             self._sampled_intended_focus_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy(), p=self._target_position_belief_distribution)
 
         # Reset the counter
         self._focus_steps = 0
 
-        return finish_trial
+        return randomly_sampled_target
+
+    def _reset_trial(self):
+        # Update some testing statistics
+        self._test_switch_back_duration_list.append(self._steps - self._test_switch_back_step)
+        self._test_switch_back_error_list.append(
+            np.abs(self._sampled_layout_sg_mjidx_list - self._true_target_mjidx))
+
+        # Update some variables
+        self._num_visual_search = 0
+        self._visual_searched_mjidx_list = []
+        self._test_switch_back_step = self._steps
+        # Update the number of trials
+        self._num_trials += 1
+        # Sample the new target and the new intended focus for the next trial
+        self._get_true_target()
+        self._sample_intended_focus()
 
     def step(self, action):
         # Manually force the agent to focus on the intended focus mjidx
@@ -2279,7 +2271,8 @@ class RelocationMemory(Env):
         self._data.ctrl[:] = intended_position
 
         # Get the agent's decision from the action - only useful for the relocation task - TODO try probabilistic action later
-        focus_is_regarded_as_target_boolean = True if action[0] >= 0 else False
+        confidence = self.normalise(action[0], -1, 1, 0, 1)
+        focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
@@ -2291,8 +2284,7 @@ class RelocationMemory(Env):
         # Reset the scene appropriately
         for mjidx in self._sampled_layout_sg_mjidx_list:
             self._model.geom(mjidx).rgba = self._BLACK
-        for mjidx in self._neighbors_mjidxs_list_buffer:
-            self._model.geom(mjidx).rgba = self._YELLOW
+        self._model.geom(self._true_target_mjidx).rgba = self._YELLOW
 
         reward = -0.1
 
@@ -2302,41 +2294,28 @@ class RelocationMemory(Env):
 
         if self._focus_steps >= self._reloc_identification_steps:
             # Update the fixation trials during the relocation visual search
-            self._num_elapsed_visual_searched_cells += 1
-            # Store the mjidx before being re-sampled
-            previous_focus_mjidx_buffer = self._sampled_intended_focus_mjidx
+            self._num_visual_search += 1
+            self._visual_searched_mjidx_list.append(self._sampled_intended_focus_mjidx)
 
-            # Re-sample the intended focus - TODO improve here, might exist better logic
-            finish_trial = self._sample_intended_focus(visual_search_in_progress=True)
-
-            # Perceive the focused cell is the target - or force to sample a target after searching all but had no luck
-            if focus_is_regarded_as_target_boolean == True or finish_trial == True:
-
-                if finish_trial == True:
-                    sampled_focus = self._sampled_intended_focus_mjidx
-                else:
-                    sampled_focus = previous_focus_mjidx_buffer
-
-                # Update some testing statistics
-                self._test_switch_back_duration_list.append(self._steps - self._test_switch_back_step)
-                self._test_switch_back_error_list.append(
-                    np.abs(sampled_focus - self._true_target_mjidx))
-
-                # Only reward the agent if the previous focused item is the same as the true target
-                if sampled_focus == self._true_target_mjidx:
+            if focus_is_regarded_as_target_boolean:
+                # Update the rewards
+                if self._sampled_intended_focus_mjidx == self._true_target_mjidx:
                     reward = 100
                 else:
-                    # Punish the agent if he makes the incorrect relocations - provide incentives to make wiser decisions
                     reward = -100
 
-                # Reset the counter
-                self._num_elapsed_visual_searched_cells = 0
-                self._test_switch_back_step = self._steps
-                # Update the number of trials
-                self._num_trials += 1
-                # Sample the new target and the new intended focus for the next trial
-                self._get_true_target()
-                self._sample_intended_focus()
+                # Update some variables
+                self._reset_trial()
+            else:
+                # Keep searching
+                randomly_sampled_target = self._sample_intended_focus(visual_search_in_progress=True)
+                if randomly_sampled_target is not None:
+                    if randomly_sampled_target == self._true_target_mjidx:
+                        reward = 100
+                    else:
+                        reward = -100
+                    # Update some variables
+                    self._reset_trial()
 
         # Get termination condition
         terminate = False
