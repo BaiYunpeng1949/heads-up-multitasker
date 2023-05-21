@@ -2084,7 +2084,8 @@ class RelocationMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout
-        self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
+        self._sampled_layout_idx = BC       # TODO debug delete later
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2238,6 +2239,8 @@ class RelocationMemory(Env):
         if np.sum(self._target_position_belief_distribution) == 0:
             self._init_distributions()
             randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
+            # TODO debug delete later
+            print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
         else:
             self._sampled_intended_focus_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy(), p=self._target_position_belief_distribution)
 
@@ -2250,7 +2253,7 @@ class RelocationMemory(Env):
         # Update some testing statistics
         self._test_switch_back_duration_list.append(self._steps - self._test_switch_back_step)
         self._test_switch_back_error_list.append(
-            np.abs(self._sampled_layout_sg_mjidx_list - self._true_target_mjidx))
+            np.abs(self._sampled_intended_focus_mjidx - self._true_target_mjidx))
 
         # Update some variables
         self._num_visual_search = 0
@@ -2304,7 +2307,6 @@ class RelocationMemory(Env):
                     reward = 100
                 else:
                     reward = -100
-
                 # Update some variables
                 self._reset_trial()
             else:
@@ -2324,6 +2326,7 @@ class RelocationMemory(Env):
             terminate = True
 
             # Print some testing statistics if in test mode or debug mode
+            print(f"The total steps is {self._steps}")
             if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
                 if len(self._test_switch_back_duration_list) == 0 or len(self._test_switch_back_error_list) == 0:
                     print("No switch back trials!")
