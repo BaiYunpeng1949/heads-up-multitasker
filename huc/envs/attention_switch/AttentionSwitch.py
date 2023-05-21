@@ -1969,6 +1969,7 @@ class RelocationMemory(Env):
         self._target_confidence_distribution = None  # The perceived target MuJoCo idx, should be sampled from memory, which decays as time goes by, but the element should be the same as neighboring elements and the target belief
         self._memory_decay_rate = 0.2  # The memory decay rate - TODO a hyper-parameter, might need to fit to human data
         self._num_visual_search = None  # The number of visual search trials elapsed
+        self._max_visual_search = None  # The maximum number of visual search trials
         self._target_position_belief_distribution = None  # 'Belief': The dynamic target MuJoCo idx probability distribution
         self._sampled_intended_focus_mjidx = None  # The fixation MuJoCo idx, should be sampled from belief
 
@@ -1991,9 +1992,10 @@ class RelocationMemory(Env):
         self._sampled_layout_sg_mjidx_list = None
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
+        # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
-        self._neighbors_mjidxs_list = None  # The MuJoCo idxs of the neighbors of the sampled target idx
-        self._neighbors_mjidxs_list_buffer = None
+        self._initial_confidence_std = float(self._neighbour_radius / 10)  # The initial confidence std
+        self._max_confidence_std = float(self._neighbour_radius)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
 
         # Initialise thresholds and counters
@@ -2084,8 +2086,7 @@ class RelocationMemory(Env):
         self._test_switch_back_error_list = []
 
         # Initialize the layout
-        # self._sampled_layout_idx = np.random.choice([ILS100, BC])
-        self._sampled_layout_idx = BC       # TODO debug delete later
+        self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2101,6 +2102,8 @@ class RelocationMemory(Env):
 
         for mjidx in self._sampled_layout_sg_mjidx_list:
             self._model.geom(mjidx).rgba = self._BLACK
+
+        self._max_visual_search = self._sampled_layout_sg_mjidx_list.shape[0]
 
         # Reset and initialize the target belief
         self._target_position_belief_distribution = np.zeros(self._sampled_layout_sg_mjidx_list.shape[0])
@@ -2168,30 +2171,20 @@ class RelocationMemory(Env):
 
     def _init_distributions(self):
         # Reset the neighobours mjidxs list and the visual searched mjidx list
-        self._neighbors_mjidxs_list = []
         self._visual_searched_mjidx_list = []
 
         # Reset the target idx probability distribution to all 0 in the reading mode
         mujoco.mj_forward(self._model, self._data)
         self._target_position_belief_distribution = np.zeros(self._target_position_belief_distribution.shape[0])
-        # self._neighbors_mjidxs_list = []
-        # self._neighbors_mjidxs_list_buffer = []
         center_xpos = self._data.geom(self._true_target_mjidx).xpos
         for mjidx in self._sampled_layout_sg_mjidx_list:
             xpos = self._data.geom(mjidx).xpos
             dist = np.linalg.norm(xpos - center_xpos)
-            # Calculate the probability using the Gaussian distribution - the pre-defined radius is std
+            # Initialize the position belief distribution - Calculate the probability using the Gaussian distribution - the pre-defined radius is std
             idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
             self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._neighbour_radius) ** 2)
-
-            # Update the neighbors mjidx for visualization
-            if dist <= self._neighbour_radius:
-                self._neighbors_mjidxs_list.append(mjidx)
-
-        # Update the target mjidx memory - before time cost on the visual search, there is no memory decay, the agent remembers where the target was with 1 prob
-        self._target_confidence_distribution = np.zeros(self._target_confidence_distribution.shape[0])
-        idx = np.where(self._sampled_layout_sg_mjidx_list == self._true_target_mjidx)[0][0]
-        self._target_confidence_distribution[idx] = 1
+            # Initialize the confidence distribution - use the Gaussian distribution - use a changing std
+            self._target_confidence_distribution[idx] = np.exp(-0.5 * (dist / self._initial_confidence_std) ** 2)
 
         # Normalize distributions
         self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
@@ -2204,14 +2197,15 @@ class RelocationMemory(Env):
         self._target_position_belief_distribution[focused_idx] = 0
 
         # Update the confidence distribution
-        true_target_confidence_after_memory_decay = 1 * np.exp(
-            -self._memory_decay_rate * self._num_visual_search)
-        # Update the confidence of the cells with a Gaussian distribution centered at the true target mjidx
+        updated_std = self._initial_confidence_std + (self._max_confidence_std - self._initial_confidence_std) * (self._num_visual_search / self._max_visual_search)
+        center_xpos = self._data.geom(self._true_target_mjidx).xpos
         for mjidx in self._sampled_layout_sg_mjidx_list:
+            xpos = self._data.geom(mjidx).xpos
+            dist = np.linalg.norm(xpos - center_xpos)
+            # Initialize the position belief distribution - Calculate the probability using the Gaussian distribution - the pre-defined radius is std
             idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-            dist = np.linalg.norm(self._data.geom(mjidx).xpos - self._data.geom(self._true_target_mjidx).xpos)
-            self._target_confidence_distribution[idx] = true_target_confidence_after_memory_decay * np.exp(
-                -0.5 * (dist / self._neighbour_radius) ** 2)
+            # Initialize the confidence distribution - use the Gaussian distribution - use a changing std
+            self._target_confidence_distribution[idx] = np.exp(-0.5 * (dist / updated_std) ** 2)
         # Set 0 to those cells that are already visual searched
         for mjidx in self._visual_searched_mjidx_list:
             idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
@@ -2221,6 +2215,13 @@ class RelocationMemory(Env):
         if np.sum(self._target_position_belief_distribution) != 0 and np.sum(self._target_confidence_distribution) != 0:
             self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
             self._target_confidence_distribution /= np.sum(self._target_confidence_distribution)
+
+            # # TODO debug delete later
+            # print(
+            #     f"The sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+            #     f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+            #     f"\nthe confidence distribution is {self._target_confidence_distribution}"
+            #     f"\n***********************************************************************************")
 
     def _sample_intended_focus(self, visual_search_in_progress=False):
         """
@@ -2239,8 +2240,8 @@ class RelocationMemory(Env):
         if np.sum(self._target_position_belief_distribution) == 0:
             self._init_distributions()
             randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
-            # TODO debug delete later
-            print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
+            # # TODO debug delete later
+            # print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
         else:
             self._sampled_intended_focus_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy(), p=self._target_position_belief_distribution)
 
