@@ -2085,7 +2085,7 @@ class RelocationMemory(Env):
         # Reset the variables and counters
         self._steps = 0
         self._num_trials = 0
-        self._action = np.array([0])       # TODO always make them arrays or otherwise the network will be hard to make it with batches
+        self._action = self.action_space.sample()
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -2250,7 +2250,8 @@ class RelocationMemory(Env):
             randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
 
             if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
-                print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
+                print(f"The random search applied, the randomly sampled target is {randomly_sampled_target} "
+                      f"with the true target mjidx {self._true_target_mjidx}")
 
         else:
             self._sampled_intended_focus_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy(), p=self._target_position_belief_distribution)
