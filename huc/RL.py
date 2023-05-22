@@ -248,8 +248,8 @@ class RL:
             # )
             policy_kwargs = dict(
                 features_extractor_class=NoVisionCombinedExtractor,
-                features_extractor_kwargs=dict(proprioception_features_dim=32,
-                                               stateful_information_features_dim=16),
+                features_extractor_kwargs=dict(proprioception_features_dim=8,
+                                               stateful_information_features_dim=128),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,

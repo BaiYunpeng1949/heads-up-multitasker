@@ -1967,7 +1967,7 @@ class RelocationMemory(Env):
         self._true_target_mjidx = None  # The true target MuJoCo idx
         self._buffer_true_target_mjidx = None  # The buffer for the true target MuJoCo idx
         self._target_confidence_distribution = None  # The perceived target MuJoCo idx, should be sampled from memory, which decays as time goes by, but the element should be the same as neighboring elements and the target belief
-        self._memory_decay_rate = 0.2  # The memory decay rate - TODO a hyper-parameter, might need to fit to human data
+        self._memory_decay_rate = 0.2  # The memory decay rate - not useful now, I used a std-increasing Gaussian to model the memory decay
         self._num_visual_search = None  # The number of visual search trials elapsed
         self._max_visual_search = None  # The maximum number of visual search trials
         self._target_position_belief_distribution = None  # 'Belief': The dynamic target MuJoCo idx probability distribution
@@ -1977,14 +1977,8 @@ class RelocationMemory(Env):
         self._YELLOW = [1, 1, 0, 1]
         self._RED = [1, 0, 0, 1]
 
-        self._reloc_identification_steps = int(
-            0.5 * self._action_sample_freq)  # 0.5 second - 10 time steps
-        # TODO In terms of mathematical representation, crowding could be modeled as a function of the distance between
-        #  the intended focus word and its neighboring words, the size of the words, and the contrast between words and the background.
-        #  However, the exact form of this function would depend on the specific details of the crowding phenomenon,
-        #  which are still under investigation.
-        # TODO: Characterize this way: the required identification time of a given word/cell is reversely proportional
-        #  to the distance between the intended focus and its surrounding flankers [Visual Crowding].
+        # To avoid the delayed decision-making problem, I set the relocation identification steps as 1
+        self._reloc_identification_steps = 1
 
         # Layout
         self._sampled_layout_idx = None
@@ -2011,18 +2005,19 @@ class RelocationMemory(Env):
         self._test_switch_back_error_list = None
 
         # Define the observation space
-        width, height = 20, 20  # Use whatever resolution as small as you want
+        width, height = 10, 10  # Use whatever resolution as small as you want
         self._num_stk_frm = 1
-        self._num_stateful_info = 5
+        self._num_stateful_info = 16
         self.observation_space = Dict({
             # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
         })
 
         # Define the action space - 2 dof eyeball rotation control + decision to relocate or not
         # self.action_space = Box(low=-1, high=1, shape=(self._model.nu + 1,))
         self.action_space = Box(low=-1, high=1, shape=(1,))
+        self._action = None     # For proprioception observation
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
@@ -2044,29 +2039,40 @@ class RelocationMemory(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
-        # TODO change the stateful information later if the current is not learning anything. Maybe train with probability distribution
         # Get the proprioception observation
-        proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+        proprioception = self._action
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = self.normalise((self.ep_len - self._steps), 0, self.ep_len, -1, 1)
-        remaining_identification_steps_norm = self.normalise((self._reloc_identification_steps - self._focus_steps), 0, self._reloc_identification_steps, -1, 1)
+        # remaining_identification_steps_norm = self.normalise((self._reloc_identification_steps - self._focus_steps), 0, self._reloc_identification_steps, -1, 1)
         remaining_trials_norm = self.normalise((self._max_trials - self._num_trials), 0, self._max_trials, -1, 1)
 
         # attention_switch_norm = 1 if self._attention_switch == True else -1
-        current_focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
-        current_focus_confidence_norm = self.normalise(self._target_confidence_distribution[current_focus_idx], 0, 1, -1, 1)
+        # current_focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
+        # current_focus_confidence_norm = self.normalise(self._target_confidence_distribution[current_focus_idx], 0, 1, -1, 1)
         layout_norm = self._sampled_layout_idx
 
-        stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_identification_steps_norm, remaining_trials_norm, layout_norm,
-             current_focus_confidence_norm]
-        )
-        print(f"The current focus confidence is {current_focus_confidence_norm}, "
-              f"the true target is: {self._true_target_mjidx}, "
-              f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}")       # TODO debug delete later
+        # Learn from 'Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning'
+        # Normalize the current focus
+        focus_mjidx_norm = self.normalise(self._sampled_intended_focus_mjidx,
+                                          self._sampled_layout_sg_mjidx_list[0],
+                                          self._sampled_layout_sg_mjidx_list[-1],
+                                          -1, 1)
+        # Normalize the confidence of the whole confidence probability distribution
+        confidence_distribution_norm = self.normalise(self._target_confidence_distribution.copy(), 0, 1, -1, 1)
+
+        stateful_info = np.concatenate([confidence_distribution_norm,
+                                        np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_mjidx_norm])])
+
         if stateful_info.shape[0] != self._num_stateful_info:
-            raise ValueError("The shape of stateful information is not correct!")
+            raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
+
+        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+            print(
+                f"The current focus confidence is {self._target_confidence_distribution[np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]]}, "
+                f"the true target is: {self._true_target_mjidx}, "
+                f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}"
+                f"\nThe observation is: proprioception: {proprioception}, stateful_info: {stateful_info}")
 
         # return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
         return {"proprioception": proprioception, "stateful information": stateful_info}
@@ -2079,6 +2085,7 @@ class RelocationMemory(Env):
         # Reset the variables and counters
         self._steps = 0
         self._num_trials = 0
+        self._action = np.array([0])       # TODO always make them arrays or otherwise the network will be hard to make it with batches
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -2094,6 +2101,7 @@ class RelocationMemory(Env):
 
         if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
             self._sampled_layout_idx = ILS100
+            print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2223,13 +2231,6 @@ class RelocationMemory(Env):
             self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
             self._target_confidence_distribution /= np.sum(self._target_confidence_distribution)
 
-            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
-                print(
-                    f"The sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-                    f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-                    f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                    f"\n***********************************************************************************")
-
     def _sample_intended_focus(self, visual_search_in_progress=False):
         """
         It's like the transition function in the POMDP,
@@ -2257,6 +2258,13 @@ class RelocationMemory(Env):
         # Reset the counter
         self._focus_steps = 0
 
+        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+            print(
+                f"\nThe sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+                f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+                f"\nthe confidence distribution is {self._target_confidence_distribution}"
+                f"\n***********************************************************************************")
+
         return randomly_sampled_target
 
     def _reset_trial(self):
@@ -2280,16 +2288,19 @@ class RelocationMemory(Env):
         mjidx = self._sampled_intended_focus_mjidx
         xpos = self._data.geom(mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
-        intended_position = [z/y, -x/y]
-        self._data.ctrl[:] = intended_position
+        intended_position = np.array([z/y, -x/y])
+        # To avoid the delayed decision-making problems, I removed the control and directly use the qpos to focus
+        for i in range(5):
+            self._data.ctrl[:] = intended_position
+            # Advance the simulation
+            mujoco.mj_step(self._model, self._data, self._frame_skip)
 
         # Get the agent's decision from the action - only useful for the relocation task
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
         # focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
         focus_is_regarded_as_target_boolean = True if action[0] >= 0 else False
+        self._action = action
 
-        # Advance the simulation
-        mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
         # Focus detection
@@ -2310,6 +2321,10 @@ class RelocationMemory(Env):
             # Update the fixation trials during the relocation visual search
             self._num_visual_search += 1
             self._visual_searched_mjidx_list.append(self._sampled_intended_focus_mjidx)
+
+            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+                print(f"\nThe focus is regarded as the target: {focus_is_regarded_as_target_boolean}, "
+                      f"the current step is: {self._steps}\n")
 
             if focus_is_regarded_as_target_boolean:
                 # Update the rewards
