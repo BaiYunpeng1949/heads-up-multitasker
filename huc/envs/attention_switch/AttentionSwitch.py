@@ -2061,7 +2061,7 @@ class RelocationMemory(Env):
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
 
-        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+        if self._config["rl"]["mode"] == "debug":
             print(
                 f"The current focus confidence is {self._target_confidence_distribution[np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]]}, "
                 f"the true target is: {self._true_target_mjidx}, "
@@ -2093,8 +2093,8 @@ class RelocationMemory(Env):
         # Initialize the layout
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
-        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
-            self._sampled_layout_idx = ILS100
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            self._sampled_layout_idx = BC
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2246,7 +2246,7 @@ class RelocationMemory(Env):
             if len(self._visual_searched_mjidx_list) < len(self._sampled_layout_sg_mjidx_list):
                 raise ValueError("The agent has not visual searched all the cells but still not found the target")
 
-            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+            if self._config["rl"]["mode"] == "debug":
                 print(f"The random search applied, the randomly sampled target is {last_target} "
                       f"with the true target mjidx {self._true_target_mjidx}")
 
@@ -2256,7 +2256,7 @@ class RelocationMemory(Env):
         # Reset the counter
         self._focus_steps = 0
 
-        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+        if self._config["rl"]["mode"] == "debug":
             print(
                 f"\nThe sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
                 f"\nThe belief distribution is {self._target_position_belief_distribution}, "
@@ -2320,7 +2320,7 @@ class RelocationMemory(Env):
             self._num_visual_search += 1
             self._visual_searched_mjidx_list.append(self._sampled_intended_focus_mjidx)
 
-            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+            if self._config["rl"]["mode"] == "debug":
                 print(f"\nThe focus is regarded as the target: {focus_is_regarded_as_target_boolean}, "
                       f"the current step is: {self._steps}\n")
 
