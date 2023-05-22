@@ -2044,25 +2044,19 @@ class RelocationMemory(Env):
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = self.normalise((self.ep_len - self._steps), 0, self.ep_len, -1, 1)
-        # remaining_identification_steps_norm = self.normalise((self._reloc_identification_steps - self._focus_steps), 0, self._reloc_identification_steps, -1, 1)
         remaining_trials_norm = self.normalise((self._max_trials - self._num_trials), 0, self._max_trials, -1, 1)
 
-        # attention_switch_norm = 1 if self._attention_switch == True else -1
-        # current_focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
-        # current_focus_confidence_norm = self.normalise(self._target_confidence_distribution[current_focus_idx], 0, 1, -1, 1)
         layout_norm = self._sampled_layout_idx
 
         # Learn from 'Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning'
         # Normalize the current focus
-        focus_mjidx_norm = self.normalise(self._sampled_intended_focus_mjidx,
-                                          self._sampled_layout_sg_mjidx_list[0],
-                                          self._sampled_layout_sg_mjidx_list[-1],
-                                          -1, 1)
+        focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
+        focus_confidence_norm = self.normalise(self._target_confidence_distribution[focus_idx], 0, 1, -1, 1)
         # Normalize the confidence of the whole confidence probability distribution
         confidence_distribution_norm = self.normalise(self._target_confidence_distribution.copy(), 0, 1, -1, 1)
 
         stateful_info = np.concatenate([confidence_distribution_norm,
-                                        np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_mjidx_norm])])
+                                        np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_confidence_norm])])
 
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
