@@ -1978,7 +1978,7 @@ class RelocationMemory(Env):
         self._RED = [1, 0, 0, 1]
 
         # To avoid the delayed decision-making problem, I set the relocation identification steps as 1
-        self._reloc_identification_steps = 1
+        self._reloc_identification_steps = int(0.25*self._action_sample_freq)  # The number of steps to identify the relocation
 
         # Layout
         self._sampled_layout_idx = None
@@ -2244,13 +2244,16 @@ class RelocationMemory(Env):
             self._update_distributions()
 
         # Randomly sample a target if the agent has visual searched all the cells but still not found the target
-        randomly_sampled_target = None
+        last_target = None
         if np.sum(self._target_position_belief_distribution) == 0:
-            self._init_distributions()
-            randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
+            # self._init_distributions()
+            # last_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
+            last_target = self._visual_searched_mjidx_list[-1]
+            if len(self._visual_searched_mjidx_list) < len(self._sampled_layout_sg_mjidx_list):
+                raise ValueError("The agent has not visual searched all the cells but still not found the target")
 
             if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
-                print(f"The random search applied, the randomly sampled target is {randomly_sampled_target} "
+                print(f"The random search applied, the randomly sampled target is {last_target} "
                       f"with the true target mjidx {self._true_target_mjidx}")
 
         else:
@@ -2264,9 +2267,10 @@ class RelocationMemory(Env):
                 f"\nThe sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
                 f"\nThe belief distribution is {self._target_position_belief_distribution}, "
                 f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\n***********************************************************************************")
+                f"\n***********************************************************************************"
+            )
 
-        return randomly_sampled_target
+        return last_target
 
     def _reset_trial(self):
         # Update some testing statistics
@@ -2290,11 +2294,10 @@ class RelocationMemory(Env):
         xpos = self._data.geom(mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
         intended_position = np.array([z/y, -x/y])
-        # To avoid the delayed decision-making problems, I removed the control and directly use the qpos to focus
-        for i in range(5):
-            self._data.ctrl[:] = intended_position
-            # Advance the simulation
-            mujoco.mj_step(self._model, self._data, self._frame_skip)
+        # The agent needs to take steps to get to the target
+        self._data.ctrl[:] = intended_position
+        # Advance the simulation
+        mujoco.mj_step(self._model, self._data, self._frame_skip)
 
         # Get the agent's decision from the action - only useful for the relocation task
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
@@ -2337,9 +2340,10 @@ class RelocationMemory(Env):
                 self._reset_trial()
             else:
                 # Keep searching
-                randomly_sampled_target = self._sample_intended_focus(visual_search_in_progress=True)
-                if randomly_sampled_target is not None:
-                    if randomly_sampled_target == self._true_target_mjidx:
+                last_target = self._sample_intended_focus(visual_search_in_progress=True)
+                if last_target is not None:
+                    # The last target is given if all the cells have been searched
+                    if last_target == self._true_target_mjidx:
                         reward = 100
                     else:
                         reward = -100
