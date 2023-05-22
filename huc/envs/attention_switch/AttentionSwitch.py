@@ -2283,9 +2283,8 @@ class RelocationMemory(Env):
         mujoco.mj_step(self._model, self._data, self._frame_skip)
 
         # Get the agent's decision from the action - only useful for the relocation task
-        # confidence = self.normalise(action[0], -1, 1, 0, 1)
-        # focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
-        focus_is_regarded_as_target_boolean = True if action[0] >= 0 else False
+        confidence = self.normalise(action[0], -1, 1, 0, 1)
+        focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
 
         self._steps += 1
 
