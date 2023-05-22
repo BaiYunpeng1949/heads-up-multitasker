@@ -247,16 +247,15 @@ class RL:
             #     normalize_images=False
             # )
             policy_kwargs = dict(
-                features_extractor_class=NoVisionCombinedExtractor,
-                features_extractor_kwargs=dict(proprioception_features_dim=8,
-                                               stateful_information_features_dim=128),
+                features_extractor_class=StatefulInformationExtractor,
+                features_extractor_kwargs=dict(features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
             self._model = PPO(
-                policy="MultiInputPolicy",     # CnnPolicy
+                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,

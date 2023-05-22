@@ -2007,17 +2007,17 @@ class RelocationMemory(Env):
         # Define the observation space
         width, height = 10, 10  # Use whatever resolution as small as you want
         self._num_stk_frm = 1
-        self._num_stateful_info = 16
-        self.observation_space = Dict({
-            # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1,)),
-            "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
-        })
+        self._num_stateful_info = 4
+        # self.observation_space = Dict({
+        #     # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
+        #     # "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1,)),
+        #     "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
+        # })
+        self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - 2 dof eyeball rotation control + decision to relocate or not
         # self.action_space = Box(low=-1, high=1, shape=(self._model.nu + 1,))
         self.action_space = Box(low=-1, high=1, shape=(1,))
-        self._action = None     # For proprioception observation
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
@@ -2039,24 +2039,15 @@ class RelocationMemory(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
-        # Get the proprioception observation
-        proprioception = self._action
-
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = self.normalise((self.ep_len - self._steps), 0, self.ep_len, -1, 1)
         remaining_trials_norm = self.normalise((self._max_trials - self._num_trials), 0, self._max_trials, -1, 1)
-
         layout_norm = self._sampled_layout_idx
-
-        # Learn from 'Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning'
         # Normalize the current focus
         focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
         focus_confidence_norm = self.normalise(self._target_confidence_distribution[focus_idx], 0, 1, -1, 1)
-        # Normalize the confidence of the whole confidence probability distribution
-        confidence_distribution_norm = self.normalise(self._target_confidence_distribution.copy(), 0, 1, -1, 1)
 
-        stateful_info = np.concatenate([confidence_distribution_norm,
-                                        np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_confidence_norm])])
+        stateful_info = np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_confidence_norm])
 
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
@@ -2066,10 +2057,9 @@ class RelocationMemory(Env):
                 f"The current focus confidence is {self._target_confidence_distribution[np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]]}, "
                 f"the true target is: {self._true_target_mjidx}, "
                 f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}"
-                f"\nThe observation is: proprioception: {proprioception}, stateful_info: {stateful_info}")
+                f"\nStateful_info: {stateful_info}")
 
-        # return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
-        return {"proprioception": proprioception, "stateful information": stateful_info}
+        return stateful_info
 
     def reset(self):
 
@@ -2079,7 +2069,6 @@ class RelocationMemory(Env):
         # Reset the variables and counters
         self._steps = 0
         self._num_trials = 0
-        self._action = self.action_space.sample()
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -2297,7 +2286,6 @@ class RelocationMemory(Env):
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
         # focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
         focus_is_regarded_as_target_boolean = True if action[0] >= 0 else False
-        self._action = action
 
         self._steps += 1
 
