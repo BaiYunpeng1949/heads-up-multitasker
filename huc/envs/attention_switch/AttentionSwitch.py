@@ -2003,7 +2003,7 @@ class RelocationMemory(Env):
         self._focus_steps = None
         self._num_trials = None
         self._max_trials = 5
-        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 8)
+        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 20)
 
         # Test-related variables
         self._test_switch_back_duration_list = None
@@ -2044,6 +2044,7 @@ class RelocationMemory(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
+        # TODO change the stateful information later if the current is not learning anything. Maybe train with probability distribution
         # Get the proprioception observation
         proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
 
@@ -2061,6 +2062,9 @@ class RelocationMemory(Env):
             [remaining_ep_len_norm, remaining_identification_steps_norm, remaining_trials_norm, layout_norm,
              current_focus_confidence_norm]
         )
+        print(f"The current focus confidence is {current_focus_confidence_norm}, "
+              f"the true target is: {self._true_target_mjidx}, "
+              f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}")       # TODO debug delete later
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information is not correct!")
 
@@ -2087,6 +2091,9 @@ class RelocationMemory(Env):
 
         # Initialize the layout
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
+
+        if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+            self._sampled_layout_idx = ILS100
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
         for mjidx in self._fixations_all_layouts_mjidxs:
@@ -2216,12 +2223,12 @@ class RelocationMemory(Env):
             self._target_position_belief_distribution /= np.sum(self._target_position_belief_distribution)
             self._target_confidence_distribution /= np.sum(self._target_confidence_distribution)
 
-            # # TODO debug delete later
-            # print(
-            #     f"The sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-            #     f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-            #     f"\nthe confidence distribution is {self._target_confidence_distribution}"
-            #     f"\n***********************************************************************************")
+            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+                print(
+                    f"The sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+                    f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+                    f"\nthe confidence distribution is {self._target_confidence_distribution}"
+                    f"\n***********************************************************************************")
 
     def _sample_intended_focus(self, visual_search_in_progress=False):
         """
@@ -2240,8 +2247,10 @@ class RelocationMemory(Env):
         if np.sum(self._target_position_belief_distribution) == 0:
             self._init_distributions()
             randomly_sampled_target = np.random.choice(self._sampled_layout_sg_mjidx_list, p=self._target_position_belief_distribution)
-            # # TODO debug delete later
-            # print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
+
+            if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+                print(f"The random search applied, the randomly sampled target is {randomly_sampled_target}")
+
         else:
             self._sampled_intended_focus_mjidx = np.random.choice(self._sampled_layout_sg_mjidx_list.copy(), p=self._target_position_belief_distribution)
 
@@ -2327,8 +2336,8 @@ class RelocationMemory(Env):
             terminate = True
 
             # Print some testing statistics if in test mode or debug mode
-            print(f"The total steps is {self._steps}")
             if self._config["rl"]["mode"] == "test" or self._config["rl"]["mode"] == "debug":
+                print(f"The total steps is {self._steps}")
                 if len(self._test_switch_back_duration_list) == 0 or len(self._test_switch_back_error_list) == 0:
                     print("No switch back trials!")
                 else:
