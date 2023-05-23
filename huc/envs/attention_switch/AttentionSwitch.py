@@ -1985,14 +1985,13 @@ class RelocationMemory(Env):
         self._sampled_layout_sg_bg_mjidx_list = None
         self._sampled_layout_sg_mjidx_list = None
 
-        # TODO debug delete later
-        self._action = None
+        self._last_action = None
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
-        self._initial_confidence_std = float(self._neighbour_radius / 10)  # The initial confidence std
-        self._max_confidence_std = float(self._neighbour_radius)  # The max confidence std
+        self._initial_confidence_std = float(self._neighbour_radius * 2)  # The initial confidence std
+        self._max_confidence_std = float(self._neighbour_radius * 4)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
 
         # Initialise thresholds and counters
@@ -2229,7 +2228,7 @@ class RelocationMemory(Env):
                 f"   The LAST sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
                 f"\nThe belief distribution is {self._target_position_belief_distribution}, "
                 f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\nThe LAST action tuple is {self._action}"
+                f"\nThe LAST action tuple is {self._last_action}"
                 f"\n"
             )
 
@@ -2265,7 +2264,7 @@ class RelocationMemory(Env):
                 f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
                 f"\nThe belief distribution is {self._target_position_belief_distribution}, "
                 f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\nThe LAST action tuple is {self._action}"
+                f"\nThe LAST action tuple is {self._last_action}"
                 f"\n--------------------------------------------------------------------------------------"
             )
 
@@ -2298,10 +2297,15 @@ class RelocationMemory(Env):
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
 
-        # Get the agent's decision from the action - only useful for the relocation task
-        confidence = self.normalise(action[0], -1, 1, 0, 1)
-        focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
-        self._action = np.array([action[0], confidence, focus_is_regarded_as_target_boolean])   # TODO debug delete later
+        # Stochastic actions - the probability is learnt
+        # confidence = self.normalise(action[0], -1, 1, 0, 1)
+        # focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
+        # self._last_action = np.array([action[0], confidence, focus_is_regarded_as_target_boolean])
+
+        # Deterministic actions - 0 or 1 is learnt
+        focus_is_regarded_as_target_boolean = True if action[0] > 0 else False
+        self._last_action = np.array([action[0], action[0], focus_is_regarded_as_target_boolean])
+
         self._steps += 1
 
         # Focus detection
