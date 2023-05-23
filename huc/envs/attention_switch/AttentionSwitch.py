@@ -1990,8 +1990,8 @@ class RelocationMemory(Env):
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
-        self._initial_confidence_std = float(self._neighbour_radius/10)  # The initial confidence std
-        self._max_confidence_std = float(self._neighbour_radius * 2)  # The max confidence std
+        self._initial_confidence_std = float(self._neighbour_radius/2)  # The initial confidence std
+        self._max_confidence_std = float(self._neighbour_radius * 3)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
 
         # Initialise thresholds and counters
@@ -2085,7 +2085,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = ILS100
+            self._sampled_layout_idx = BC
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2222,7 +2222,7 @@ class RelocationMemory(Env):
         both target confidence and target position belief are updated here.
         """
 
-        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+        if self._config["rl"]["mode"] == "debug": # or self._config["rl"]["mode"] == "test":
             print(
                 f"\nThe current trial is: {self._num_trials}"
                 f"   The LAST sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
@@ -2258,7 +2258,7 @@ class RelocationMemory(Env):
         # Reset the counter
         self._focus_steps = 0
 
-        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+        if self._config["rl"]["mode"] == "debug": # or self._config["rl"]["mode"] == "test":
             print(
                 f"\nThe current trial is: {self._num_trials}"
                 f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
