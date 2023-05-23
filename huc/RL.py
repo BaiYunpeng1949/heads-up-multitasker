@@ -402,7 +402,7 @@ class RL:
             # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
             print(
                 f'Episode:{episode}     Score:{score} \n'
-                f'--------------------------------------------------\n'
+                f'***************************************************************************************************\n'
             )
 
         return imgs, imgs_eye

@@ -1985,6 +1985,9 @@ class RelocationMemory(Env):
         self._sampled_layout_sg_bg_mjidx_list = None
         self._sampled_layout_sg_mjidx_list = None
 
+        # TODO debug delete later
+        self._action = None
+
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
@@ -2083,7 +2086,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = BC
+            self._sampled_layout_idx = ILS100
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2219,6 +2222,17 @@ class RelocationMemory(Env):
         It's like the transition function in the POMDP,
         both target confidence and target position belief are updated here.
         """
+
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            print(
+                f"\nThe current trial is: {self._num_trials}"
+                f"   The LAST sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+                f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+                f"\nthe confidence distribution is {self._target_confidence_distribution}"
+                f"\nThe LAST action tuple is {self._action}"
+                f"\n"
+            )
+
         # Initializations - The visual search has not started yet
         if visual_search_in_progress == False:
             self._init_distributions()
@@ -2245,12 +2259,14 @@ class RelocationMemory(Env):
         # Reset the counter
         self._focus_steps = 0
 
-        if self._config["rl"]["mode"] == "debug":
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             print(
-                f"\nThe sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+                f"\nThe current trial is: {self._num_trials}"
+                f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
                 f"\nThe belief distribution is {self._target_position_belief_distribution}, "
                 f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\n***********************************************************************************"
+                f"\nThe LAST action tuple is {self._action}"
+                f"\n--------------------------------------------------------------------------------------"
             )
 
         return last_target
@@ -2285,7 +2301,7 @@ class RelocationMemory(Env):
         # Get the agent's decision from the action - only useful for the relocation task
         confidence = self.normalise(action[0], -1, 1, 0, 1)
         focus_is_regarded_as_target_boolean = np.random.choice([True, False], p=[confidence, 1-confidence])
-
+        self._action = np.array([action[0], confidence, focus_is_regarded_as_target_boolean])   # TODO debug delete later
         self._steps += 1
 
         # Focus detection
@@ -2306,10 +2322,6 @@ class RelocationMemory(Env):
             # Update the fixation trials during the relocation visual search
             self._num_visual_search += 1
             self._visual_searched_mjidx_list.append(self._sampled_intended_focus_mjidx)
-
-            if self._config["rl"]["mode"] == "debug":
-                print(f"\nThe focus is regarded as the target: {focus_is_regarded_as_target_boolean}, "
-                      f"the current step is: {self._steps}\n")
 
             if focus_is_regarded_as_target_boolean:
                 # Update the rewards
