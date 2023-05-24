@@ -1991,7 +1991,7 @@ class RelocationMemory(Env):
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
         self._initial_confidence_std = float(self._neighbour_radius/2)  # The initial confidence std
-        self._max_confidence_std = float(self._neighbour_radius * 3)  # The max confidence std
+        self._max_confidence_std = float(self._neighbour_radius * 3.5)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
 
         # Initialise thresholds and counters
