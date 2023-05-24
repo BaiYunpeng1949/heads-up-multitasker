@@ -1978,7 +1978,7 @@ class RelocationMemory(Env):
         self._RED = [1, 0, 0, 1]
 
         # To avoid the delayed decision-making problem, I set the relocation identification steps as 1
-        self._reloc_identification_steps = int(0.25*self._action_sample_freq)  # The number of steps to identify the relocation
+        self._reloc_identification_steps = 1 # int(0.25*self._action_sample_freq)  # The number of steps to identify the relocation
 
         # Layout
         self._sampled_layout_idx = None
@@ -2085,7 +2085,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = BC
+            self._sampled_layout_idx = ILS100
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
