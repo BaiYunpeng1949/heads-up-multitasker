@@ -2009,7 +2009,7 @@ class RelocationMemory(Env):
         # Define the observation space
         width, height = 10, 10  # Use whatever resolution as small as you want
         self._num_stk_frm = 1
-        self._num_stateful_info = 4
+        self._num_stateful_info = 5
         # self.observation_space = Dict({
         #     # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
         #     # "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1,)),
@@ -2048,8 +2048,11 @@ class RelocationMemory(Env):
         # Normalize the current focus
         focus_idx = np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]
         focus_confidence_norm = self.normalise(self._target_confidence_distribution[focus_idx], 0, 1, -1, 1)
+        # Normalize the number of searched items/cells/words
+        searched_cells_norm = self.normalise(len(self._visual_searched_mjidx_list), 0, len(self._sampled_layout_sg_mjidx_list), -1, 1)
 
-        stateful_info = np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_confidence_norm])
+        stateful_info = np.array([remaining_ep_len_norm, remaining_trials_norm, layout_norm, focus_confidence_norm,
+                                  searched_cells_norm])
 
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
@@ -2071,10 +2074,6 @@ class RelocationMemory(Env):
         # Reset the variables and counters
         self._steps = 0
         self._num_trials = 0
-
-        # Initialize eyeball rotation angles
-        self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
-        self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
         # Reset some test-related variables
         self._test_switch_back_duration_list = []
