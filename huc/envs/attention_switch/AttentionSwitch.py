@@ -1990,6 +1990,7 @@ class RelocationMemory(Env):
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.0101  # Obtained empirically
+        self._position_belief_std = float(self._neighbour_radius * 2)  # The position belief std
         self._initial_confidence_std = float(self._neighbour_radius/2)  # The initial confidence std
         self._max_confidence_std = float(self._neighbour_radius * 3.5)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
@@ -2181,7 +2182,7 @@ class RelocationMemory(Env):
             dist = np.linalg.norm(xpos - center_xpos)
             # Initialize the position belief distribution - Calculate the probability using the Gaussian distribution - the pre-defined radius is std
             idx = np.where(self._sampled_layout_sg_mjidx_list == mjidx)[0][0]
-            self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._neighbour_radius) ** 2)
+            self._target_position_belief_distribution[idx] = np.exp(-0.5 * (dist / self._position_belief_std) ** 2)
             # Initialize the confidence distribution - use the Gaussian distribution - use a changing std
             self._target_confidence_distribution[idx] = np.exp(-0.5 * (dist / self._initial_confidence_std) ** 2)
 
