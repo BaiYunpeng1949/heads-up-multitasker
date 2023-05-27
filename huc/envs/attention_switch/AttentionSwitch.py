@@ -2085,7 +2085,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = ILS100
+            self._sampled_layout_idx = BC
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2293,11 +2293,8 @@ class RelocationMemory(Env):
         x, y, z = xpos[0], xpos[1], xpos[2]
         intended_position = np.array([z/y, -x/y])
 
-        for i in range(7):
-            # The agent needs to take steps to get to the target
-            self._data.ctrl[:] = intended_position
-            # Advance the simulation
-            mujoco.mj_step(self._model, self._data, self._frame_skip)
+        self._data.qpos[:] = intended_position
+        mujoco.mj_forward(self._model, self._data)
 
         # Stochastic actions - the probability is learnt
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
