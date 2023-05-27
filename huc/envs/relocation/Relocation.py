@@ -39,7 +39,7 @@ class Read(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "attention-switch-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "relocation-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -285,7 +285,7 @@ class AttentionSwitch(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "attention-switch-v2.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "relocation-v2.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -710,7 +710,7 @@ class AttentionSwitch3Layouts(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "attention-switch-v3.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "relocation-v3.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -1338,7 +1338,7 @@ class AttentionSwitchMemory(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "attention-switch-v3.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "relocation-v3.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -1938,7 +1938,7 @@ class RelocationMemory(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "attention-switch-v3.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "relocation-v4.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -1954,14 +1954,11 @@ class RelocationMemory(Env):
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                         "smart-glass-pane-interline-spacing-100")
         self._sgp_bc_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane-bottom-center")
-        self._sgp_mr_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "smart-glass-pane-middle-right")
 
         # Get MuJoCo cell idxs (geoms that belong to "smart-glass-pane-interline-spacing-100")
         self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
         self._bc_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_bc_body_mjidx)[0]
-        self._mr_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_mr_body_mjidx)[0]
-        self._fixations_all_layouts_mjidxs = np.concatenate((self._ils100_cells_mjidxs, self._bc_cells_mjidxs,
-                                                             self._mr_cells_mjidxs))
+        self._fixations_all_layouts_mjidxs = np.concatenate((self._ils100_cells_mjidxs, self._bc_cells_mjidxs))
 
         # Define the target idx probability distribution -
         self._true_target_mjidx = None  # The true target MuJoCo idx
@@ -2000,7 +1997,7 @@ class RelocationMemory(Env):
         self._focus_steps = None
         self._num_trials = None
         self._max_trials = 5
-        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 40)
+        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 100)
 
         # Test-related variables
         self._test_switch_back_duration_list = None
@@ -2011,23 +2008,17 @@ class RelocationMemory(Env):
         width, height = 10, 10  # Use whatever resolution as small as you want
         self._num_stk_frm = 1
         self._num_stateful_info = 5
-        # self.observation_space = Dict({
-        #     # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
-        #     # "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1,)),
-        #     "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
-        # })
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
-        # Define the action space - 2 dof eyeball rotation control + decision to relocate or not
-        # self.action_space = Box(low=-1, high=1, shape=(self._model.nu + 1,))
+        # Define the action space - decision to relocate or not
         self.action_space = Box(low=-1, high=1, shape=(1,))
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
         self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height],
-                               maxgeom=100,
+                               maxgeom=1000,
                                dt=1 / self._action_sample_freq)
-        self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
+        self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=1000,
                                dt=1 / self._action_sample_freq)
 
     @staticmethod
@@ -2058,12 +2049,12 @@ class RelocationMemory(Env):
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError(f"The shape of stateful information is not correct! The true shape is: {stateful_info.shape[0]}")
 
-        if self._config["rl"]["mode"] == "debug":
-            print(
-                f"The current focus confidence is {self._target_confidence_distribution[np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]]}, "
-                f"the true target is: {self._true_target_mjidx}, "
-                f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}"
-                f"\nStateful_info: {stateful_info}")
+        # if self._config["rl"]["mode"] == "debug":
+        #     print(
+        #         f"The current focus confidence is {self._target_confidence_distribution[np.where(self._sampled_layout_sg_mjidx_list == self._sampled_intended_focus_mjidx)[0][0]]}, "
+        #         f"the true target is: {self._true_target_mjidx}, "
+        #         f"the sampled intended focus is: {self._sampled_intended_focus_mjidx}"
+        #         f"\nStateful_info: {stateful_info}")
 
         return stateful_info
 
@@ -2095,8 +2086,6 @@ class RelocationMemory(Env):
             self._sampled_layout_sg_mjidx_list = self._ils100_cells_mjidxs
         elif self._sampled_layout_idx == BC:
             self._sampled_layout_sg_mjidx_list = self._bc_cells_mjidxs
-        elif self._sampled_layout_idx == MR:
-            self._sampled_layout_sg_mjidx_list = self._mr_cells_mjidxs
         else:
             raise ValueError("The layout index is not correct!")
 
@@ -2223,14 +2212,7 @@ class RelocationMemory(Env):
         """
 
         if self._config["rl"]["mode"] == "debug": # or self._config["rl"]["mode"] == "test":
-            print(
-                f"\nThe current trial is: {self._num_trials}"
-                f"   The LAST sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-                f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-                f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\nThe LAST action tuple is {self._last_action}"
-                f"\n"
-            )
+            self._print_logs()
 
         # Initializations - The visual search has not started yet
         if visual_search_in_progress == False:
@@ -2259,14 +2241,7 @@ class RelocationMemory(Env):
         self._focus_steps = 0
 
         if self._config["rl"]["mode"] == "debug": # or self._config["rl"]["mode"] == "test":
-            print(
-                f"\nThe current trial is: {self._num_trials}"
-                f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-                f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-                f"\nthe confidence distribution is {self._target_confidence_distribution}"
-                f"\nThe LAST action tuple is {self._last_action}"
-                f"\n--------------------------------------------------------------------------------------"
-            )
+            self._print_logs()
 
         return last_target
 
@@ -2305,15 +2280,8 @@ class RelocationMemory(Env):
         focus_is_regarded_as_target_boolean = True if action[0] > 0 else False
         self._last_action = np.array([action[0], action[0], focus_is_regarded_as_target_boolean])
 
-        # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-        #     print(
-        #         f"\nThe current trial is: {self._num_trials}"
-        #         f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-        #         f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-        #         f"\nthe confidence distribution is {self._target_confidence_distribution}"
-        #         f"\nThe current action tuple is {self._last_action}"
-        #         f"\n--------------------------------------------------------------------------------------"
-        #     )
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            self._print_logs()
 
         self._steps += 1
 
@@ -2339,9 +2307,9 @@ class RelocationMemory(Env):
             if focus_is_regarded_as_target_boolean:
                 # Update the rewards
                 if self._sampled_intended_focus_mjidx == self._true_target_mjidx:
-                    reward = 20
+                    reward = 100
                 else:
-                    reward = -20
+                    reward = -100
                 # Update some variables
                 self._reset_trial()
             else:
@@ -2350,9 +2318,9 @@ class RelocationMemory(Env):
                 if last_target is not None:
                     # The last target is given if all the cells have been searched
                     if last_target == self._true_target_mjidx:
-                        reward = 20
+                        reward = 100
                     else:
-                        reward = -20
+                        reward = -100
                     # Update some variables
                     self._reset_trial()
 
@@ -2374,3 +2342,14 @@ class RelocationMemory(Env):
         mujoco.mj_forward(self._model, self._data)
 
         return self._get_obs(), reward, terminate, {}
+
+    def _print_logs(self):
+        print(
+            f"\nThe current trial is: {self._num_trials}"
+            f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+            f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+            f"\nthe confidence distribution is {self._target_confidence_distribution}"
+            f"\nThe LAST action tuple is {self._last_action}"
+            f"\n--------------------------------------------------------------------------------------"
+        )
+        pass

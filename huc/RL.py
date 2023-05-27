@@ -28,7 +28,7 @@ from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBac
 from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
 from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 from huc.envs.pseudo_locomotion.ZRead import ZReadBase
-from huc.envs.attention_switch.AttentionSwitch import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory, RelocationMemory
+from huc.envs.relocation.Relocation import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory, RelocationMemory
 
 _MODES = {
     'train': 'train',
