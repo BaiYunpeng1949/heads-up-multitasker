@@ -2328,7 +2328,7 @@ class RelocationMemory(Env):
             self._model.geom(mjidx).rgba = self._BLACK
         self._model.geom(self._true_target_mjidx).rgba = self._YELLOW
 
-        reward = -0.1
+        reward = -1
 
         if geomid == self._sampled_intended_focus_mjidx:
             self._focus_steps += 1
@@ -2342,9 +2342,9 @@ class RelocationMemory(Env):
             if focus_is_regarded_as_target_boolean:
                 # Update the rewards
                 if self._sampled_intended_focus_mjidx == self._true_target_mjidx:
-                    reward = 100
+                    reward = 20
                 else:
-                    reward = -100
+                    reward = -20
                 # Update some variables
                 self._reset_trial()
             else:
@@ -2353,9 +2353,9 @@ class RelocationMemory(Env):
                 if last_target is not None:
                     # The last target is given if all the cells have been searched
                     if last_target == self._true_target_mjidx:
-                        reward = 100
+                        reward = 20
                     else:
-                        reward = -100
+                        reward = -20
                     # Update some variables
                     self._reset_trial()
 
