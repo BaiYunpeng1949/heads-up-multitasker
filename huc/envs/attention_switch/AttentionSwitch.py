@@ -2000,7 +2000,7 @@ class RelocationMemory(Env):
         self._focus_steps = None
         self._num_trials = None
         self._max_trials = 5
-        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 20)
+        self.ep_len = int(self._max_trials * self._reloc_identification_steps * 40)
 
         # Test-related variables
         self._test_switch_back_duration_list = None
@@ -2085,7 +2085,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = ILS100
+            self._sampled_layout_idx = BC
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2292,10 +2292,12 @@ class RelocationMemory(Env):
         xpos = self._data.geom(mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
         intended_position = np.array([z/y, -x/y])
-        # The agent needs to take steps to get to the target
-        self._data.ctrl[:] = intended_position
-        # Advance the simulation
-        mujoco.mj_step(self._model, self._data, self._frame_skip)
+
+        for i in range(7):
+            # The agent needs to take steps to get to the target
+            self._data.ctrl[:] = intended_position
+            # Advance the simulation
+            mujoco.mj_step(self._model, self._data, self._frame_skip)
 
         # Stochastic actions - the probability is learnt
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
@@ -2305,6 +2307,16 @@ class RelocationMemory(Env):
         # Deterministic actions - 0 or 1 is learnt
         focus_is_regarded_as_target_boolean = True if action[0] > 0 else False
         self._last_action = np.array([action[0], action[0], focus_is_regarded_as_target_boolean])
+
+        # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+        #     print(
+        #         f"\nThe current trial is: {self._num_trials}"
+        #         f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+        #         f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+        #         f"\nthe confidence distribution is {self._target_confidence_distribution}"
+        #         f"\nThe current action tuple is {self._last_action}"
+        #         f"\n--------------------------------------------------------------------------------------"
+        #     )
 
         self._steps += 1
 
