@@ -2076,7 +2076,7 @@ class RelocationMemory(Env):
         self._sampled_layout_idx = np.random.choice([ILS100, BC])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._sampled_layout_idx = BC
+            self._sampled_layout_idx = ILS100
             print(f"NOTE, the current layout is: {self._sampled_layout_idx}")
 
         # Reset the scene - except the chosen layout, all the other layouts are hidden
@@ -2134,7 +2134,7 @@ class RelocationMemory(Env):
         v2_u = unit_vector(v2)
         return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
-    def _angle_from_focus(self, site_name, target_idx):
+    def _angle_from_focus(self, site_name="rangefinder-site", target_idx=None):
         """
         Return the angle between the vector pointing from the site to the target and the vector pointing from the site to the front
         ranges from 0 to pi.
@@ -2266,10 +2266,11 @@ class RelocationMemory(Env):
         mjidx = self._sampled_intended_focus_mjidx
         xpos = self._data.geom(mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
-        intended_position = np.array([z/y, -x/y])
+        intended_position = np.array([np.arctan(z/y), np.arctan(-x/y)])
 
         self._data.qpos[:] = intended_position
         mujoco.mj_forward(self._model, self._data)
+        self._steps += 1
 
         # Stochastic actions - the probability is learnt
         # confidence = self.normalise(action[0], -1, 1, 0, 1)
@@ -2282,8 +2283,6 @@ class RelocationMemory(Env):
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._print_logs()
-
-        self._steps += 1
 
         # Focus detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
