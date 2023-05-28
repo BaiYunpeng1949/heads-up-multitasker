@@ -2344,12 +2344,12 @@ class RelocationMemory(Env):
         return self._get_obs(), reward, terminate, {}
 
     def _print_logs(self):
-        print(
-            f"\nThe current trial is: {self._num_trials}"
-            f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
-            f"\nThe belief distribution is {self._target_position_belief_distribution}, "
-            f"\nthe confidence distribution is {self._target_confidence_distribution}"
-            f"\nThe LAST action tuple is {self._last_action}"
-            f"\n--------------------------------------------------------------------------------------"
-        )
+        # print(
+        #     f"\nThe current trial is: {self._num_trials}"
+        #     f"   The CURRENT sampled intended focus mjidx is {self._sampled_intended_focus_mjidx}, the true target mjidx is {self._true_target_mjidx}"
+        #     f"\nThe belief distribution is {self._target_position_belief_distribution}, "
+        #     f"\nthe confidence distribution is {self._target_confidence_distribution}"
+        #     f"\nThe LAST action tuple is {self._last_action}"
+        #     f"\n--------------------------------------------------------------------------------------"
+        # )
         pass
