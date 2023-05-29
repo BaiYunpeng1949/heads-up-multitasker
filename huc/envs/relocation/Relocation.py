@@ -1987,7 +1987,7 @@ class RelocationMemory(Env):
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
         self._neighbour_radius = 0.01  # Obtained empirically
-        self._position_belief_std_sparse = float(self._neighbour_radius*2.5)
+        self._position_belief_std_sparse = float(self._neighbour_radius*1)
         self._position_belief_std_condense = float(self._neighbour_radius*1)
         self._position_belief_std = None
         self._initial_confidence_std = float(self._neighbour_radius/2)  # The initial confidence std
@@ -2296,7 +2296,9 @@ class RelocationMemory(Env):
             self._model.geom(mjidx).rgba = self._BLACK
         self._model.geom(self._true_target_mjidx).rgba = self._YELLOW
 
-        reward = -1
+        correct_relocation_bonus = 100
+        decision_making_time_cost = -10
+        reward = decision_making_time_cost
 
         if geomid == self._sampled_intended_focus_mjidx:
             self._focus_steps += 1
@@ -2310,9 +2312,7 @@ class RelocationMemory(Env):
             if focus_is_regarded_as_target_boolean:
                 # Update the rewards
                 if self._sampled_intended_focus_mjidx == self._true_target_mjidx:
-                    reward = 100
-                else:
-                    reward = -100
+                    reward = correct_relocation_bonus
                 # Update some variables
                 self._reset_trial()
             else:
@@ -2321,9 +2321,7 @@ class RelocationMemory(Env):
                 if last_target is not None:
                     # The last target is given if all the cells have been searched
                     if last_target == self._true_target_mjidx:
-                        reward = 100
-                    else:
-                        reward = -100
+                        reward = correct_relocation_bonus
                     # Update some variables
                     self._reset_trial()
 
