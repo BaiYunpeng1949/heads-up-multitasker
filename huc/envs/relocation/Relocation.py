@@ -1986,8 +1986,10 @@ class RelocationMemory(Env):
 
         # Determine the radian of the visual spotlight for visual search, or 'neighbors'
         # TODO hyper-parameters, might need to fit to human data - maybe link to the central vision and peripheral vision?
-        self._neighbour_radius = 0.0101  # Obtained empirically
-        self._position_belief_std = float(self._neighbour_radius*1.5)  # The position belief std
+        self._neighbour_radius = 0.01  # Obtained empirically
+        self._position_belief_std_sparse = float(self._neighbour_radius*2.5)
+        self._position_belief_std_condense = float(self._neighbour_radius*1)
+        self._position_belief_std = None
         self._initial_confidence_std = float(self._neighbour_radius/2)  # The initial confidence std
         self._max_confidence_std = float(self._neighbour_radius * 3)  # The max confidence std
         self._visual_searched_mjidx_list = None  # The MuJoCo idxs of the cells that have been visual searched
@@ -2084,8 +2086,10 @@ class RelocationMemory(Env):
             self._model.geom(mjidx).rgba[3] = 0
         if self._sampled_layout_idx == ILS100:
             self._sampled_layout_sg_mjidx_list = self._ils100_cells_mjidxs
+            self._position_belief_std = self._position_belief_std_sparse
         elif self._sampled_layout_idx == BC:
             self._sampled_layout_sg_mjidx_list = self._bc_cells_mjidxs
+            self._position_belief_std = self._position_belief_std_condense
         else:
             raise ValueError("The layout index is not correct!")
 
