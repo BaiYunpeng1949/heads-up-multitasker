@@ -1,11 +1,11 @@
-simulator_name: 'moving_eye'
+simulator_name: 'huc'
 
 rl:
-  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
-    total_timesteps: 200000000
-    checkpoints_folder_name: 'checkpoints_0529_relocation_2_200m'
+    total_timesteps: 100000000
+    checkpoints_folder_name: 'checkpoints_0602_mobile_reading_100m'
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # TODO do not change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -21,7 +21,7 @@ rl:
     save_freq: 50000  # Save a checkpoint every 0.5 million steps
 
   test:
-    num_episodes: 10
+    num_episodes: 1
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
     loaded_model_name: 'rl_model_75000000_steps'
     continual_logs_name: ''

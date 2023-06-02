@@ -29,6 +29,7 @@ from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoReloc
 from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
 from huc.envs.pseudo_locomotion.ZRead import ZReadBase
 from huc.envs.relocation.Relocation import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory, RelocationMemory
+from huc.envs.mobile_reading.MobileRead import Read
 
 _MODES = {
     'train': 'train',
@@ -214,7 +215,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = RelocationMemory()
+        self._env = Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -236,26 +237,26 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
             # Configure the model - Initialise model that is run with multiple threads - TODO resume when training with vision
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=16),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=32),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=32),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
