@@ -152,7 +152,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._MODES[1]}")
 
         # Sample a target according to the target idx probability distribution
@@ -249,7 +249,7 @@ class Read(Env):
         # TODO simple sinusoidal perturbation is to weak to convince others the necessity of the using RL,
         #  maybe later add some touch perturbations and let the agent learns to adapt to any perturbations
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
-        if self._mode == self._MODES[0]:
+        if self._mode == self._MODES[1]:
             amplitude = 0
         else:
             amplitude = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period)
@@ -270,5 +270,8 @@ class Read(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
+
+            if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+                print(f"The total time steps is: {self._steps}")
 
         return self._get_obs(), reward, terminate, {}
