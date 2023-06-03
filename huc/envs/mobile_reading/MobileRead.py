@@ -59,10 +59,16 @@ class Read(Env):
         self._mode = None
         # Initialize the perturbation parameters
         self._perturbation_peak = 0.015
-        self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave
+        self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave - 2 feet
         self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
         self._perturbation_amplitude = None
+
+        # Eye movement bounds related parameters
+        # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
+        # here I use a representative value of 35 to 36 degrees per second.
+        # This applies to both horizontal and vertical saccades
+        self._saccade_stepwise_speed_bounds = np.array([-35, 35]) * np.pi / 180 / self._action_sample_freq
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -226,11 +232,20 @@ class Read(Env):
     def step(self, action):
         # Action at t
         # Normalise action from [-1, 1] to actuator control range
-        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+        # action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        # action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
-        # Set motor control
-        self._data.ctrl[:] = action
+        action[0] = self.normalise(action[0], -1, 1, *self._saccade_stepwise_speed_bounds[:])
+        action[1] = self.normalise(action[1], -1, 1, *self._saccade_stepwise_speed_bounds[:])
+        # TODO the saccade speed is mainly a function of the target distance/amplitude. I can model this later.
+
+        # # Set motor control
+        # self._data.ctrl[:] = action
+
+        for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
+            act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
+            self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
+                                                 *self._model.actuator_ctrlrange[idx])
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
@@ -250,16 +265,16 @@ class Read(Env):
 
         # Update the perturbation - firstly try the linear perturbation
         # TODO simple sinusoidal perturbation is to weak to convince others the necessity of the using RL,
-        #  maybe later add some touch perturbations and let the agent learns to adapt to any perturbations
+        #  maybe later add some tough perturbations and let the agent learns to adapt to any perturbations
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
         if self._mode == self._MODES[0]:
             amplitude_z = 0
-            amplitude_x = 0
+            # amplitude_x = 0
         else:
             amplitude_z = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_z)
-            amplitude_x = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_x)
+            # amplitude_x = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_x)
         self._data.qpos[self._perturbation_joint_z_mjidx] = amplitude_z
-        self._data.qpos[self._perturbation_joint_x_mjidx] = amplitude_x
+        # self._data.qpos[self._perturbation_joint_x_mjidx] = amplitude_x
         mujoco.mj_forward(self._model, self._data)
 
         # Update the transitions - get rewards and next state
