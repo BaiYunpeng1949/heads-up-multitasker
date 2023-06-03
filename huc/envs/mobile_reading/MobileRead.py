@@ -67,11 +67,22 @@ class Read(Env):
         self._perturbation_velocity = None
         self._perturbation_amplitude = None
 
+        # Oculomotor control related parameters
+        # Start from action noises - the integration of oculomotor noise and the drifts after fixations.
+        # TODO the current assumption is that the saccades on reading are not ballistic but under active and continuous control,
+        #  now the simplified version is the saccade is a stepwise movement, every time step contains a saccade.
+        # The oculomotor noise is formalized as SDN, the zero-mean Gaussian noise with a standard deviation of
+        # the signal proportional to the magnitude of the signal itself.
+        self._rho_ocular_motor = None
+
         # Eye movement bounds related parameters
         # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
         # here I use a representative value of 35 to 36 degrees per second.
         # This applies to both horizontal and vertical saccades
         self._saccade_stepwise_speed_bounds = np.array([-35, 35]) * np.pi / 180 / self._action_sample_freq
+
+        # The fatigue related parameters
+        self._ctrl_list = None
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -160,14 +171,20 @@ class Read(Env):
         self._on_target_steps = 0
         self._num_trials = 0
 
+        self._ctrl_list = []
+
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
+
+        # Initialize the ocularmotor noise proportion,
+        # 0.08 for the stationary mode (prior work), 0.16 for the moving mode (TODO hyperparameter tuning)
+        self._rho_ocular_motor = 0.08 if self._mode == self._MODES[0] else 0.16
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -244,17 +261,25 @@ class Read(Env):
         # action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         # action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
+        # # Set motor control
+        # self._data.ctrl[:] = action
+
         action[0] = self.normalise(action[0], -1, 1, *self._saccade_stepwise_speed_bounds[:])
         action[1] = self.normalise(action[1], -1, 1, *self._saccade_stepwise_speed_bounds[:])
         # TODO the saccade speed is mainly a function of the target distance/amplitude. I can model this later.
 
-        # # Set motor control
-        # self._data.ctrl[:] = action
+        # Get the ocular motor noise
+        ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
+        action[0:2] += ocular_motor_noise
 
+        # Set motor control in MuJoCo simulation
         for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
             act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
             self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
                                                  *self._model.actuator_ctrlrange[idx])
+
+        # Save the control for fatigue calculation
+        self._ctrl_list.append(self._data.ctrl.copy())
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
@@ -303,5 +328,7 @@ class Read(Env):
 
             if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
                 print(f"The total time steps is: {self._steps}")
+                weight = 1
+                print(f" The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}")
 
         return self._get_obs(), reward, terminate, {}
