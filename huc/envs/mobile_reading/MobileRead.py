@@ -58,7 +58,10 @@ class Read(Env):
         self._MODES = ["stationary", "mobile"]
         self._mode = None
         # Initialize the perturbation parameters
-        self._perturbation_peak = 0.015
+        # The exact amplitude is difficult to specify without direct measurement,
+        # but some studies suggest a range of 2-5 cm for normal walking.
+        # This is also dependent on a person's height, stride length, and other factors.
+        self._perturbation_peak = 0.005
         self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave - 2 feet
         self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
