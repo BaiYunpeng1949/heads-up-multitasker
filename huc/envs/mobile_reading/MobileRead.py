@@ -161,7 +161,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
