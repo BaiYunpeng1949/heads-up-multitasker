@@ -155,8 +155,8 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[0]
-            print(f"NOTE, the current mode is: {self._MODES[1]}")
+            self._mode = self._MODES[1]
+            print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -252,7 +252,7 @@ class Read(Env):
         # TODO simple sinusoidal perturbation is to weak to convince others the necessity of the using RL,
         #  maybe later add some touch perturbations and let the agent learns to adapt to any perturbations
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
-        if self._mode == self._MODES[1]:
+        if self._mode == self._MODES[0]:
             amplitude_z = 0
             amplitude_x = 0
         else:
