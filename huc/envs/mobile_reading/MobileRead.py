@@ -39,12 +39,12 @@ class Read(Env):
         self._perturbation_joint_z_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "perturbation-joint-z")
         self._perturbation_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT,
                                                              "perturbation-joint-x")
-        self._eye_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
-        self._sgp_ils100_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+        self._eye_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
+        self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-100")
 
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
-        self._ils100_cells_idxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_idx)[0]
+        self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
 
         self._sampled_target_mjidx = None
 
@@ -75,6 +75,8 @@ class Read(Env):
         self._on_target_steps = None
         self._num_trials = None  # Cells are already been read
         self._max_trials = 5  # Maximum number of cells to read - more trials in one episode will boost the convergence
+        if self._config["rl"]["mode"] == "test":
+            self._max_trials = len(self._ils100_cells_mjidxs)
         self.ep_len = int(self._max_trials * self._dwell_steps * 5)
 
         # Define the observation space
@@ -131,8 +133,8 @@ class Read(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        sampled_target_idx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_idxs[0],
-                                                 self._ils100_cells_idxs[-1], -1, 1)
+        sampled_target_idx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
+                                                 self._ils100_cells_mjidxs[-1], -1, 1)
         mode_norm = -1 if self._mode == self._MODES[0] else 1
 
         stateful_info = np.array(
@@ -161,7 +163,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
@@ -213,15 +215,19 @@ class Read(Env):
 
     def _sample_target(self):
         # Sample a target from the cells according to the target idx probability distribution
-        new_sampled_target_mjidx = np.random.choice(self._ils100_cells_idxs.copy())
+        new_sampled_target_mjidx = np.random.choice(self._ils100_cells_mjidxs.copy())
 
         # Make sure the sampled target is different from the previous one
         while True:
             if new_sampled_target_mjidx != self._sampled_target_mjidx:
                 break
             else:
-                new_sampled_target_mjidx = np.random.choice(self._ils100_cells_idxs.copy())
+                new_sampled_target_mjidx = np.random.choice(self._ils100_cells_mjidxs.copy())
         self._sampled_target_mjidx = new_sampled_target_mjidx
+
+        if self._config["rl"]["mode"] == "test":
+            if self._num_trials <= self._max_trials - 1:
+                self._sampled_target_mjidx = self._ils100_cells_mjidxs[self._num_trials]
 
         # Reset the counter
         self._on_target_steps = 0
@@ -256,7 +262,7 @@ class Read(Env):
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
         # Reset the scene first
-        for mj_idx in self._ils100_cells_idxs:
+        for mj_idx in self._ils100_cells_mjidxs:
             self._model.geom(mj_idx).rgba = self._DFLT_RGBA
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._sampled_target_mjidx:
