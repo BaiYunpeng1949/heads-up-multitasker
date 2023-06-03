@@ -37,6 +37,8 @@ class Read(Env):
         self._eye_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
         self._eye_joint_y_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-y")
         self._perturbation_joint_z_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "perturbation-joint-z")
+        self._perturbation_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT,
+                                                             "perturbation-joint-x")
         self._eye_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
         self._sgp_ils100_body_idx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-100")
@@ -57,7 +59,8 @@ class Read(Env):
         self._mode = None
         # Initialize the perturbation parameters
         self._perturbation_peak = 0.015
-        self._perturbation_period = int(1 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave
+        self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave
+        self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
         self._perturbation_amplitude = None
 
@@ -250,10 +253,13 @@ class Read(Env):
         #  maybe later add some touch perturbations and let the agent learns to adapt to any perturbations
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
         if self._mode == self._MODES[1]:
-            amplitude = 0
+            amplitude_z = 0
+            amplitude_x = 0
         else:
-            amplitude = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period)
-        self._data.qpos[self._perturbation_joint_z_mjidx] = amplitude
+            amplitude_z = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_z)
+            amplitude_x = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_x)
+        self._data.qpos[self._perturbation_joint_z_mjidx] = amplitude_z
+        self._data.qpos[self._perturbation_joint_x_mjidx] = amplitude_x
         mujoco.mj_forward(self._model, self._data)
 
         # Update the transitions - get rewards and next state

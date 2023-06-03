@@ -59,12 +59,14 @@
             <geom name="grid-12" pos="0.015 0 -0.0268" class="smart-glass-grid"/>
 
             <joint name="perturbation-joint-z" class="perturbation" axis="0 0 1" range="-0.10 0.10"/>
+            <joint name="perturbation-joint-x" class="perturbation" axis="1 0 0" range="-0.10 0.10"/>
         </body>
     </worldbody>
     <actuator>
         <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-1.0 1.0"/>
         <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-1.0 1.0"/>
 <!--        <position name="perturbation-z-motor" joint="perturbation-joint-z" class="perturbation" ctrlrange="-0.10 0.10"/>-->
+<!--        <position name="perturbation-x-motor" joint="perturbation-joint-x" class="perturbation" ctrlrange="-0.10 0.10"/>-->
     </actuator>
     <sensor>
         <rangefinder name="rangefinder" site="rangefinder-site"/>
