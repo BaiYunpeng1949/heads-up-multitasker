@@ -186,7 +186,7 @@ class Read(Env):
         # Initialize the ocularmotor noise proportion,
         # 0.08 for the stationary mode (prior work), 0.16 for the moving mode (TODO hyperparameter tuning)
         self._rho_ocular_motor = 0.08 if self._mode == self._MODES[0] else 0.16
-        self._rho_drift = 0.33 if self._mode == self._MODES[0] else 0.66
+        self._rho_drift = 0.33 if self._mode == self._MODES[0] else 0.50    # 0.50 means the std is half of the target size
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -272,24 +272,32 @@ class Read(Env):
 
         # Get the current fixation status. If is still on the process of saccading, apply the ocular motor noise
         dist, geomid = self._get_focus(site_name="rangefinder-site")
+        # TODO a potential bug: what if the focus has moved outside but the drift has not been finished.
+        #  It will be dragged back to the target as a normal fixation.
         if geomid == self._sampled_target_mjidx:
             # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
             target_size = self._model.geom(geomid).size[0] * 2
-            target_position = self._data.geom(geomid).xpos[0:2]
-            drift_noise = np.random.normal(0, np.abs(self._rho_drift * target_size))
-            print(f"The rho drift is: {self._rho_drift}, the drift noise is: {drift_noise}, "
-                  f"the action is: {action}")    # TODO debug delete later
-            action[0:2] += drift_noise
+            drift_noise_xpos_x = np.random.normal(0, np.abs(self._rho_drift * target_size))
+            drift_noise_xpos_z = np.random.normal(0, np.abs(self._rho_drift * target_size))
+            target_xpos = self._data.geom(geomid).xpos
+            x, y, z = target_xpos[0], target_xpos[1], target_xpos[2]
+            drift_xpos_x, drift_xpos_z = x + drift_noise_xpos_x, z + drift_noise_xpos_z
+            drift_sample_location_vertical_radius = np.arctan(drift_xpos_z / y)
+            drift_sample_location_horizontal_radius = np.arctan(-drift_xpos_x / y)
+
+            drift_samples_ctrl = np.array([drift_sample_location_vertical_radius, drift_sample_location_horizontal_radius])
+
+            self._data.ctrl[0:2] = np.clip(drift_samples_ctrl, *self._model.actuator_ctrlrange[0:2])
         else:
             # Get the ocular motor noise
             ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
             action[0:2] += ocular_motor_noise
 
-        # Set motor control in MuJoCo simulation
-        for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
-            act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
-            self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
-                                                 *self._model.actuator_ctrlrange[idx])
+            # Set motor control in MuJoCo simulation - moves saccades by saccades
+            for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
+                act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
+                self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
+                                                     *self._model.actuator_ctrlrange[idx])
 
         # Save the control for fatigue calculation
         self._ctrl_list.append(self._data.ctrl.copy())
