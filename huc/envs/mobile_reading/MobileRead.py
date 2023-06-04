@@ -73,7 +73,8 @@ class Read(Env):
         #  now the simplified version is the saccade is a stepwise movement, every time step contains a saccade.
         # The oculomotor noise is formalized as SDN, the zero-mean Gaussian noise with a standard deviation of
         # the signal proportional to the magnitude of the signal itself.
-        self._rho_ocular_motor = None       # TODO should I increase it such that the agent can leave the fixation area like drift and re-enter?
+        self._rho_ocular_motor = None
+        self._rho_drift = None
 
         # Eye movement bounds related parameters
         # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
@@ -185,6 +186,7 @@ class Read(Env):
         # Initialize the ocularmotor noise proportion,
         # 0.08 for the stationary mode (prior work), 0.16 for the moving mode (TODO hyperparameter tuning)
         self._rho_ocular_motor = 0.08 if self._mode == self._MODES[0] else 0.16
+        self._rho_drift = 0.33 if self._mode == self._MODES[0] else 0.66
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -268,9 +270,17 @@ class Read(Env):
         action[1] = self.normalise(action[1], -1, 1, *self._saccade_stepwise_speed_bounds[:])
         # TODO the saccade speed is mainly a function of the target distance/amplitude. I can model this later.
 
-        # Get the ocular motor noise
-        ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
-        action[0:2] += ocular_motor_noise
+        # Get the current fixation status. If is still on the process of saccading, apply the ocular motor noise
+        dist, geomid = self._get_focus(site_name="rangefinder-site")
+        if geomid == self._sampled_target_mjidx:
+            # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
+            fixation_size = self._model.geom(geomid).size[0] * 2
+            drift_noise = np.random.normal(0, np.abs(self._rho_drift * fixation_size))
+            action[0:2] += drift_noise
+        else:
+            # Get the ocular motor noise
+            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
+            action[0:2] += ocular_motor_noise
 
         # Set motor control in MuJoCo simulation
         for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
