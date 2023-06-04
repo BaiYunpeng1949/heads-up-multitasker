@@ -180,7 +180,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Initialize the ocularmotor noise proportion,
@@ -274,8 +274,11 @@ class Read(Env):
         dist, geomid = self._get_focus(site_name="rangefinder-site")
         if geomid == self._sampled_target_mjidx:
             # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
-            fixation_size = self._model.geom(geomid).size[0] * 2
-            drift_noise = np.random.normal(0, np.abs(self._rho_drift * fixation_size))
+            target_size = self._model.geom(geomid).size[0] * 2
+            target_position = self._data.geom(geomid).xpos[0:2]
+            drift_noise = np.random.normal(0, np.abs(self._rho_drift * target_size))
+            print(f"The rho drift is: {self._rho_drift}, the drift noise is: {drift_noise}, "
+                  f"the action is: {action}")    # TODO debug delete later
             action[0:2] += drift_noise
         else:
             # Get the ocular motor noise
@@ -339,6 +342,7 @@ class Read(Env):
             if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
                 print(f"The total time steps is: {self._steps}")
                 weight = 1
-                print(f" The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}")
+                print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
+                      f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
 
         return self._get_obs(), reward, terminate, {}
