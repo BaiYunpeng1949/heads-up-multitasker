@@ -73,7 +73,7 @@ class Read(Env):
         #  now the simplified version is the saccade is a stepwise movement, every time step contains a saccade.
         # The oculomotor noise is formalized as SDN, the zero-mean Gaussian noise with a standard deviation of
         # the signal proportional to the magnitude of the signal itself.
-        self._rho_ocular_motor = None
+        self._rho_ocular_motor = None       # TODO should I increase it such that the agent can leave the fixation area like drift and re-enter?
 
         # Eye movement bounds related parameters
         # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
@@ -94,7 +94,7 @@ class Read(Env):
         self.ep_len = int(self._max_trials * self._dwell_steps * 5)
 
         # Define the observation space
-        width, height = 80, 80
+        width, height = 80, 80      # TODO try 40 40
         self._num_stk_frm = 1
         self._num_stateful_info = 5
         self.observation_space = Dict({
@@ -179,7 +179,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Initialize the ocularmotor noise proportion,
