@@ -61,7 +61,7 @@ class Read(Env):
         # The exact amplitude is difficult to specify without direct measurement,
         # but some studies suggest a range of 2-5 cm for normal walking.
         # This is also dependent on a person's height, stride length, and other factors.
-        self._perturbation_peak = 0.015
+        self._perturbation_peak = 0.010
         self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave - 2 feet
         self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
@@ -95,7 +95,7 @@ class Read(Env):
         self.ep_len = int(self._max_trials * self._dwell_steps * 5)
 
         # Define the observation space
-        width, height = 40, 40
+        width, height = 80, 80
         self._num_stk_frm = 1
         self._num_stateful_info = 5
         self.observation_space = Dict({
@@ -180,7 +180,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Initialize the ocularmotor noise proportion,
