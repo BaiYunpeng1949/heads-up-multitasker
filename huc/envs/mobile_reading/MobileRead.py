@@ -61,7 +61,7 @@ class Read(Env):
         # The exact amplitude is difficult to specify without direct measurement,
         # but some studies suggest a range of 2-5 cm for normal walking.
         # This is also dependent on a person's height, stride length, and other factors.
-        self._perturbation_peak = 0.010
+        self._perturbation_peak = 0.005
         self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave - 2 feet
         self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
@@ -186,7 +186,7 @@ class Read(Env):
         # Initialize the ocularmotor noise proportion,
         # 0.08 for the stationary mode (prior work), 0.16 for the moving mode (TODO hyperparameter tuning)
         self._rho_ocular_motor = 0.08 if self._mode == self._MODES[0] else 0.16
-        self._rho_drift = 0.33 if self._mode == self._MODES[0] else 0.50    # 0.50 means the std is half of the target size
+        self._rho_drift = 0.1 if self._mode == self._MODES[0] else 0.2
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
