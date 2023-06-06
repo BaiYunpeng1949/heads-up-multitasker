@@ -270,36 +270,36 @@ class Read(Env):
         action[1] = self.normalise(action[1], -1, 1, *self._saccade_stepwise_speed_bounds[:])
         # TODO the saccade speed is mainly a function of the target distance/amplitude. I can model this later.
 
-        # # TODO try ocular motor acc as actions - Dr Yang's suggestion
-        #
-        # # Get the current fixation status. If is still on the process of saccading, apply the ocular motor noise
-        # dist, geomid = self._get_focus(site_name="rangefinder-site")
-        # # TODO a potential bug: what if the focus has moved outside but the drift has not been finished.
-        # #  It will be dragged back to the target as a normal fixation.
-        # if geomid == self._sampled_target_mjidx:
-        #     # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
-        #     target_size = self._model.geom(geomid).size[0] * 2
-        #     drift_noise_xpos_x = np.random.normal(0, np.abs(self._rho_drift * target_size))
-        #     drift_noise_xpos_z = np.random.normal(0, np.abs(self._rho_drift * target_size))
-        #     target_xpos = self._data.geom(geomid).xpos
-        #     x, y, z = target_xpos[0], target_xpos[1], target_xpos[2]
-        #     drift_xpos_x, drift_xpos_z = x + drift_noise_xpos_x, z + drift_noise_xpos_z
-        #     drift_sample_location_vertical_radius = np.arctan(drift_xpos_z / y)
-        #     drift_sample_location_horizontal_radius = np.arctan(-drift_xpos_x / y)
-        #
-        #     drift_samples_ctrl = np.array([drift_sample_location_vertical_radius, drift_sample_location_horizontal_radius])
-        #
-        #     self._data.ctrl[0:2] = np.clip(drift_samples_ctrl, *self._model.actuator_ctrlrange[0:2])
-        # else:
-        # Get the ocular motor noise
-        ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
-        action[0:2] += ocular_motor_noise
+        # TODO try ocular motor acc as actions - Dr Yang's suggestion
 
-        # Set motor control in MuJoCo simulation - moves saccades by saccades
-        for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
-            act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
-            self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
-                                                 *self._model.actuator_ctrlrange[idx])
+        # Get the current fixation status. If is still on the process of saccading, apply the ocular motor noise
+        dist, geomid = self._get_focus(site_name="rangefinder-site")
+        # TODO a potential bug: what if the focus has moved outside but the drift has not been finished.
+        #  It will be dragged back to the target as a normal fixation.
+        if geomid == self._sampled_target_mjidx:
+            # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
+            target_size = self._model.geom(geomid).size[0] * 2
+            drift_noise_xpos_x = np.random.normal(0, np.abs(self._rho_drift * target_size))
+            drift_noise_xpos_z = np.random.normal(0, np.abs(self._rho_drift * target_size))
+            target_xpos = self._data.geom(geomid).xpos
+            x, y, z = target_xpos[0], target_xpos[1], target_xpos[2]
+            drift_xpos_x, drift_xpos_z = x + drift_noise_xpos_x, z + drift_noise_xpos_z
+            drift_sample_location_vertical_radius = np.arctan(drift_xpos_z / y)
+            drift_sample_location_horizontal_radius = np.arctan(-drift_xpos_x / y)
+
+            drift_samples_ctrl = np.array([drift_sample_location_vertical_radius, drift_sample_location_horizontal_radius])
+
+            self._data.ctrl[0:2] = np.clip(drift_samples_ctrl, *self._model.actuator_ctrlrange[0:2])
+        else:
+            # Get the ocular motor noise
+            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
+            action[0:2] += ocular_motor_noise
+
+            # Set motor control in MuJoCo simulation - moves saccades by saccades
+            for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
+                act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
+                self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
+                                                     *self._model.actuator_ctrlrange[idx])
 
         # Save the control for fatigue calculation
         self._ctrl_list.append(self._data.ctrl.copy())
