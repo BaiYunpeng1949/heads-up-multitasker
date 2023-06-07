@@ -39,6 +39,7 @@ class Read(Env):
         self._perturbation_joint_z_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "perturbation-joint-z")
         self._perturbation_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT,
                                                              "perturbation-joint-x")
+        self._perturbation_joint_y_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "perturbation-joint-y")
         self._eye_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-100")
@@ -61,31 +62,27 @@ class Read(Env):
         # The exact amplitude is difficult to specify without direct measurement,
         # but some studies suggest a range of 2-5 cm for normal walking.
         # This is also dependent on a person's height, stride length, and other factors.
-        self._perturbation_peak = 0.005
-        self._perturbation_period_z = int(0.5 * self._action_sample_freq)   # 1 seconds for normal human gait cycle modeled as a sine wave - 2 feet
-        self._perturbation_period_x = int(0.25 * self._action_sample_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
+        self._perturbation_peak_z = 0.005       # Translation amplitude in z direction
+        self._perturbation_peak_x = 0.001      # Translation amplitude in x direction
+        self._perturbation_peak_y = 0.0125      # torsion amplitude in y direction
+        gait_freq = 2     # 2 Hz
+        self._perturbation_period_z = int(self._action_sample_freq / gait_freq)   # 0.5 seconds for normal human gait cycle modeled as a sine wave - 2 feet
+        self._perturbation_period_x = int(self._action_sample_freq / gait_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
+        self._perturbation_period_y = int(self._action_sample_freq / gait_freq)  # 0.5 seconds for normal human gait cycle modeled as a sine wave
         self._perturbation_velocity = None
         self._perturbation_amplitude = None
 
         # Oculomotor control related parameters
         # Start from action noises - the integration of oculomotor noise and the drifts after fixations.
-        # TODO the current assumption is that the saccades on reading are not ballistic but under active and continuous control,
-        #  now the simplified version is the saccade is a stepwise movement, every time step contains a saccade.
         # The oculomotor noise is formalized as SDN, the zero-mean Gaussian noise with a standard deviation of
         # the signal proportional to the magnitude of the signal itself.
-        self._rho_ocular_motor = None
-        self._rho_drift = None
+        # Now the saccade is a ballistic movement and can be finished in 1 action taken step (50 ms)
+        self._rho_ocular_motor = 0.08   # The proportionality constant from paper: An Adaptive Model of Gaze-based Selection
 
-        # Eye movement bounds related parameters
-        # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
-        # here I use a representative value of 35 to 36 degrees per second.
-        # This applies to both horizontal and vertical saccades
-        # TODO change this later, the saccade speed is calculated based on the saccade amplitude, ref: https://en.wikipedia.org/wiki/Saccade
-        #  Maybe forget about the difference in mobile and stationary noise, just use the stationary noise.
-        self._saccade_stepwise_speed_bounds = np.array([-35, 35]) * np.pi / 180 / self._action_sample_freq
-        # TODO Also add the spatial uncertainty if needed
+        self._fixate_on_target = None
 
         # The fatigue related parameters
+        self._last_step_saccade_qpos = None
         self._ctrl_list = None
 
         # Initialise RL related thresholds and counters
@@ -100,7 +97,7 @@ class Read(Env):
         # Define the observation space
         width, height = 80, 80
         self._num_stk_frm = 1
-        self._num_stateful_info = 5
+        self._num_stateful_info = 6
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
@@ -108,7 +105,7 @@ class Read(Env):
         })
 
         # Define the action space
-        self.action_space = Box(low=-1, high=1, shape=(self._model.nu,))
+        self.action_space = Box(low=-1, high=1, shape=(2,))   # 2 dof eyeball rotation
 
         # Initialize the context and camera
         context = Context(self._model, max_resolution=[1280, 960])
@@ -154,11 +151,10 @@ class Read(Env):
         sampled_target_idx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                  self._ils100_cells_mjidxs[-1], -1, 1)
         mode_norm = -1 if self._mode == self._MODES[0] else 1
-        # TODO to speed up training, feed the agent knowing whether it is fixating on the target/any cell or not
-        # TODO maybe add an action of: decide to initiate a saccade or not
+        fixation_norm = 1 if self._fixate_on_target else -1
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_idx_norm,
-             mode_norm]
+             mode_norm, fixation_norm]
         )
 
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -177,6 +173,9 @@ class Read(Env):
         self._num_trials = 0
 
         self._ctrl_list = []
+        self._last_step_saccade_qpos = np.array([0, 0])
+
+        self._fixate_on_target = False
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -184,13 +183,10 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            self._data.qpos[self._eye_joint_x_mjidx] = 0
+            self._data.qpos[self._eye_joint_y_mjidx] = 0
             self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
-
-        # Initialize the ocularmotor noise proportion,
-        # 0.08 for the stationary mode (prior work), 0.16 for the moving mode (TODO hyperparameter tuning)
-        self._rho_ocular_motor = 0.08 if self._mode == self._MODES[0] else 0.16
-        self._rho_drift = 0.1 if self._mode == self._MODES[0] else 0.2
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -264,46 +260,29 @@ class Read(Env):
     def step(self, action):
         # Action at t
         # Normalise action from [-1, 1] to actuator control range
-        # action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        # action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+        # The control range was set to [-0.7854, 0.7854] as corresponding to [-45, 45] degrees
+        # Ref: "Head-fixed saccades can have amplitudes of up to 90°", https://en.wikipedia.org/wiki/Saccade
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
-        # # Set motor control
-        # self._data.ctrl[:] = action
-
-        action[0] = self.normalise(action[0], -1, 1, *self._saccade_stepwise_speed_bounds[:])
-        action[1] = self.normalise(action[1], -1, 1, *self._saccade_stepwise_speed_bounds[:])
-        # TODO the saccade speed is mainly a function of the target distance/amplitude. I can model this later.
-
-        # TODO try ocular motor acc as actions - Dr Yang's suggestion
-
-        # Get the current fixation status. If is still on the process of saccading, apply the ocular motor noise
         dist, geomid = self._get_focus(site_name="rangefinder-site")
-        # TODO a potential bug: what if the focus has moved outside but the drift has not been finished.
-        #  It will be dragged back to the target as a normal fixation.
         if geomid == self._sampled_target_mjidx:
-            # If already fixate on the target, apply the fixational eye movements, such as drift and jitters
-            target_size = self._model.geom(geomid).size[0] * 2
-            drift_noise_xpos_x = np.random.normal(0, np.abs(self._rho_drift * target_size))
-            drift_noise_xpos_z = np.random.normal(0, np.abs(self._rho_drift * target_size))
-            target_xpos = self._data.geom(geomid).xpos
-            x, y, z = target_xpos[0], target_xpos[1], target_xpos[2]
-            drift_xpos_x, drift_xpos_z = x + drift_noise_xpos_x, z + drift_noise_xpos_z
-            drift_sample_location_vertical_radius = np.arctan(drift_xpos_z / y)
-            drift_sample_location_horizontal_radius = np.arctan(-drift_xpos_x / y)
-
-            drift_samples_ctrl = np.array([drift_sample_location_vertical_radius, drift_sample_location_horizontal_radius])
-
-            self._data.ctrl[0:2] = np.clip(drift_samples_ctrl, *self._model.actuator_ctrlrange[0:2])
+            self._fixate_on_target = True
         else:
+            self._fixate_on_target = False
             # Get the ocular motor noise
-            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * action[0:2]))
+            amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
+            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * amplitude))
+
+            # print(f"Action before the ocular noise: {action}, "
+            #       f"the last step qpos is: {self._last_step_saccade_qpos},"
+            #       f"the amplitude is: {amplitude}")
+
             action[0:2] += ocular_motor_noise
 
-            # Set motor control in MuJoCo simulation - moves saccades by saccades
-            for idx, act_name in enumerate(["eye-x-motor", "eye-y-motor"]):
-                act_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, act_name)
-                self._data.ctrl[act_mjidx] = np.clip(self._data.ctrl[act_mjidx] + action[idx],
-                                                     *self._model.actuator_ctrlrange[idx])
+            # print(f"The ocular_motor_noise: {ocular_motor_noise}, corrupted action: {action}")
+
+        self._data.ctrl[0:2] = action[0:2]
 
         # Save the control for fatigue calculation
         self._ctrl_list.append(self._data.ctrl.copy())
@@ -311,6 +290,8 @@ class Read(Env):
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
+
+        self._last_step_saccade_qpos = self._data.qpos[0:2].copy()
 
         # State at t+1 - transition function?
         # Eye-sight detection
@@ -324,18 +305,19 @@ class Read(Env):
             self._on_target_steps += 1
             self._model.geom(self._sampled_target_mjidx).rgba = self._VISUALIZE_RGBA
 
-        # Update the perturbation - firstly try the linear perturbation
-        # TODO simple sinusoidal perturbation is to weak to convince others the necessity of the using RL,
-        #  maybe later add some tough perturbations and let the agent learns to adapt to any perturbations
+        # Update the perturbation - firstly try the sinusoidal perturbation
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
         if self._mode == self._MODES[0]:
             amplitude_z = 0
-            # amplitude_x = 0
+            amplitude_x = 0
+            amplitude_y = 0
         else:
-            amplitude_z = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_z)
-            # amplitude_x = self._perturbation_peak * np.sin(2 * self._steps / self._perturbation_period_x)
+            amplitude_z = self._perturbation_peak_z * np.sin(2 * self._steps / self._perturbation_period_z)
+            amplitude_x = self._perturbation_peak_x * np.cos(2 * self._steps / self._perturbation_period_x)
+            amplitude_y = - self._perturbation_peak_y * np.cos(2 * self._steps / self._perturbation_period_y)
         self._data.qpos[self._perturbation_joint_z_mjidx] = amplitude_z
-        # self._data.qpos[self._perturbation_joint_x_mjidx] = amplitude_x
+        self._data.qpos[self._perturbation_joint_x_mjidx] = amplitude_x
+        self._data.qpos[self._perturbation_joint_y_mjidx] = amplitude_y
         mujoco.mj_forward(self._model, self._data)
 
         # Update the transitions - get rewards and next state
@@ -345,6 +327,7 @@ class Read(Env):
             # Get the next target
             self._sample_target()
         else:
+            # TODO - POMDP with a shaking target (should not apply the true)
             reward = 0.1 * (np.exp(
                 -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
 
