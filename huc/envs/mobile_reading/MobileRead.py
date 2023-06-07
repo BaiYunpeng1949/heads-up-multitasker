@@ -80,7 +80,10 @@ class Read(Env):
         # Saccade speed in reading task is 7 to 9 degrees per 200 to 250ms,
         # here I use a representative value of 35 to 36 degrees per second.
         # This applies to both horizontal and vertical saccades
+        # TODO change this later, the saccade speed is calculated based on the saccade amplitude, ref: https://en.wikipedia.org/wiki/Saccade
+        #  Maybe forget about the difference in mobile and stationary noise, just use the stationary noise.
         self._saccade_stepwise_speed_bounds = np.array([-35, 35]) * np.pi / 180 / self._action_sample_freq
+        # TODO Also add the spatial uncertainty if needed
 
         # The fatigue related parameters
         self._ctrl_list = None
@@ -151,7 +154,8 @@ class Read(Env):
         sampled_target_idx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                  self._ils100_cells_mjidxs[-1], -1, 1)
         mode_norm = -1 if self._mode == self._MODES[0] else 1
-
+        # TODO to speed up training, feed the agent knowing whether it is fixating on the target/any cell or not
+        # TODO maybe add an action of: decide to initiate a saccade or not
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_idx_norm,
              mode_norm]
@@ -180,7 +184,7 @@ class Read(Env):
 
         self._mode = np.random.choice(self._MODES)
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Initialize the ocularmotor noise proportion,
