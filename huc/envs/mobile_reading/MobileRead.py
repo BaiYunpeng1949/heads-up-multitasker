@@ -185,7 +185,7 @@ class Read(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
