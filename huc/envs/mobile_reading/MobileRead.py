@@ -283,14 +283,7 @@ class Read(Env):
             self._fixate_on_target = False
             # Get the ocular motor noise
             ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * amplitude))
-
-            # print(f"Action before the ocular noise: {action}, "
-            #       f"the last step qpos is: {self._last_step_saccade_qpos},"
-            #       f"the amplitude is: {amplitude}")
-
             action[0:2] += ocular_motor_noise
-
-            # print(f"The ocular_motor_noise: {ocular_motor_noise}, corrupted action: {action}")
 
         self._data.ctrl[0:2] = action[0:2]
 
@@ -320,7 +313,7 @@ class Read(Env):
             self._fixate_on_target = True
         else:
             self._fixate_on_target = False
-            # self._on_target_steps = 0    # Reset the counter --> needs continuous fixation to activate the information retrival
+            self._on_target_steps = 0
 
         # Update the logs about saccades and fixations only in the test mode
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
