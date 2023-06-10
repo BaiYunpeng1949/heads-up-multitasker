@@ -84,6 +84,8 @@ class Read(Env):
         # The fatigue related parameters
         self._last_step_saccade_qpos = None
         self._ctrl_list = None
+        self._eye_movement_dict = None
+        self._eye_movement_status = ['saccade', 'fixation']
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -173,6 +175,13 @@ class Read(Env):
         self._num_trials = 0
 
         self._ctrl_list = []
+        self._eye_movement_dict = {
+            "status": [],
+            "step": [],
+            "qpos": [],
+            "amplitude": [],
+            "ocular_motor_noise": [],
+        }
         self._last_step_saccade_qpos = np.array([0, 0])
 
         self._fixate_on_target = False
@@ -185,7 +194,7 @@ class Read(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
@@ -266,12 +275,13 @@ class Read(Env):
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
 
         dist, geomid = self._get_focus(site_name="rangefinder-site")
+        amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
         if geomid == self._sampled_target_mjidx:
             self._fixate_on_target = True
+            ocular_motor_noise = 0
         else:
             self._fixate_on_target = False
             # Get the ocular motor noise
-            amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
             ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * amplitude))
 
             # print(f"Action before the ocular noise: {action}, "
@@ -284,13 +294,16 @@ class Read(Env):
 
         self._data.ctrl[0:2] = action[0:2]
 
-        # Save the control for fatigue calculation
+        # Log and save the control for fatigue calculation
         self._ctrl_list.append(self._data.ctrl.copy())
+        # Log and save the action for saccades and fixations calculation
+        previous_fixation_status = self._fixate_on_target
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
 
+        # Update the last step saccade qpos
         self._last_step_saccade_qpos = self._data.qpos[0:2].copy()
 
         # State at t+1 - transition function?
@@ -304,6 +317,21 @@ class Read(Env):
         if geomid == self._sampled_target_mjidx:
             self._on_target_steps += 1
             self._model.geom(self._sampled_target_mjidx).rgba = self._VISUALIZE_RGBA
+            self._fixate_on_target = True
+        else:
+            self._fixate_on_target = False
+            # self._on_target_steps = 0    # Reset the counter --> needs continuous fixation to activate the information retrival
+
+        # Update the logs about saccades and fixations only in the test mode
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            self._log_eye_movement_data(
+                previous_fixation_status=previous_fixation_status,
+                current_fixation_status=self._fixate_on_target,
+                steps=self._steps,
+                qpos=self._data.qpos[0:2].copy(),
+                amplitude=amplitude,
+                ocular_motor_noise=ocular_motor_noise,
+            )
 
         # Update the perturbation - firstly try the sinusoidal perturbation
         # With the given perturbation period, the perturbation peak, apply a sinusoidal perturbation
@@ -341,5 +369,36 @@ class Read(Env):
                 weight = 1
                 print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
                       f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
+                print(
+                    f"The number of saccades is: {self._eye_movement_dict['status'].count(self._eye_movement_status[0])}, "
+                    f"the number of fixations is: {self._eye_movement_dict['status'].count(self._eye_movement_status[1])},\n "
+                )
+                # Get the length of one list in the dictionary
+                n = len(self._eye_movement_dict['status'])
+
+                # Loop over each index and print the corresponding values from each list
+                for i in range(n):
+                    print(f"{i}: status {self._eye_movement_dict['status'][i]}, "
+                          f"step {self._eye_movement_dict['step'][i]}, "
+                          f"qpos {self._eye_movement_dict['qpos'][i]}, "
+                          f"amplitude {self._eye_movement_dict['amplitude'][i]}, "
+                          f"ocular_motor_noise {self._eye_movement_dict['ocular_motor_noise'][i]}")
 
         return self._get_obs(), reward, terminate, {}
+
+    def _log_eye_movement_data(self, previous_fixation_status, current_fixation_status, steps, qpos, amplitude,
+                               ocular_motor_noise):
+        # TODO in the future, draw the eye movement trajectory
+        # Log the status
+        if previous_fixation_status == True and current_fixation_status == True:
+            # Fixation
+            self._eye_movement_dict["status"].append(self._eye_movement_status[1])
+        else:
+            # Saccade
+            self._eye_movement_dict["status"].append(self._eye_movement_status[0])
+
+        # Log the others
+        self._eye_movement_dict["step"].append(steps)
+        self._eye_movement_dict["qpos"].append(qpos)
+        self._eye_movement_dict["amplitude"].append(amplitude)
+        self._eye_movement_dict["ocular_motor_noise"].append(ocular_motor_noise)
