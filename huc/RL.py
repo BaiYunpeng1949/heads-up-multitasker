@@ -20,16 +20,8 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
-from huc.envs.moving_eye.MovingEye import MovingEye
-from huc.envs.reading_eye.ReadingEye import ReadingEye
-from huc.envs.context_switch.ContextSwitch import ContextSwitch
-from huc.envs.context_switch_replication.ContextSwitchReplication import ContextSwitchReplication
-from huc.envs.context_switch_replication.SwitchBack import SwitchBack, SwitchBackTrain, SwitchBackTest
-from huc.envs.pseudo_locomotion.PseudoLocoReloc import LocoRelocTrain, LocoRelocTest
-from huc.envs.pseudo_locomotion.Relocation import RelocationTrain
-from huc.envs.pseudo_locomotion.ZRead import ZReadBase
-from huc.envs.relocation.Relocation import Read, AttentionSwitch, AttentionSwitch3Layouts, AttentionSwitchMemory, RelocationMemory
 from huc.envs.mobile_reading.MobileRead import Read
+from huc.envs.locomotion.Locomotion import StraightWalk
 
 _MODES = {
     'train': 'train',
@@ -214,8 +206,8 @@ class RL:
                 f"    The loaded model checkpoint is: {self._config_rl['test']['loaded_model_name']}\n"
             )
 
-        # Get an env instance for further constructing parallel environments.   TODO CHANGE ENV MANUALLY!!!
-        self._env = Read()
+        # Get an env instance for further constructing parallel environments.
+        self._env = StraightWalk()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
