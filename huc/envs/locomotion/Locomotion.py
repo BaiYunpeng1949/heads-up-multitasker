@@ -156,14 +156,14 @@ class StraightWalk(Env):
 
         # State at t+1 - Transit the state - the transition function is 1 for a deterministic environment
         # Estimate rewards
-        time_penalty = -0.1
+        qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
+        abs_distance = abs(qpos_body - self._destination_xpos)
+        distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos, 0, 1))
         controls = self._data.ctrl[0].copy()
         eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
-        reward = time_penalty + eye_movement_fatigue_penalty
+        reward = distance_penalty + eye_movement_fatigue_penalty
 
-        qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
-
-        if abs(qpos_body - self._destination_xpos) <= self._destination_proximity_threshold:
+        if abs_distance <= self._destination_proximity_threshold:
             self._timesteps_on_destination += 1
             if self._timesteps_on_destination >= self._destination_timesteps_threshold:
                 self._on_destination = True
