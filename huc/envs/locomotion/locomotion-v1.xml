@@ -32,7 +32,7 @@
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
 
-        <camera name="env" pos="0.35 -0.35 0.15" euler="1.4 0.5 0.12"/>
+        <camera name="env" pos="13 0 0.15" euler="1.4 1.2 0.2"/>
 
         <body name="fixed-head-body" pos="0 0 0">
             <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
@@ -42,7 +42,7 @@
 <!--                <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-1 1"/>-->
                 <site name="rangefinder-site" quat="0 0 1 0"/>
             </body>
-            <geom name="body-trunk" pos="0 0 -1" type="box" size="0.2 0.00001 0.5" rgba="1 1 0 1" />
+            <geom name="body-trunk" pos="0 0 -1.4" type="box" size="0.2 0.00001 0.5" rgba="1 1 0 1" />
             <joint name="body-joint-y" class="locomotion-translation" axis="0 1 0" range="0 12"/>
         </body>
 

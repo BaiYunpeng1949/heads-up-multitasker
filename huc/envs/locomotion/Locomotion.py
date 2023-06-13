@@ -164,9 +164,9 @@ class StraightWalk(Env):
         reward = distance_penalty + eye_movement_fatigue_penalty
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            print(f"Step: {self._steps}"
-                  f"The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
-                  f"The controls are: {controls}, eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}")
+            print(f"Step: {self._steps}, the qpos_body is: {qpos_body}, the destination_xpos is: {self._destination_xpos},"
+                  f" The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
+                  f" The controls are: {controls}, eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}")
 
         if abs_distance <= self._destination_proximity_threshold:
             self._timesteps_on_destination += 1
