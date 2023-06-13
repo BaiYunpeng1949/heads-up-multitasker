@@ -158,7 +158,8 @@ class StraightWalk(Env):
         # Estimate rewards
         qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
         abs_distance = abs(qpos_body - self._destination_xpos)
-        distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos, 0, 1))
+        # distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos, 0, 1))
+        distance_penalty = 0.1 * (np.exp(-10 * abs_distance) - 1)
         controls = self._data.ctrl[0].copy()
         eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
         reward = distance_penalty + eye_movement_fatigue_penalty
