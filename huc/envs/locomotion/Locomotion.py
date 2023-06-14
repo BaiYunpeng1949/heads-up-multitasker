@@ -184,9 +184,9 @@ class StraightWalk(Env):
         else:
             self._timesteps_on_destination = 0
 
-        if self._steps >= self.ep_len:
-            if not self._on_destination:
-                reward = -20
+        # if self._steps >= self.ep_len:
+        #     if not self._on_destination:
+        #         reward = -20
 
         # Get termination condition
         terminate = False
