@@ -1,11 +1,11 @@
 simulator_name: 'huc'
 
 rl:
-  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 100000000
-    checkpoints_folder_name: 'checkpoints_0614_3_locomotion_100m'
+    checkpoints_folder_name: 'checkpoints_0614_4_locomotion_100m'
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # TODO do not change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`

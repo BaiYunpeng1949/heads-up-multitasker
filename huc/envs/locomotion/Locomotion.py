@@ -166,13 +166,15 @@ class StraightWalk(Env):
         # distance_penalty = 0.1 * (np.exp(-10 * abs_distance) - 1)
         # distance_penalty = 0.1 * (np.exp(-0.5 * abs_distance) - 1)
         controls = self._data.ctrl[0].copy()
-        eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
-        reward = distance_penalty + eye_movement_fatigue_penalty
+        # eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
+        # reward = distance_penalty + eye_movement_fatigue_penalty
+        reward = distance_penalty
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             print(f"Step: {self._steps}, the qpos_body is: {qpos_body}, the destination_xpos is: {self._destination_xpos},"
                   f" The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
-                  f" The controls are: {controls}, eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}"
+                  f" The controls are: {controls}, "
+                  # f"eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}"
                   f" \nThe current total reward is: {reward}, the forward moving speed is: {action[1]}, "
                   f" the forward moving control is: {self._data.ctrl[1]}")
 
