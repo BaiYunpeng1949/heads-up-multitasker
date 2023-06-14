@@ -45,12 +45,13 @@ class StraightWalk(Env):
 
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
         path_geom_mjidx = np.where(self._model.geom_bodyid == self._straight_walk_path_body_mjidx)[0][0]
-
         self._destination_xpos = self._data.geom(path_geom_mjidx).xpos[1] + self._model.geom(path_geom_mjidx).size[1]
+        self._init_xpos = None
 
         self._max_walking_speed_per_step = 0.1  # Maximum walking speed per step
         self._destination_proximity_threshold = 0.05  # The threshold to determine whether the agent reaches the target
         self._destination_timesteps_threshold = 10  # Wait for 10 steps to determine whether the agent reaches the target
+        self._stop_timesteps_threshold = 10  # If the agent stays over 10 steps on the same position, then thinks it stops
         self._timesteps_on_destination = None  # Number of steps the agent stays on the target
         self._on_destination = None
 
@@ -135,6 +136,9 @@ class StraightWalk(Env):
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = 0
         self._data.qpos[self._eye_joint_y_mjidx] = 0
+        self._init_xpos = np.random.uniform(0, self._destination_xpos)
+        self._data.qpos[self._body_joint_y_mjidx] = self._init_xpos
+        self._data.ctrl[1] = self._init_xpos
 
         mujoco.mj_forward(self._model, self._data)
 
@@ -158,19 +162,20 @@ class StraightWalk(Env):
         # Estimate rewards
         qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
         abs_distance = abs(qpos_body - self._destination_xpos)
-        # distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos, 0, 1))
+        distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos-self._init_xpos, 0, 1))
         # distance_penalty = 0.1 * (np.exp(-10 * abs_distance) - 1)
-        distance_penalty = 0.1 * (np.exp(-0.5 * abs_distance) - 1)
-        controls = self._data.ctrl[0].copy()
-        eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
-        reward = distance_penalty + eye_movement_fatigue_penalty
+        # distance_penalty = 0.1 * (np.exp(-0.5 * abs_distance) - 1)
+        # controls = self._data.ctrl[0].copy()
+        # eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
+        # reward = distance_penalty + eye_movement_fatigue_penalty
+        reward = distance_penalty
 
-        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            print(f"Step: {self._steps}, the qpos_body is: {qpos_body}, the destination_xpos is: {self._destination_xpos},"
-                  f" The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
-                  f" The controls are: {controls}, eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}"
-                  f" \nThe current total reward is: {reward}, the forward moving speed is: {action[1]}, "
-                  f" the forward moving control is: {self._data.ctrl[1]}")
+        # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+        #     print(f"Step: {self._steps}, the qpos_body is: {qpos_body}, the destination_xpos is: {self._destination_xpos},"
+        #           f" The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
+        #           # f" The controls are: {controls}, eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}"
+        #           f" \nThe current total reward is: {reward}, the forward moving speed is: {action[1]}, "
+        #           f" the forward moving control is: {self._data.ctrl[1]}")
 
         if abs_distance <= self._destination_proximity_threshold:
             self._timesteps_on_destination += 1
@@ -179,6 +184,10 @@ class StraightWalk(Env):
                 reward = 100
         else:
             self._timesteps_on_destination = 0
+
+        if self._steps >= self.ep_len:
+            if not self._on_destination:
+                reward = -20
 
         # Get termination condition
         terminate = False
