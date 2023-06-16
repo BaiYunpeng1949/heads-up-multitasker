@@ -264,7 +264,7 @@ class SignWalk(Env):
         self._num_stateful_info = 2
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (3 + 3),)),   # 2 dof for eye rotation, 1 for locomotion translation
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
         })
 
@@ -305,7 +305,7 @@ class SignWalk(Env):
         vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
 
         # Get the proprioception observation
-        proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+        proprioception = np.concatenate([self._data.qpos[0:3], self._data.ctrl[0:3]])
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
