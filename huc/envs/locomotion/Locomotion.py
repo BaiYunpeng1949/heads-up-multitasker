@@ -244,6 +244,7 @@ class SignWalk(Env):
         self._sign_qpos_hinge_z = None
 
         self._destination_xpos_y = None
+        self._path_length = self._model.geom(path_geom_mjidx).size[1] * 2
 
         self._max_walking_speed_per_step = 0.1  # Maximum walking speed per step
         self._destination_proximity_threshold = 0.05  # The threshold to determine whether the agent reaches the target
@@ -379,8 +380,7 @@ class SignWalk(Env):
         # Estimate rewards
         qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
         abs_distance = abs(qpos_body - self._destination_xpos_y)
-        distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._destination_xpos_y, 0, 1))
-        # distance_penalty = 0.1 * (np.exp(-10 * abs_distance) - 1)
+        distance_penalty = -0.1 * abs(self.normalise(abs_distance, 0, self._path_length, 0, 1))
         # distance_penalty = 0.1 * (np.exp(-0.5 * abs_distance) - 1)
         controls = self._data.ctrl[0:2].copy()
         # eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
