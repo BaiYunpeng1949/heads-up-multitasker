@@ -207,7 +207,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = SignWalk()
+        self._env = SignWalk()      # Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

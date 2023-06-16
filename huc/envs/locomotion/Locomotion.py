@@ -349,6 +349,7 @@ class SignWalk(Env):
         self._data.qpos[self._sign_joint_y_mjidx] = sign_qpos_y
         self._data.qpos[self._sign_joint_z_mjidx] = sign_qpos_z
 
+        self._data.ctrl[0:3] = 0
         self._data.ctrl[3] = sign_qpos_x
         self._data.ctrl[4] = sign_qpos_y
         self._data.ctrl[5] = sign_qpos_z
@@ -357,6 +358,11 @@ class SignWalk(Env):
         self._destination_xpos_y = sign_qpos_y
 
         mujoco.mj_forward(self._model, self._data)
+
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            print(f"Step is {self._steps}"
+                  f"\n Eyeball rotations: {self._data.qpos[0:2]}, locomotion: {self._data.qpos[2]},"
+                  f"\n Sign position: {self._data.qpos[3:6]}, sign hinge: {self._data.qpos[6]}")
 
         return self._get_obs()
 
