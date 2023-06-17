@@ -237,11 +237,21 @@ class SignWalk(Env):
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
         path_geom_mjidx = np.where(self._model.geom_bodyid == self._straight_walk_path_body_mjidx)[0][0]
         self._movable_sign_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "movable-sign")
-        self._movable_sign_mjidx = np.where(self._model.geom_bodyid == self._movable_sign_body_mjidx)[0][0]
+        self._movable_sign_geom_mjidx = np.where(self._model.geom_bodyid == self._movable_sign_body_mjidx)[0][0]
         self._sign_qpos_x = None
         self._sign_qpos_y = None
         self._sign_qpos_z = None
         self._sign_qpos_hinge_z = None
+
+        # Get the maximum distance to the sign based on the actuator_ctrlrange
+        x_bound = self._model.actuator_ctrlrange[self._sign_joint_x_mjidx][-1]
+        y_bound = self._model.actuator_ctrlrange[self._sign_joint_y_mjidx][-1]
+        z_bound = self._model.actuator_ctrlrange[self._sign_joint_z_mjidx][-1]
+        buffer = 1
+        self._max_dist_to_sign = np.sqrt(x_bound**2 + y_bound**2 + z_bound**2) + buffer
+
+        self._dist_to_sign = None
+        self._focus_geom_mjidx = None
 
         self._destination_xpos_y = None
         self._path_length = self._model.geom(path_geom_mjidx).size[1] * 2
@@ -261,7 +271,7 @@ class SignWalk(Env):
         # Define the observation space
         width, height = 80, 80
         self._num_stk_frm = 1
-        self._num_stateful_info = 2
+        self._num_stateful_info = 3
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (3 + 3),)),   # 2 dof for eye rotation, 1 for locomotion translation
@@ -306,18 +316,17 @@ class SignWalk(Env):
 
         # Get the proprioception observation
         proprioception = np.concatenate([self._data.qpos[0:3], self._data.ctrl[0:3]])
-        # TODO add the sign related sensor information
-        #  1. estimated distance (can be derived from a established model)
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_timesteps_on_destination_norm = (self._destination_timesteps_threshold - self._timesteps_on_destination) / self._destination_timesteps_threshold * 2 - 1
-        # TODO add whether to find the sign or not
-        #  if not on the sign, set to 1, if on the sign or already found the sign, set to -1.
-        #  Should I let the agent to estimate the absolute position / relative distance to the sign?
+        if self._focus_geom_mjidx == self._movable_sign_geom_mjidx:
+            perceived_distance_to_sign_norm = self.normalise(self._dist_to_sign, 0, self._max_dist_to_sign, 0, 1)
+        else:
+            perceived_distance_to_sign_norm = -1
 
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_timesteps_on_destination_norm]
+            [remaining_ep_len_norm, remaining_timesteps_on_destination_norm, perceived_distance_to_sign_norm]
         )
 
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -334,6 +343,9 @@ class SignWalk(Env):
         self._steps = 0
         self._on_destination = False
         self._timesteps_on_destination = 0
+
+        self._dist_to_sign = -1
+        self._focus_geom_mjidx = -1
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = 0
@@ -417,9 +429,6 @@ class SignWalk(Env):
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
         action[2] = self.normalise(action[2], -1, 1, 0, self._max_walking_speed_per_step)
 
-        # TODO: 1. Add reward shaping to lure the agent looks to the sign;
-        #  2. add the estimated distance to the observations space, can be added by the Kalman filter
-
         # Eyeball movement control - saccade to target positions
         self._data.ctrl[0] = action[0]
         self._data.ctrl[1] = action[1]
@@ -431,6 +440,9 @@ class SignWalk(Env):
         self._steps += 1
 
         # State at t+1 - Transit the state - the transition function is 1 for a deterministic environment
+        # Estimate the distance to the sign
+        self._dist_to_sign, self._focus_geom_mjidx = self._get_focus(site_name="rangefinder-site")
+
         # Estimate rewards
         qpos_body = self._data.qpos[self._body_joint_y_mjidx].copy()
         abs_distance = abs(qpos_body - self._destination_xpos_y)
@@ -438,16 +450,17 @@ class SignWalk(Env):
         # distance_penalty = 0.1 * (np.exp(-0.5 * abs_distance) - 1)
         controls = self._data.ctrl[0:2].copy()
         # eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
-        # reward = distance_penalty + eye_movement_fatigue_penalty
-        reward = distance_penalty
 
-        # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-        #     print(f"Step: {self._steps}, the qpos_body is: {qpos_body}, the destination_xpos is: {self._destination_xpos_y},"
-        #           f" The abs_distance is: {abs_distance}, distance_penalty: {distance_penalty}, "
-        #           f" The controls are: {controls}, "
-        #           # f"eye_movement_fatigue_penalty: {eye_movement_fatigue_penalty}"
-        #           f" \nThe current total reward is: {reward}, the forward moving speed is: {action[1]}, "
-        #           f" the forward moving control is: {self._data.ctrl[1]}")
+        gaze_reward_shaping = 0.1 * (np.exp(
+            -0.5 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._movable_sign_geom_mjidx)) - 1)
+
+        reward = distance_penalty + gaze_reward_shaping     # + eye_movement_fatigue_penalty
+
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            print(
+                f"Distance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
+                f"\nThe locomotion control is {self._data.ctrl[2]}, the distance penalty is {distance_penalty}"
+                f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}\n")
 
         if abs_distance <= self._destination_proximity_threshold:
             self._timesteps_on_destination += 1
