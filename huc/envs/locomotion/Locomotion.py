@@ -306,10 +306,15 @@ class SignWalk(Env):
 
         # Get the proprioception observation
         proprioception = np.concatenate([self._data.qpos[0:3], self._data.ctrl[0:3]])
+        # TODO add the sign related sensor information
+        #  1. estimated distance (can be derived from a established model)
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_timesteps_on_destination_norm = (self._destination_timesteps_threshold - self._timesteps_on_destination) / self._destination_timesteps_threshold * 2 - 1
+        # TODO add whether to find the sign or not
+        #  if not on the sign, set to 1, if on the sign or already found the sign, set to -1.
+        #  Should I let the agent to estimate the absolute position / relative distance to the sign?
 
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_timesteps_on_destination_norm]
@@ -366,11 +371,54 @@ class SignWalk(Env):
 
         return self._get_obs()
 
+    def _get_focus(self, site_name):
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = site.xmat.reshape((3, 3))[:, 2]
+        # Exclude the body that contains the site, like in the rangefinder sensor
+        bodyexclude = self._model.site_bodyid[site.id]
+        geomid_out = np.array([-1], np.int32)
+        distance = mujoco.mj_ray(
+            self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
+            bodyexclude=bodyexclude, geomid=geomid_out)
+        return distance, geomid_out[0]
+
+    @staticmethod
+    def angle_between(v1, v2):
+        # https://stackoverflow.com/questions/2827393/angles-between-two-n-dimensional-vectors-in-python/13849249#13849249
+        def unit_vector(vec):
+            return vec / np.linalg.norm(vec)
+
+        v1_u = unit_vector(v1)
+        v2_u = unit_vector(v2)
+        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+    def _angle_from_target(self, site_name, target_idx):
+        """
+        Return the angle between the vector pointing from the site to the target and the vector pointing from the site to the front
+        ranges from 0 to pi.
+        """
+        # Get vector pointing direction from site
+        site = self._data.site(site_name)
+        pnt = site.xpos
+        vec = pnt + site.xmat.reshape((3, 3))[:, 2]
+
+        # Get vector pointing direction to target
+        target_vec = self._data.geom(target_idx).xpos - pnt
+
+        # Estimate distance as angle
+        angle = self.angle_between(vec, target_vec)
+
+        return angle
+
     def step(self, action):
         # Action at t
         action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
         action[2] = self.normalise(action[2], -1, 1, 0, self._max_walking_speed_per_step)
+
+        # TODO: 1. Add reward shaping to lure the agent looks to the sign;
+        #  2. add the estimated distance to the observations space, can be added by the Kalman filter
 
         # Eyeball movement control - saccade to target positions
         self._data.ctrl[0] = action[0]

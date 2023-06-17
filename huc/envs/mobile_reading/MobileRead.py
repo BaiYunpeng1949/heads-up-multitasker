@@ -150,12 +150,12 @@ class Read(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        sampled_target_idx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
-                                                 self._ils100_cells_mjidxs[-1], -1, 1)
+        sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
+                                                   self._ils100_cells_mjidxs[-1], -1, 1)
         mode_norm = -1 if self._mode == self._MODES[0] else 1
         fixation_norm = 1 if self._fixate_on_target else -1
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_idx_norm,
+            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm,
              mode_norm, fixation_norm]
         )
 
