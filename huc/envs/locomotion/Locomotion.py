@@ -451,15 +451,25 @@ class SignWalk(Env):
         controls = self._data.ctrl[0:2].copy()
         # eye_movement_fatigue_penalty = - 0.1 * np.sum(controls**2)
 
-        gaze_reward_shaping = 0.1 * (np.exp(
-            -0.5 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._movable_sign_geom_mjidx)) - 1)
+        if qpos_body <= self._destination_xpos_y:
+            gaze_reward_shaping = 0.1 * (np.exp(
+                -0.5 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._movable_sign_geom_mjidx)))
+        else:
+            gaze_reward_shaping = 0
 
-        reward = distance_penalty + gaze_reward_shaping     # + eye_movement_fatigue_penalty
+        # Small sign read bonus
+        if self._focus_geom_mjidx == self._movable_sign_geom_mjidx:
+            sign_read_bonus = 1
+        else:
+            sign_read_bonus = 0
+
+        reward = distance_penalty + gaze_reward_shaping + sign_read_bonus     # + eye_movement_fatigue_penalty
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             print(
                 f"Distance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
                 f"\nThe locomotion control is {self._data.ctrl[2]}, the distance penalty is {distance_penalty}"
+                f"\nIf is still approaching the destination: {qpos_body <= self._destination_xpos_y}"
                 f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}\n")
 
         if abs_distance <= self._destination_proximity_threshold:
