@@ -301,6 +301,7 @@ class SignWalk(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
+        # TODO locomotion with stacked frames containing the previous 3 frames might help speed up the convergence
         # Get the vision observation
         # Render the image
         rgb, _ = self._eye_cam.render()
@@ -465,13 +466,6 @@ class SignWalk(Env):
 
         reward = distance_penalty + gaze_reward_shaping + sign_read_bonus     # + eye_movement_fatigue_penalty
 
-        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            print(
-                f"Distance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
-                f"\nThe locomotion control is {self._data.ctrl[2]}, the distance penalty is {distance_penalty}"
-                f"\nIf is still approaching the destination: {qpos_body <= self._destination_xpos_y}"
-                f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}\n")
-
         if abs_distance <= self._destination_proximity_threshold:
             self._timesteps_on_destination += 1
             if self._timesteps_on_destination >= self._destination_timesteps_threshold:
@@ -479,6 +473,14 @@ class SignWalk(Env):
                 reward = 100
         else:
             self._timesteps_on_destination = 0
+
+        if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+            print(
+                f"Step is {self._steps}, the timesteps on destination is {self._timesteps_on_destination}, the destination xpos y is: {self._destination_xpos_y}, the body xpos y is: {qpos_body}, the abs distance is: {abs_distance},"
+                f"\nDistance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
+                f"\nThe locomotion control is {self._data.ctrl[2]}, the speed is: {action[2]}, the distance penalty is {distance_penalty}"
+                f"\nIf is still approaching the destination: {qpos_body <= self._destination_xpos_y}"
+                f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}\n")
 
         # Get termination condition
         terminate = False
