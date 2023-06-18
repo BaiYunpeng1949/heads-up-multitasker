@@ -2,6 +2,7 @@ import numpy as np
 import mujoco
 import os
 import yaml
+from collections import deque
 
 from gym import Env
 from gym.spaces import Box, Dict
@@ -256,24 +257,26 @@ class SignWalk(Env):
         self._destination_xpos_y = None
         self._path_length = self._model.geom(path_geom_mjidx).size[1] * 2
 
-        self._max_walking_speed_per_step = 0.1  # Maximum walking speed per step
+        self._max_walking_speed_per_step = 0.5  # Maximum walking speed per step
         self._destination_proximity_threshold = 0.05  # The threshold to determine whether the agent reaches the target
         self._destination_timesteps_threshold = 10  # Wait for 10 steps to determine whether the agent reaches the target
         self._timesteps_on_destination = None  # Number of steps the agent stays on the target
+        self._timesteps_on_sign = None  # Number of steps the agent focuses on the sign
         self._on_destination = None
 
         # Initialise RL related thresholds and counters
         self._steps = None
         self._num_trials = None  # Cells are already been read
-        self._max_trials = 5  # Maximum number of cells to read - more trials in one episode will boost the convergence
-        self.ep_len = 200  # Maximum number of steps in one episode
+        self.ep_len = 300  # Maximum number of steps in one episode
 
         # Define the observation space
         width, height = 80, 80
-        self._num_stk_frm = 1
+        self._num_stk_frm = 4
+        self._qpos_frames = None
+        self._ctrl_frames = None
         self._num_stateful_info = 3
         self.observation_space = Dict({
-            "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
+            "vision": Box(low=-1, high=1, shape=(1, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (3 + 3),)),   # 2 dof for eye rotation, 1 for locomotion translation
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
         })
@@ -301,7 +304,6 @@ class SignWalk(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
-        # TODO locomotion with stacked frames containing the previous 3 frames might help speed up the convergence
         # Get the vision observation
         # Render the image
         rgb, _ = self._eye_cam.render()
@@ -316,7 +318,20 @@ class SignWalk(Env):
         vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
 
         # Get the proprioception observation
-        proprioception = np.concatenate([self._data.qpos[0:3], self._data.ctrl[0:3]])
+        # Stack the frames
+        self._qpos_frames.append(self._data.qpos[0:3].copy())
+        self._ctrl_frames.append(self._data.ctrl[0:3].copy())
+        # Replicate the last frame if the number of frames is less than the required number
+        while len(self._qpos_frames) < self._num_stk_frm:
+            self._qpos_frames.append(self._qpos_frames[-1])
+        while len(self._ctrl_frames) < self._num_stk_frm:
+            self._ctrl_frames.append(self._ctrl_frames[-1])
+        # Reshape the frames
+        qpos_frame = np.stack(self._qpos_frames, axis=0)
+        qpos_frame = qpos_frame.reshape((1, -1))
+        ctrl_frame = np.stack(self._ctrl_frames, axis=0)
+        ctrl_frame = ctrl_frame.reshape((1, -1))
+        proprioception = np.concatenate([qpos_frame.flatten(), ctrl_frame.flatten()], axis=0)
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
@@ -343,7 +358,10 @@ class SignWalk(Env):
         # Reset the variables and counters
         self._steps = 0
         self._on_destination = False
+        self._qpos_frames = deque(maxlen=self._num_stk_frm)
+        self._ctrl_frames = deque(maxlen=self._num_stk_frm)
         self._timesteps_on_destination = 0
+        self._timesteps_on_sign = 0
 
         self._dist_to_sign = -1
         self._focus_geom_mjidx = -1
@@ -461,6 +479,7 @@ class SignWalk(Env):
         # Small sign read bonus
         if self._focus_geom_mjidx == self._movable_sign_geom_mjidx:
             sign_read_bonus = 1
+            self._timesteps_on_sign += 1
         else:
             sign_read_bonus = 0
 
@@ -476,11 +495,13 @@ class SignWalk(Env):
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             print(
-                f"Step is {self._steps}, the timesteps on destination is {self._timesteps_on_destination}, the destination xpos y is: {self._destination_xpos_y}, the body xpos y is: {qpos_body}, the abs distance is: {abs_distance},"
-                f"\nDistance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
+                f"Step is {self._steps}, the timesteps on destination is {self._timesteps_on_destination}, the destination xpos y is: {self._destination_xpos_y}, "
+                f"\nthe body xpos y is: {qpos_body}, the abs distance is: {abs_distance},"
+                f"\nDetected distance to the sign is {self._dist_to_sign}, the geomid is {self._focus_geom_mjidx}, the sign mjidx is: {self._movable_sign_geom_mjidx}"
                 f"\nThe locomotion control is {self._data.ctrl[2]}, the speed is: {action[2]}, the distance penalty is {distance_penalty}"
                 f"\nIf is still approaching the destination: {qpos_body <= self._destination_xpos_y}"
-                f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}\n")
+                f"\nThe gaze angle diff is: {self._angle_from_target(site_name='rangefinder-site', target_idx=self._movable_sign_geom_mjidx)} The gaze reward shaping is {gaze_reward_shaping}, the reward is {reward}"
+                f"\nThe steps on sign is {self._timesteps_on_sign}\n")
 
         # Get termination condition
         terminate = False

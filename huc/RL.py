@@ -232,7 +232,7 @@ class RL:
             policy_kwargs = dict(
                 features_extractor_class=CustomCombinedExtractor,
                 features_extractor_kwargs=dict(vision_features_dim=128,
-                                               proprioception_features_dim=32,
+                                               proprioception_features_dim=64,
                                                stateful_information_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
