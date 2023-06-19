@@ -575,13 +575,12 @@ class MobileRead(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
-        self._mode = self._MODES[0]
-        # self._mode = np.random.choice(self._MODES)
+        self._mode = np.random.choice(self._MODES)
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
