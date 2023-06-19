@@ -349,7 +349,6 @@ class Read(Env):
             # Get the next target
             self._sample_target()
         else:
-            # TODO - POMDP with a shaking target (should not apply the true)
             reward = 0.1 * (np.exp(
                 -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
 
@@ -382,7 +381,6 @@ class Read(Env):
 
     def _log_eye_movement_data(self, previous_fixation_status, current_fixation_status, steps, qpos, amplitude,
                                ocular_motor_noise):
-        # TODO in the future, draw the eye movement trajectory
         # Log the status
         if previous_fixation_status == True and current_fixation_status == True:
             # Fixation
@@ -451,9 +449,6 @@ class MobileRead(Env):
         # Initialize task related parameters
         self._MODES = ["stationary", "mobile"]
         self._mode = None
-
-        # TODO perturbation modifications: 1. translations are aligned with the head and eyes,
-        #  2. rotations are initiated from the head and eyes thus might cause harder fixations
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
@@ -572,13 +567,6 @@ class MobileRead(Env):
         self._num_trials = 0
 
         self._ctrl_list = []
-        self._eye_movement_dict = {
-            "status": [],
-            "step": [],
-            "qpos": [],
-            "amplitude": [],
-            "ocular_motor_noise": [],
-        }
         self._last_step_saccade_qpos = np.array([0, 0])
 
         self._fixate_on_target = False
@@ -587,11 +575,13 @@ class MobileRead(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
-        self._mode = np.random.choice(self._MODES)
+        self._mode = self._MODES[0]
+        # self._mode = np.random.choice(self._MODES)
+
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
@@ -676,9 +666,6 @@ class MobileRead(Env):
         self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            print(f"the pitch amp is: {self._pitch_amp}, the pitch is: {pitch}, the actual pitch is: {self._data.qpos[self._head_joint_x_mjidx]}"
-                  f"\nthe yaw amp is: {self._yaw_amp}, the yaw is: {yaw}, the actual yaw is: {self._data.qpos[self._head_joint_z_mjidx]}"
-                  f"\n")
             self._log_design_pitches.append(pitch)
             self._log_design_yaws.append(yaw)
             self._log_actual_pitches.append(self._data.qpos[self._head_joint_x_mjidx])
@@ -752,20 +739,6 @@ class MobileRead(Env):
                 weight = 1
                 print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
                       f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
-                print(
-                    f"The number of saccades is: {self._eye_movement_dict['status'].count(self._eye_movement_status[0])}, "
-                    f"the number of fixations is: {self._eye_movement_dict['status'].count(self._eye_movement_status[1])},\n "
-                )
-                # Get the length of one list in the dictionary
-                n = len(self._eye_movement_dict['status'])
-
-                # Loop over each index and print the corresponding values from each list
-                for i in range(n):
-                    print(f"{i}: status {self._eye_movement_dict['status'][i]}, "
-                          f"step {self._eye_movement_dict['step'][i]}, "
-                          f"qpos {self._eye_movement_dict['qpos'][i]}, "
-                          f"amplitude {self._eye_movement_dict['amplitude'][i]}, "
-                          f"ocular_motor_noise {self._eye_movement_dict['ocular_motor_noise'][i]}")
 
                 # Create figs of logs and save them
                 # Plot the eye movement status
@@ -784,20 +757,3 @@ class MobileRead(Env):
                 plt.savefig('list_plot.png')
 
         return self._get_obs(), reward, terminate, {}
-
-    def _log_eye_movement_data(self, previous_fixation_status, current_fixation_status, steps, qpos, amplitude,
-                               ocular_motor_noise):
-        # TODO in the future, draw the eye movement trajectory
-        # Log the status
-        if previous_fixation_status == True and current_fixation_status == True:
-            # Fixation
-            self._eye_movement_dict["status"].append(self._eye_movement_status[1])
-        else:
-            # Saccade
-            self._eye_movement_dict["status"].append(self._eye_movement_status[0])
-
-        # Log the others
-        self._eye_movement_dict["step"].append(steps)
-        self._eye_movement_dict["qpos"].append(qpos)
-        self._eye_movement_dict["amplitude"].append(amplitude)
-        self._eye_movement_dict["ocular_motor_noise"].append(ocular_motor_noise)
