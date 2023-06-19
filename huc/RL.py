@@ -20,7 +20,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
-from huc.envs.mobile_reading.MobileRead import Read
+from huc.envs.mobile_reading.MobileRead import Read, MobileRead
 from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
 
 _MODES = {
@@ -207,7 +207,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = SignWalk()      # Read()
+        self._env = MobileRead()    # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
