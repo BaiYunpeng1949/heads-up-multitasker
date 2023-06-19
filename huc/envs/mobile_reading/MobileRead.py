@@ -457,8 +457,8 @@ class MobileRead(Env):
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
-        self._pitch_amp = 0.139/2  # 8 degrees in radians
-        self._yaw_amp = 0.192/2    # 11 degrees in radians
+        self._pitch_amp = 0.139/2/5  # 8 degrees in radians
+        self._yaw_amp = 0.192/2/5    # 11 degrees in radians
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
         self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
@@ -665,8 +665,13 @@ class MobileRead(Env):
 
     def step(self, action):
         # Apply perturbations to the eyeball
-        pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise)
-        yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise)
+        if self._mode == self._MODES[0]:
+            pitch = 0
+            yaw = 0
+        else:
+            pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise)
+            yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise)
+
         self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
         self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
 
@@ -726,17 +731,6 @@ class MobileRead(Env):
         else:
             self._fixate_on_target = False
             self._on_target_steps = 0
-
-        # Update the logs about saccades and fixations only in the test mode
-        # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-        #     self._log_eye_movement_data(
-        #         previous_fixation_status=previous_fixation_status,
-        #         current_fixation_status=self._fixate_on_target,
-        #         steps=self._steps,
-        #         qpos=self._data.qpos[0:2].copy(),
-        #         amplitude=amplitude,
-        #         ocular_motor_noise=ocular_motor_noise,
-        #     )
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
