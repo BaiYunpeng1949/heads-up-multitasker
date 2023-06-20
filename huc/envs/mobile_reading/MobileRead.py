@@ -431,6 +431,7 @@ class MobileRead(Env):
         self._head_joint_z_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "head-joint-z")
         self._head_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-x-motor")
         self._head_z_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-z-motor")
+        # TODO use velocity motor to model the head rotations later
 
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-100")
@@ -490,7 +491,7 @@ class MobileRead(Env):
 
         # Define the observation space
         width, height = 80, 80
-        self._num_stk_frm = 1
+        self._num_stk_frm = 1   # TODO use stacked frame to capture the motion and explicitly estimate the position of the target, instead of using CV to implicitly and inefficiently guessing
         self._num_stateful_info = 6
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -580,7 +581,7 @@ class MobileRead(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution

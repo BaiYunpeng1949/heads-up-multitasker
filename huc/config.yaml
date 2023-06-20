@@ -1,7 +1,7 @@
 simulator_name: 'huc'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline), and interact.
 
   train:
     total_timesteps: 100000000
@@ -23,7 +23,7 @@ rl:
   test:
     num_episodes: 1
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_26500000_steps'
+    loaded_model_name: 'rl_model_40000000_steps'
     continual_logs_name: 'PPO_174'
 
 mj_env:
