@@ -1,5 +1,5 @@
 import numpy as np
-from collections import Counter
+from collections import Counter, deque
 import mujoco
 import os
 
@@ -453,10 +453,12 @@ class MobileRead(Env):
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
-        self._pitch_amp = 0.139/2/5  # 8 degrees in radians
-        self._yaw_amp = 0.192/2/5    # 11 degrees in radians
+        self._pitch_amp = 0.0523599  # +-3 degrees in radians
+        self._yaw_amp = 0.10472    # +-6 degrees in radians
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
+        self._pitch_2nd_predominant_freq = 3.75  # 3.75 Hz      # TODO add them later
+        self._yaw_2nd_predominant_freq = 3  # 3 Hz
         self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
         self._yaw_period_stepwise = int(self._action_sample_freq / self._yaw_freq)
 
@@ -491,7 +493,9 @@ class MobileRead(Env):
 
         # Define the observation space
         width, height = 80, 80
-        self._num_stk_frm = 1   # TODO use stacked frame to capture the motion and explicitly estimate the position of the target, instead of using CV to implicitly and inefficiently guessing
+        self._num_stk_frm = 2
+        self._vision_frames = None
+        self._qpos_frames = None
         self._num_stateful_info = 6
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -523,21 +527,33 @@ class MobileRead(Env):
 
     def _get_obs(self):
         """ Get the observation of the environment """
-        # Get the vision observation
+        # Compute the vision observation
         # Render the image
         rgb, _ = self._eye_cam.render()
-
         # Preprocess - H*W*C -> C*W*H
         rgb = np.transpose(rgb, [2, 1, 0])
         rgb_normalize = self.normalise(rgb, 0, 255, -1, 1)
-
         # Convert the rgb to grayscale - boost the training speed
         gray_normalize = rgb_normalize[0:1, :, :]*0.299 + rgb_normalize[1:2, :, :]*0.587 + rgb_normalize[2:3, :, :]*0.114
         gray_normalize = np.squeeze(gray_normalize, axis=0)
-        vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
 
+        # Update the stack of frames
+        self._vision_frames.append(gray_normalize)
+        self._qpos_frames.append(self._data.qpos.copy())
+        # Replicate the newest frame if the stack is not full
+        while len(self._vision_frames) < self._num_stk_frm:
+            self._vision_frames.append(self._vision_frames[-1])
+        while len(self._qpos_frames) < self._num_stk_frm:
+            self._qpos_frames.append(self._qpos_frames[-1])
+
+        # Reshape the stack of frames - Get vision observations
+        vision = np.stack(self._vision_frames, axis=0)
+        vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
         # Get the proprioception observation
-        proprioception = np.concatenate([self._data.qpos, self._data.ctrl])
+        qpos = np.stack(self._qpos_frames, axis=0)
+        qpos = qpos.reshape((1, -1))
+        ctrl = self._data.ctrl.reshape((1, -1))    # TODO self._data.ctrl[0:2].reshape((1, -1))
+        proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
@@ -562,6 +578,10 @@ class MobileRead(Env):
         # Reset MuJoCo sim
         mujoco.mj_resetData(self._model, self._data)
 
+        # Initiate the stacked frames
+        self._vision_frames = deque(maxlen=self._num_stk_frm)
+        self._qpos_frames = deque(maxlen=self._num_stk_frm)
+
         # Reset the variables and counters
         self._steps = 0
         self._on_target_steps = 0
@@ -581,7 +601,7 @@ class MobileRead(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
