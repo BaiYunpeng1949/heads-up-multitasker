@@ -457,8 +457,10 @@ class MobileRead(Env):
         self._yaw_amp = 0.10472    # +-6 degrees in radians
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
-        self._pitch_2nd_predominant_freq = 3.75  # 3.75 Hz      # TODO add them later
-        self._yaw_2nd_predominant_freq = 3  # 3 Hz
+        self._pitch_2nd_predominant_freq = 3  # 3.75 Hz      # TODO add them later
+        self._yaw_2nd_predominant_freq = 2.75  # 3 Hz
+        self._pitch_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
+        self._yaw_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
         self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
         self._yaw_period_stepwise = int(self._action_sample_freq / self._yaw_freq)
 
