@@ -453,11 +453,14 @@ class MobileRead(Env):
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
-        self._pitch_amp = 0.0523599  # +-3 degrees in radians
-        self._yaw_amp = 0.10472    # +-6 degrees in radians
+        theoretical_pitch_amp_peak = 0.0523599  # +-3 degrees in radians
+        theoretical_yaw_amp_peak = 0.10472  # +-6 degrees in radians
+        tuning_factor = 0.75  # 50% of the theoretical amplitude
+        self._pitch_amp = theoretical_pitch_amp_peak * tuning_factor
+        self._yaw_amp = theoretical_yaw_amp_peak * tuning_factor
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
-        self._pitch_2nd_predominant_freq = 3  # 3.75 Hz      # TODO add them later
+        self._pitch_2nd_predominant_freq = 3  # 3.75 Hz
         self._yaw_2nd_predominant_freq = 2.75  # 3 Hz
         self._pitch_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
         self._yaw_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
@@ -477,6 +480,7 @@ class MobileRead(Env):
         self._rho_ocular_motor = 0.08   # The proportionality constant from paper: An Adaptive Model of Gaze-based Selection
 
         self._fixate_on_target = None
+        self._previous_fixate_on_target = None
 
         # The fatigue related parameters
         self._last_step_saccade_qpos = None
@@ -498,9 +502,9 @@ class MobileRead(Env):
         self._num_stk_frm = 2
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 6
+        self._num_stateful_info = 7
         self.observation_space = Dict({
-            "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
+            "vision": Box(low=-1, high=1, shape=(1, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
         })
@@ -540,17 +544,20 @@ class MobileRead(Env):
         gray_normalize = np.squeeze(gray_normalize, axis=0)
 
         # Update the stack of frames
-        self._vision_frames.append(gray_normalize)
+        # self._vision_frames.append(gray_normalize)
         self._qpos_frames.append(self._data.qpos.copy())
         # Replicate the newest frame if the stack is not full
-        while len(self._vision_frames) < self._num_stk_frm:
-            self._vision_frames.append(self._vision_frames[-1])
+        # while len(self._vision_frames) < self._num_stk_frm:
+        #     self._vision_frames.append(self._vision_frames[-1])
         while len(self._qpos_frames) < self._num_stk_frm:
             self._qpos_frames.append(self._qpos_frames[-1])
 
-        # Reshape the stack of frames - Get vision observations
-        vision = np.stack(self._vision_frames, axis=0)
-        vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
+        # # Reshape the stack of frames - Get vision observations
+        # vision = np.stack(self._vision_frames, axis=0)
+        # vision = vision.reshape((-1, vision.shape[-2], vision.shape[-1]))
+
+        vision = gray_normalize.reshape((-1, gray_normalize.shape[-2], gray_normalize.shape[-1]))
+
         # Get the proprioception observation
         qpos = np.stack(self._qpos_frames, axis=0)
         qpos = qpos.reshape((1, -1))
@@ -565,9 +572,10 @@ class MobileRead(Env):
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
         mode_norm = -1 if self._mode == self._MODES[0] else 1
         fixation_norm = 1 if self._fixate_on_target else -1
+        previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm,
-             mode_norm, fixation_norm]
+             mode_norm, fixation_norm, previous_fixation_norm]
         )
 
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -593,6 +601,7 @@ class MobileRead(Env):
         self._last_step_saccade_qpos = np.array([0, 0])
 
         self._fixate_on_target = False
+        self._previous_fixate_on_target = False
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -681,8 +690,20 @@ class MobileRead(Env):
             pitch = 0
             yaw = 0
         else:
-            pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise)
-            yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise)
+            # pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise)
+            # yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise)
+
+            pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
+                self._pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
+                2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self._action_sample_freq)
+            yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
+                self._yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
+                2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
+
+            # Add some random noise
+            noise_scale = 0.015  # Scale of the noise, adjust this based on your needs
+            pitch += np.random.normal(loc=0, scale=noise_scale, size=pitch.shape)
+            yaw += np.random.normal(loc=0, scale=noise_scale, size=yaw.shape)
 
         self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
         self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
@@ -716,7 +737,7 @@ class MobileRead(Env):
         # Log and save the control for fatigue calculation
         self._ctrl_list.append(self._data.ctrl.copy())
         # Log and save the action for saccades and fixations calculation
-        previous_fixation_status = self._fixate_on_target
+        self._previous_fixate_on_target = self._fixate_on_target
 
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
@@ -739,7 +760,7 @@ class MobileRead(Env):
             self._fixate_on_target = True
         else:
             self._fixate_on_target = False
-            self._on_target_steps = 0
+            # self._on_target_steps = 0
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
@@ -776,6 +797,8 @@ class MobileRead(Env):
                 # Show a legend
                 plt.legend()
                 # Save the plot as an image file (e.g., PNG, JPEG, PDF)
-                plt.savefig('list_plot.png')
+                directory = os.path.dirname(os.path.realpath(__file__))
+                fig_save_path = os.path.join(directory, "perturbation_trajectory.png")
+                plt.savefig(fig_save_path)
 
         return self._get_obs(), reward, terminate, {}

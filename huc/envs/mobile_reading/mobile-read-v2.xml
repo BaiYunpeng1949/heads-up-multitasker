@@ -69,7 +69,7 @@
         <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-0.7854 0.7854"/>
         <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.7854 0.7854"/>
         <position name="head-x-motor" joint="head-joint-x" class="head-rotations" ctrlrange="-0.07 0.07"/>
-        <position name="head-z-motor" joint="head-joint-z" class="head-rotations" ctrlrange="-0.1 0.1"/>
+        <position name="head-z-motor" joint="head-joint-z" class="head-rotations" ctrlrange="-0.15 0.15"/>
     </actuator>
     <sensor>
         <rangefinder name="rangefinder" site="rangefinder-site"/>
