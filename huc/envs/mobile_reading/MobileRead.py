@@ -423,10 +423,6 @@ class MobileRead(Env):
 
         self._eye_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
 
-        # TODO 1. change the eyeball to 0.0125, which matches the real human setting;
-        #  2. try to train with continuous fixations;
-        #  3. try with enough number of words as realistic setting horizontally:
-
         # Head joints for perturbation:
         # the head motion amplitudes were found to be approximately 11 degrees in the horizontal direction (yaw)
         # and 8 degrees in the vertical direction (pitch)
@@ -779,7 +775,7 @@ class MobileRead(Env):
             self._fixate_on_target = True
         else:
             self._fixate_on_target = False
-            # self._on_target_steps = 0     # TODO try with the continuous fixations
+            # self._on_target_steps = 0
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
