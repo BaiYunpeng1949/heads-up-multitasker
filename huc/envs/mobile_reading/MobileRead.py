@@ -445,7 +445,7 @@ class MobileRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.5 * self._action_sample_freq)  # 0.5 seconds per word
+        self._dwell_steps = int(0.5 * self._action_sample_freq)  # 0.5 seconds per word, TODO try 200-250 (100-500) ms dynamic fixation duration if necessary
 
         # Initialize task related parameters
         self._MODES = ["stationary", "mobile"]
@@ -466,6 +466,8 @@ class MobileRead(Env):
         self._yaw_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
         self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
         self._yaw_period_stepwise = int(self._action_sample_freq / self._yaw_freq)
+
+        self._perturbation_noise_scale = 0.015
 
         self._log_design_pitches = []
         self._log_design_yaws = []
@@ -701,7 +703,9 @@ class MobileRead(Env):
                 2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
 
             # Add some random noise
-            noise_scale = 0.015  # Scale of the noise, adjust this based on your needs
+            noise_scale = self._perturbation_noise_scale  # Scale of the noise, a bigger range for training, later tune it to fit human data.
+            if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+                noise_scale = 0.005
             pitch += np.random.normal(loc=0, scale=noise_scale, size=pitch.shape)
             yaw += np.random.normal(loc=0, scale=noise_scale, size=yaw.shape)
 
@@ -760,7 +764,7 @@ class MobileRead(Env):
             self._fixate_on_target = True
         else:
             self._fixate_on_target = False
-            # self._on_target_steps = 0
+            # self._on_target_steps = 0     # TODO try with the continuous fixations
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
