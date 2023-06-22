@@ -431,7 +431,6 @@ class MobileRead(Env):
         self._head_joint_z_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "head-joint-z")
         self._head_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-x-motor")
         self._head_z_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-z-motor")
-        # TODO use velocity motor to model the head rotations later
 
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-100")
@@ -445,7 +444,7 @@ class MobileRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.5 * self._action_sample_freq)  # 0.5 seconds per word, TODO try 200-250 (100-500) ms dynamic fixation duration if necessary
+        self._dwell_steps = int(0.45 * self._action_sample_freq)  # 0.5 seconds per word, TODO try 200-250 (100-500) ms dynamic fixation duration if necessary
 
         # Initialize task related parameters
         self._MODES = ["stationary", "mobile"]
@@ -453,11 +452,8 @@ class MobileRead(Env):
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
-        theoretical_pitch_amp_peak = 0.0523599  # +-3 degrees in radians
-        theoretical_yaw_amp_peak = 0.10472  # +-6 degrees in radians
-        tuning_factor = 0.75  # 50% of the theoretical amplitude
-        self._pitch_amp = theoretical_pitch_amp_peak * tuning_factor
-        self._yaw_amp = theoretical_yaw_amp_peak * tuning_factor
+        self._theoretical_pitch_amp_peak = 0.0523599  # +-3 degrees in radians
+        self._theoretical_yaw_amp_peak = 0.10472  # +-6 degrees in radians
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
         self._pitch_2nd_predominant_freq = 3  # 3.75 Hz
@@ -563,7 +559,7 @@ class MobileRead(Env):
         # Get the proprioception observation
         qpos = np.stack(self._qpos_frames, axis=0)
         qpos = qpos.reshape((1, -1))
-        ctrl = self._data.ctrl.reshape((1, -1))    # TODO self._data.ctrl[0:2].reshape((1, -1))
+        ctrl = self._data.ctrl.reshape((1, -1))
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Get the stateful information observation - normalize to [-1, 1]
@@ -614,7 +610,7 @@ class MobileRead(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[1]
+            self._mode = self._MODES[0]
             print(f"NOTE, the current mode is: {self._mode}")
 
         # Sample a target according to the target idx probability distribution
@@ -688,26 +684,32 @@ class MobileRead(Env):
 
     def step(self, action):
         # Apply perturbations to the eyeball
+        # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
+        # for testing, I choose a changing smaller value to fit human data
+        if self._config["rl"]["mode"] == "train":
+            amp_tuning_factor = 0.75
+            perturbation_amp_noise_scale = self._perturbation_noise_scale
+        else:
+            # TODO these hyperparameters can be tuned to meet human data
+            amp_tuning_factor = 0.75
+            perturbation_amp_noise_scale = 0
+
         if self._mode == self._MODES[0]:
             pitch = 0
             yaw = 0
         else:
-            # pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise)
-            # yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise)
-
-            pitch = self._pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
-                self._pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
+            pitch_amp = self._theoretical_pitch_amp_peak * amp_tuning_factor
+            yaw_amp = self._theoretical_yaw_amp_peak * amp_tuning_factor
+            pitch = pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
+                pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
                 2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self._action_sample_freq)
-            yaw = self._yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
-                self._yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
+            yaw = yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
+                yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
                 2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
 
             # Add some random noise
-            noise_scale = self._perturbation_noise_scale  # Scale of the noise, a bigger range for training, later tune it to fit human data.
-            if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-                noise_scale = 0.005
-            pitch += np.random.normal(loc=0, scale=noise_scale, size=pitch.shape)
-            yaw += np.random.normal(loc=0, scale=noise_scale, size=yaw.shape)
+            pitch += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=pitch.shape)
+            yaw += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=yaw.shape)
 
         self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
         self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
