@@ -423,6 +423,10 @@ class MobileRead(Env):
 
         self._eye_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "eye")
 
+        # TODO 1. change the eyeball to 0.0125, which matches the real human setting;
+        #  2. try to train with continuous fixations;
+        #  3. try with enough number of words as realistic setting horizontally:
+
         # Head joints for perturbation:
         # the head motion amplitudes were found to be approximately 11 degrees in the horizontal direction (yaw)
         # and 8 degrees in the vertical direction (pitch)
@@ -621,7 +625,7 @@ class MobileRead(Env):
             self._data.qpos[self._eye_joint_y_mjidx] = 0
             self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
-            print(f"\nThe perturbation amplitude tuning factor is: {self._perturbation_amp_tuning_factor}")
+            print(f"\nThe reading dwell time is: {self._dwell_steps}")
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -696,12 +700,12 @@ class MobileRead(Env):
         # Apply perturbations to the eyeball
         # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
         # for testing, I choose a changing smaller value to fit human data
-        if self._config["rl"]["mode"] == "train" or self._config["rl"]["mode"] == "debug":
+        if self._config["rl"]["mode"] == "test":
+            amp_tuning_factor = 1
+            perturbation_amp_noise_scale = 0
+        else:   # Train, continual train, debug
             amp_tuning_factor = self._perturbation_amp_tuning_factor
             perturbation_amp_noise_scale = self._perturbation_noise_scale
-        else:
-            amp_tuning_factor = 0.75
-            perturbation_amp_noise_scale = 0
 
         if self._mode == self._MODES[0]:
             pitch = 0
@@ -793,6 +797,8 @@ class MobileRead(Env):
             terminate = True
 
             if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
+                print(f"\nThe amp tuning factor is: {amp_tuning_factor}, "
+                      f"\nThe perturbation amp noise scale is: {perturbation_amp_noise_scale}")
                 print(f"The total time steps is: {self._steps}")
                 weight = 1
                 print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
