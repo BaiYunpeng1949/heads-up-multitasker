@@ -1,0 +1,2 @@
+street-square.png
+- Original downloaded from https://unsplash.com/photos/1Acmch4zEoQ as a jpg file. Converted to png, and cropped to 3400x3400 because mujoco expects a square image.
