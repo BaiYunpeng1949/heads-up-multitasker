@@ -444,7 +444,7 @@ class MobileRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.45 * self._action_sample_freq)  # 0.5 seconds per word, TODO try 200-250 (100-500) ms dynamic fixation duration if necessary
+        self._dwell_steps = int(0.5 * self._action_sample_freq)  # maximum 0.5 seconds per word
 
         # Initialize task related parameters
         self._MODES = ["stationary", "mobile"]
@@ -454,6 +454,8 @@ class MobileRead(Env):
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
         self._theoretical_pitch_amp_peak = 0.0523599  # +-3 degrees in radians
         self._theoretical_yaw_amp_peak = 0.10472  # +-6 degrees in radians
+        self._perturbation_amp_tuning_factor = None
+        self._perturbation_amp_tuning_range = [0.1, 1]
         self._pitch_freq = 2  # 2 Hz
         self._yaw_freq = 1  # 1 Hz
         self._pitch_2nd_predominant_freq = 3  # 3.75 Hz
@@ -497,7 +499,7 @@ class MobileRead(Env):
 
         # Define the observation space
         width, height = 80, 80
-        self._num_stk_frm = 2
+        self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
         self._num_stateful_info = 7
@@ -576,8 +578,13 @@ class MobileRead(Env):
              mode_norm, fixation_norm, previous_fixation_norm]
         )
 
-        if stateful_info.shape[0] != self._num_stateful_info:
-            raise ValueError("The shape of stateful information is not correct!")
+        # Observation space check
+        if vision.shape != self.observation_space["vision"].shape:
+            raise ValueError("The shape of vision observation is not correct!")
+        if proprioception.shape != self.observation_space["proprioception"].shape:
+            raise ValueError("The shape of proprioception observation is not correct!")
+        if stateful_info.shape != self.observation_space["stateful information"].shape:
+            raise ValueError("The shape of stateful information observation is not correct!")
 
         return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
 
@@ -601,6 +608,8 @@ class MobileRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
+        self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
+
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
@@ -610,8 +619,9 @@ class MobileRead(Env):
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[0]
+            self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
+            print(f"\nThe perturbation amplitude tuning factor is: {self._perturbation_amp_tuning_factor}")
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -686,11 +696,10 @@ class MobileRead(Env):
         # Apply perturbations to the eyeball
         # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
         # for testing, I choose a changing smaller value to fit human data
-        if self._config["rl"]["mode"] == "train":
-            amp_tuning_factor = 0.75
+        if self._config["rl"]["mode"] == "train" or self._config["rl"]["mode"] == "debug":
+            amp_tuning_factor = self._perturbation_amp_tuning_factor
             perturbation_amp_noise_scale = self._perturbation_noise_scale
         else:
-            # TODO these hyperparameters can be tuned to meet human data
             amp_tuning_factor = 0.75
             perturbation_amp_noise_scale = 0
 
