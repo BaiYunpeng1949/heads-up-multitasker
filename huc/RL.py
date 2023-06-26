@@ -398,7 +398,7 @@ class RL:
                                 score += reward
                             print(f"the end steps is: {self._env._steps}")
 
-        if grid_search:
+        if grid_search and self._mode == _MODES['test']:
             pass
         else:
             imgs = []
@@ -446,7 +446,7 @@ class RL:
         elif self._mode == _MODES['continual_train']:
             self._continual_train()
         elif self._mode == _MODES['test'] or self._mode == _MODES['debug']:
-            if self._config_rl['test']['grid_search']['enable']:
+            if self._config_rl['test']['grid_search']['enable'] and self._mode == _MODES['test']:
                 self._test()
             else:
                 # Generate the results from the pre-trained model.

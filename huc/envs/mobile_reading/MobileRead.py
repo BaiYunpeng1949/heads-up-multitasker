@@ -444,7 +444,8 @@ class MobileRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.5 * self._action_sample_freq)  # maximum 0.5 seconds per word
+        self._dwell_steps = None
+        self._dwell_time_range = [0.2, 0.5]  # 200-500 ms
 
         # Initialize task related parameters
         self._MODES = ["stationary", "mobile"]
@@ -495,14 +496,14 @@ class MobileRead(Env):
         self._max_trials = 5  # Maximum number of cells to read - more trials in one episode will boost the convergence
         if self._config["rl"]["mode"] == "test":
             self._max_trials = len(self._ils100_cells_mjidxs)
-        self.ep_len = int(self._max_trials * self._dwell_steps * 5)
+        self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self._action_sample_freq * 5)
 
         # Define the observation space
         width, height = 80, 80
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 7
+        self._num_stateful_info = 6
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
@@ -570,12 +571,12 @@ class MobileRead(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
-        mode_norm = -1 if self._mode == self._MODES[0] else 1
+        # mode_norm = -1 if self._mode == self._MODES[0] else 1
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm,
-             mode_norm, fixation_norm, previous_fixation_norm]
+             fixation_norm, previous_fixation_norm]
         )
 
         # Observation space check
@@ -609,6 +610,7 @@ class MobileRead(Env):
         self._previous_fixate_on_target = False
 
         self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
+        self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
         # Initialize eyeball rotation angles
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
