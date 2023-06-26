@@ -626,7 +626,12 @@ class MobileRead(Env):
             print(f"\nThe reading dwell time is: {self._dwell_steps}")
 
             if params is None:
-                pass
+                self._perturbation_amp_tuning_factor = 0.5
+                self._perturbation_amp_noise_scale = 0
+                self._dwell_steps = int(0.5 * self._action_sample_freq)
+                print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
+                      f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
+                      f"the dwell steps is: {self._dwell_steps}")
             else:
                 self._perturbation_amp_tuning_factor = params["perturbation_amp_tuning_factor"]
                 self._perturbation_amp_noise_scale = params["perturbation_amp_noise_scale"]
@@ -798,37 +803,48 @@ class MobileRead(Env):
 
         # Get termination condition
         terminate = False
+        info = None
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
+            info = {
+                'end_steps': self._steps,
+                'save_folder': None,
+                'num_cells': len(self._ils100_cells_mjidxs),
+                'action_sample_freq': self._action_sample_freq
+            }
 
             if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
                 print(f"\nThe amp tuning factor is: {amp_tuning_factor}, "
                       f"\nThe perturbation amp noise scale is: {perturbation_amp_noise_scale}")
                 print(f"The total time steps is: {self._steps}")
-                weight = 1
-                print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
-                      f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
+                # weight = 1
+                # print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
+                #       f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
 
-                # Create figs of logs and save them
-                # Plot the eye movement status
-                steps = range(len(self._log_design_pitches))
-                plt.plot(steps, self._log_design_pitches, label='Design Pitches')
-                plt.plot(steps, self._log_design_yaws, label='Design Yaws')
-                plt.plot(steps, self._log_actual_pitches, label='Actual Pitches')
-                plt.plot(steps, self._log_actual_yaws, label='Actual Yaws')
-                # Set labels and title
-                plt.xlabel('Steps')
-                plt.ylabel('Values')
-                plt.title('List Plot')
-                # Show a legend
-                plt.legend()
-                # Save the plot as an image file (e.g., PNG, JPEG, PDF)
                 directory = os.path.dirname(os.path.realpath(__file__))
                 # Create a folder called 'results' to save the figs
                 directory = os.path.join(directory, "results")
                 if not os.path.exists(directory):
                     os.makedirs(directory)
-                fig_save_path = os.path.join(directory, "perturbation_trajectory.png")
-                plt.savefig(fig_save_path)
 
-        return self._get_obs(), reward, terminate, {}
+                if (self._config["rl"]["mode"] == "test" and self._config["rl"]["test"]["grid_search"]["enable"] == False) \
+                        or self._config["rl"]["mode"] == "debug":
+                    # Create figs of logs and save them only in the non-grid-search version: to prevent the process slow down
+                    # Plot the eye movement status
+                    steps = range(len(self._log_design_pitches))
+                    plt.plot(steps, self._log_design_pitches, label='Design Pitches')
+                    plt.plot(steps, self._log_design_yaws, label='Design Yaws')
+                    plt.plot(steps, self._log_actual_pitches, label='Actual Pitches')
+                    plt.plot(steps, self._log_actual_yaws, label='Actual Yaws')
+                    # Set labels and title
+                    plt.xlabel('Steps')
+                    plt.ylabel('Values')
+                    plt.title('List Plot')
+                    # Show a legend
+                    plt.legend()
+                    fig_save_path = os.path.join(directory, "perturbation_trajectory.png")
+                    plt.savefig(fig_save_path)
+                # Update the info
+                info['save_folder'] = directory
+
+        return self._get_obs(), reward, terminate, info

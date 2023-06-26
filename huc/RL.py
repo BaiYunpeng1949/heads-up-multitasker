@@ -13,6 +13,7 @@ import torch as th
 from torch import nn
 
 import itertools
+import pandas as pd
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
@@ -200,6 +201,7 @@ class RL:
             print('Configuration:\n    The foveated vision is NOT applied.')
         print(
             f"    The mode is: {self._config_rl['mode']} \n"
+            f"        The grid search is: {self._config_rl['test']['grid_search']['enable']}\n"
             f"    The layout name is: {self._config_rl['test']['layout_name']}"
         )
         if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
@@ -361,6 +363,7 @@ class RL:
         elif self._mode == _MODES['test']:
             print('\nThe pre-trained RL model testing: ')
             if grid_search:
+                # Download the configurations
                 dwell_steps_range = self._config_rl['test']['grid_search']['dwell_steps'][0]
                 dwell_steps_stride = self._config_rl['test']['grid_search']['dwell_steps'][1]
                 dwell_steps_range[1] += dwell_steps_stride
@@ -372,6 +375,15 @@ class RL:
                 perturbation_amp_noise_scale_range[1] += perturbation_amp_noise_scale_stride
                 print('\nThe grid search is enabled.')
 
+                # Initialize the lists for storing parameters
+                dwell_steps_list = []
+                perturbation_amp_noise_scale_list = []
+                perturbation_amp_tuning_factor_list = []
+                end_steps_list = []
+                csv_directory = None
+                num_cells = None
+                action_sample_freq = None
+
                 for dwell_steps in np.arange(*dwell_steps_range, dwell_steps_stride):
                     for perturbation_amp_tuning_factor in np.arange(*amp_tuning_factor_range, amp_tuning_factor_stride):
                         for perturbation_amp_noise_scale in np.arange(*perturbation_amp_noise_scale_range,
@@ -379,6 +391,10 @@ class RL:
                             dwell_steps = round(dwell_steps, 2)
                             perturbation_amp_tuning_factor = round(perturbation_amp_tuning_factor, 2)
                             perturbation_amp_noise_scale = round(perturbation_amp_noise_scale, 3)
+
+                            dwell_steps_list.append(dwell_steps)
+                            perturbation_amp_tuning_factor_list.append(perturbation_amp_tuning_factor)
+                            perturbation_amp_noise_scale_list.append(perturbation_amp_noise_scale)
 
                             params = {
                                 'dwell_steps': dwell_steps,
@@ -396,7 +412,35 @@ class RL:
                                 action, _states = self._model.predict(obs, deterministic=True)
                                 obs, reward, done, info = self._env.step(action)
                                 score += reward
-                            print(f"the end steps is: {self._env._steps}")
+
+                            end_steps_list.append(info['end_steps'])
+                            csv_directory = info['save_folder']
+                            num_cells = info['num_cells']
+                            action_sample_freq = info['action_sample_freq']
+
+                # Write parameters and results to a dataframe
+                df = pd.DataFrame({
+                    'dwell_steps': dwell_steps_list,
+                    'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor_list,
+                    'perturbation_amp_noise_scale': perturbation_amp_noise_scale_list,
+                    'end_steps': end_steps_list,
+                })
+                # Process the data in dataframe, add reading speed and mobile reading speed degradation
+                df['reading_speed_wps'] = num_cells * action_sample_freq / df['end_steps']
+                # Select the row with the desired criteria
+                reference_row = df[
+                    (df['perturbation_amp_tuning_factor'] == 0) & (df['perturbation_amp_noise_scale'] == 0)]
+                # Group the dataframe by 'dwell_steps' and divide each group by the reference row
+                df['walk_over_stand_percent'] = df.groupby('dwell_steps')['end_steps'].transform(lambda x: x.iloc[0] / x)
+                # Save the plot as an image file (e.g., PNG, JPEG, PDF)
+                directory = csv_directory
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+                csv_save_path = os.path.join(directory, "results.csv")
+                df.to_csv(csv_save_path, index=False)
+                print(
+                    f"\n--------------------------------------------------------------------------------------------"
+                    f"\nThe grid search results are stored in {csv_save_path}")
 
         if grid_search and self._mode == _MODES['test']:
             pass
