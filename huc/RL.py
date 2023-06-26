@@ -12,6 +12,8 @@ from gym import spaces
 import torch as th
 from torch import nn
 
+import itertools
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
 from stable_baselines3.common.env_util import make_vec_env
@@ -353,52 +355,80 @@ class RL:
         """
         This method generates the RL env testing results with or without a pre-trained RL model in a manual way.
         """
+        grid_search = self._config_rl['test']['grid_search']['enable']
         if self._mode == _MODES['debug']:
             print('\nThe MuJoCo env and tasks baseline: ')
         elif self._mode == _MODES['test']:
             print('\nThe pre-trained RL model testing: ')
+            if grid_search:
+                dwell_steps_range = self._config_rl['test']['grid_search']['dwell_steps'][0]
+                dwell_steps_stride = self._config_rl['test']['grid_search']['dwell_steps'][1]
+                dwell_steps_range[1] += dwell_steps_stride
+                amp_tuning_factor_range = self._config_rl['test']['grid_search']['amp_tuning_factor'][0]
+                amp_tuning_factor_stride = self._config_rl['test']['grid_search']['amp_tuning_factor'][1]
+                amp_tuning_factor_range[1] += amp_tuning_factor_stride
+                perturbation_amp_noise_scale_range = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][0]
+                perturbation_amp_noise_scale_stride = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][1]
+                perturbation_amp_noise_scale_range[1] += perturbation_amp_noise_scale_stride
+                print('\nThe grid search is enabled.')
 
-        imgs = []
-        imgs_eye = []
-        for episode in range(1, self._num_episodes + 1):
-            obs = self._env.reset()
-            imgs.append(self._env.render()[0])
-            imgs_eye.append(self._env.render()[1])
-            done = False
-            score = 0
-            info = None
+                for dwell_steps in np.arange(*dwell_steps_range, dwell_steps_stride):
+                    for perturbation_amp_tuning_factor in np.arange(*amp_tuning_factor_range, amp_tuning_factor_stride):
+                        for perturbation_amp_noise_scale in np.arange(*perturbation_amp_noise_scale_range,
+                                                                      perturbation_amp_noise_scale_stride):
+                            dwell_steps = round(dwell_steps, 2)
+                            perturbation_amp_tuning_factor = round(perturbation_amp_tuning_factor, 2)
+                            perturbation_amp_noise_scale = round(perturbation_amp_noise_scale, 3)
 
-            while not done:
-                if self._mode == _MODES['debug']:
-                    action = self._env.action_space.sample()
-                elif self._mode == _MODES['test']:
-                    action, _states = self._model.predict(obs, deterministic=True)
-                else:
-                    action = 0
-                obs, reward, done, info = self._env.step(action)
+                            params = {
+                                'dwell_steps': dwell_steps,
+                                'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor,
+                                'perturbation_amp_noise_scale': perturbation_amp_noise_scale,
+                                'mode': 1,
+                            }
+
+                            obs = self._env.reset(params=params)
+                            done = False
+                            score = 0
+                            info = None
+
+                            while not done:
+                                action, _states = self._model.predict(obs, deterministic=True)
+                                obs, reward, done, info = self._env.step(action)
+                                score += reward
+                            print(f"the end steps is: {self._env._steps}")
+
+        if grid_search:
+            pass
+        else:
+            imgs = []
+            imgs_eye = []
+            for episode in range(1, self._num_episodes + 1):
+                obs = self._env.reset()
                 imgs.append(self._env.render()[0])
                 imgs_eye.append(self._env.render()[1])
+                done = False
+                score = 0
+                info = None
 
-                # Save img frame by frame
-                if self._env._steps <= 3:
-                    # print('printed the {}th frame'.format(self._env._steps))
-                    # Create a folder if not exist
-                    folder_name = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
-                    if not os.path.exists(folder_name):
-                        os.makedirs(folder_name)
-                    path = folder_name + '/{}.png'.format(self._env._steps)
+                while not done:
+                    if self._mode == _MODES['debug']:
+                        action = self._env.action_space.sample()
+                    elif self._mode == _MODES['test']:
+                        action, _states = self._model.predict(obs, deterministic=True)
+                    else:
+                        action = 0
+                    obs, reward, done, info = self._env.step(action)
+                    imgs.append(self._env.render()[0])
+                    imgs_eye.append(self._env.render()[1])
+                    score += reward
 
-                    cv2.imwrite(path, self._env.render()[1])
+                print(
+                    f'Episode:{episode}     Score:{score} \n'
+                    f'***************************************************************************************************\n'
+                )
 
-                score += reward
-                # progress_bar.update(1)
-            # progress_bar.close()  # Tip: this line's better before any update. Or it would be split.
-            print(
-                f'Episode:{episode}     Score:{score} \n'
-                f'***************************************************************************************************\n'
-            )
-
-        return imgs, imgs_eye
+            return imgs, imgs_eye
 
         # if self._mode == _MODES['test']:
         #     # Use the official evaluation tool.
@@ -416,32 +446,35 @@ class RL:
         elif self._mode == _MODES['continual_train']:
             self._continual_train()
         elif self._mode == _MODES['test'] or self._mode == _MODES['debug']:
-            # Generate the results from the pre-trained model.
-            rgb_images, rgb_eye_images = self._test()
-            # Write a video. First get the rgb images, then identify the path.
-            # video_folder_path = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
-            video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
-            if os.path.exists(video_folder_path) is False:
-                os.makedirs(video_folder_path)
-            layout_name = self._config_rl['test']['layout_name']
-            video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_' + layout_name
-            video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
-            write_video(
-                filepath=video_path,
-                fps=int(self._env._action_sample_freq),
-                rgb_images=rgb_images,
-                width=rgb_images[0].shape[1],
-                height=rgb_images[0].shape[0],
-            )
-            # Write the agent's visual perception
-            video_path_eye = os.path.join(video_folder_path, video_name_prefix + '_eye.avi')
-            write_video(
-                filepath=video_path_eye,
-                fps=int(self._env._action_sample_freq),
-                rgb_images=rgb_eye_images,
-                width=rgb_eye_images[0].shape[1],
-                height=rgb_eye_images[0].shape[0],
-            )
+            if self._config_rl['test']['grid_search']['enable']:
+                self._test()
+            else:
+                # Generate the results from the pre-trained model.
+                rgb_images, rgb_eye_images = self._test()
+                # Write a video. First get the rgb images, then identify the path.
+                # video_folder_path = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
+                video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
+                if os.path.exists(video_folder_path) is False:
+                    os.makedirs(video_folder_path)
+                layout_name = self._config_rl['test']['layout_name']
+                video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_' + layout_name
+                video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
+                write_video(
+                    filepath=video_path,
+                    fps=int(self._env._action_sample_freq),
+                    rgb_images=rgb_images,
+                    width=rgb_images[0].shape[1],
+                    height=rgb_images[0].shape[0],
+                )
+                # Write the agent's visual perception
+                video_path_eye = os.path.join(video_folder_path, video_name_prefix + '_eye.avi')
+                write_video(
+                    filepath=video_path_eye,
+                    fps=int(self._env._action_sample_freq),
+                    rgb_images=rgb_eye_images,
+                    width=rgb_eye_images[0].shape[1],
+                    height=rgb_eye_images[0].shape[0],
+                )
         else:
             pass
 

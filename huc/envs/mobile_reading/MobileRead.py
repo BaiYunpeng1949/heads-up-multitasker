@@ -465,7 +465,7 @@ class MobileRead(Env):
         self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
         self._yaw_period_stepwise = int(self._action_sample_freq / self._yaw_freq)
 
-        self._perturbation_noise_scale = 0.015
+        self._perturbation_amp_noise_scale = 0.015
 
         self._log_design_pitches = []
         self._log_design_yaws = []
@@ -588,7 +588,7 @@ class MobileRead(Env):
 
         return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
 
-    def reset(self):
+    def reset(self, params=None):
 
         # Reset MuJoCo sim
         mujoco.mj_resetData(self._model, self._data)
@@ -622,6 +622,13 @@ class MobileRead(Env):
             self._mode = self._MODES[1]
             print(f"NOTE, the current mode is: {self._mode}")
             print(f"\nThe reading dwell time is: {self._dwell_steps}")
+
+            if params is None:
+                pass
+            else:
+                self._perturbation_amp_tuning_factor = params["perturbation_amp_tuning_factor"]
+                self._perturbation_amp_noise_scale = params["perturbation_amp_noise_scale"]
+                self._dwell_steps = int(params["dwell_steps"] * self._action_sample_freq)
 
         # Sample a target according to the target idx probability distribution
         self._sample_target()
@@ -697,11 +704,11 @@ class MobileRead(Env):
         # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
         # for testing, I choose a changing smaller value to fit human data
         if self._config["rl"]["mode"] == "test":
-            amp_tuning_factor = 0
-            perturbation_amp_noise_scale = 0
+            amp_tuning_factor = self._perturbation_amp_tuning_factor
+            perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
         else:   # Train, continual train, debug
             amp_tuning_factor = self._perturbation_amp_tuning_factor
-            perturbation_amp_noise_scale = self._perturbation_noise_scale
+            perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
 
         if self._mode == self._MODES[0]:
             pitch = 0
@@ -815,6 +822,10 @@ class MobileRead(Env):
                 plt.legend()
                 # Save the plot as an image file (e.g., PNG, JPEG, PDF)
                 directory = os.path.dirname(os.path.realpath(__file__))
+                # Create a folder called 'results' to save the figs
+                directory = os.path.join(directory, "results")
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
                 fig_save_path = os.path.join(directory, "perturbation_trajectory.png")
                 plt.savefig(fig_save_path)
 
