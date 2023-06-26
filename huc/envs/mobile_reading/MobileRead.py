@@ -697,7 +697,7 @@ class MobileRead(Env):
         # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
         # for testing, I choose a changing smaller value to fit human data
         if self._config["rl"]["mode"] == "test":
-            amp_tuning_factor = 1
+            amp_tuning_factor = 0
             perturbation_amp_noise_scale = 0
         else:   # Train, continual train, debug
             amp_tuning_factor = self._perturbation_amp_tuning_factor
