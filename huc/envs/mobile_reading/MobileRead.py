@@ -622,12 +622,10 @@ class MobileRead(Env):
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
             self._mode = self._MODES[1]
-            print(f"NOTE, the current mode is: {self._mode}")
-            print(f"\nThe reading dwell time is: {self._dwell_steps}")
 
             if params is None:
-                self._perturbation_amp_tuning_factor = 0.5
-                self._perturbation_amp_noise_scale = 0
+                self._perturbation_amp_tuning_factor = 0.2
+                self._perturbation_amp_noise_scale = 0.005
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
@@ -710,12 +708,8 @@ class MobileRead(Env):
         # Apply perturbations to the eyeball
         # Update the tunable hyperparameters, for training, I choose a big value to cover the whole range,
         # for testing, I choose a changing smaller value to fit human data
-        if self._config["rl"]["mode"] == "test":
-            amp_tuning_factor = self._perturbation_amp_tuning_factor
-            perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
-        else:   # Train, continual train, debug
-            amp_tuning_factor = self._perturbation_amp_tuning_factor
-            perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
+        amp_tuning_factor = self._perturbation_amp_tuning_factor
+        perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
 
         if self._mode == self._MODES[0]:
             pitch = 0
