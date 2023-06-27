@@ -27,7 +27,7 @@
         <texture type="cube" name="blue-eye" file="assets/blue_eye_texture_circle.png" gridsize="3 4" gridlayout=".U..LFRB.D.."/>
         <material name="blue-eye" texture="blue-eye" texuniform="true"/>
         <mesh name="eye" file="assets/basic_eye_2.stl" scale="0.05 0.05 0.05"/>
-        <mesh name="background" file="assets/nctest.stl" scale="5 5 5"/>
+        <mesh name="background" file="assets/fifthave.stl" scale="0.05 0.05 0.05"/>
     </asset>
     <worldbody>
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
@@ -64,6 +64,8 @@
             <joint name="head-joint-x" class="head-rotations" axis="1 0 0" range="-1 1"/>
             <joint name="head-joint-z" class="head-rotations" axis="0 0 1" range="-1 1"/>
         </body>
+
+        <geom name="background" pos="-10 50 0" type="mesh" mesh="background" />
 
     </worldbody>
     <actuator>

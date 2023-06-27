@@ -1,4 +1,6 @@
 from RL import RL
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 
 def main():

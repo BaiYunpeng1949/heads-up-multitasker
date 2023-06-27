@@ -26,7 +26,7 @@ class Read(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v3.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -409,7 +409,7 @@ class MobileRead(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v2.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v3.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -616,7 +616,7 @@ class MobileRead(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
-        self._mode = np.random.choice(self._MODES)
+        self._mode = self._MODES[0]
 
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
