@@ -447,10 +447,6 @@ class MobileRead(Env):
         self._dwell_steps = None
         self._dwell_time_range = [0.2, 0.5]  # 200-500 ms
 
-        # Initialize task related parameters
-        self._MODES = ["stationary", "mobile"]
-        self._mode = None
-
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
         self._theoretical_pitch_amp_peak = 0.0523599  # +-3 degrees in radians
@@ -571,7 +567,6 @@ class MobileRead(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
-        # mode_norm = -1 if self._mode == self._MODES[0] else 1
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
@@ -616,12 +611,9 @@ class MobileRead(Env):
         self._data.qpos[self._eye_joint_x_mjidx] = np.random.uniform(-0.5, 0.5)
         self._data.qpos[self._eye_joint_y_mjidx] = np.random.uniform(-0.5, 0.5)
 
-        self._mode = np.random.choice(self._MODES)
-
         if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
             self._data.qpos[self._eye_joint_x_mjidx] = 0
             self._data.qpos[self._eye_joint_y_mjidx] = 0
-            self._mode = self._MODES[1]
 
             if params is None:
                 self._perturbation_amp_tuning_factor = 0.2
@@ -711,22 +703,18 @@ class MobileRead(Env):
         amp_tuning_factor = self._perturbation_amp_tuning_factor
         perturbation_amp_noise_scale = self._perturbation_amp_noise_scale
 
-        if self._mode == self._MODES[0]:
-            pitch = 0
-            yaw = 0
-        else:
-            pitch_amp = self._theoretical_pitch_amp_peak * amp_tuning_factor
-            yaw_amp = self._theoretical_yaw_amp_peak * amp_tuning_factor
-            pitch = pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
-                pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
-                2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self._action_sample_freq)
-            yaw = yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
-                yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
-                2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
+        pitch_amp = self._theoretical_pitch_amp_peak * amp_tuning_factor
+        yaw_amp = self._theoretical_yaw_amp_peak * amp_tuning_factor
+        pitch = pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
+            pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
+            2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self._action_sample_freq)
+        yaw = yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
+            yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
+            2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
 
-            # Add some random noise
-            pitch += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=pitch.shape)
-            yaw += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=yaw.shape)
+        # Add some random noise
+        pitch += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=pitch.shape)
+        yaw += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=yaw.shape)
 
         self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
         self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
