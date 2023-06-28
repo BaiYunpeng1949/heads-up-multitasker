@@ -616,8 +616,8 @@ class MobileRead(Env):
             self._data.qpos[self._eye_joint_y_mjidx] = 0
 
             if params is None:
-                self._perturbation_amp_tuning_factor = 0.2
-                self._perturbation_amp_noise_scale = 0.005
+                self._perturbation_amp_tuning_factor = 0
+                self._perturbation_amp_noise_scale = 0
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
