@@ -23,7 +23,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
-from huc.envs.mobile_reading.MobileRead import Read, MobileRead
+from huc.envs.mobile_reading.LocomotionRead import Read, PerturbationRead, WalkRead
 from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
 
 _MODES = {
@@ -201,7 +201,7 @@ class RL:
             print('Configuration:\n    The foveated vision is NOT applied.')
         print(
             f"    The mode is: {self._config_rl['mode']} \n"
-            f"        The grid search is: {self._config_rl['test']['grid_search']['enable']}\n"
+            f"        WARNING: The grid search is: {self._config_rl['test']['grid_search']['enable']}\n"
             f"    The layout name is: {self._config_rl['test']['layout_name']}"
         )
         if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
@@ -211,7 +211,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = MobileRead()    # SignWalk(), Read()
+        self._env = WalkRead()    # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -373,7 +373,6 @@ class RL:
                 perturbation_amp_noise_scale_range = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][0]
                 perturbation_amp_noise_scale_stride = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][1]
                 perturbation_amp_noise_scale_range[1] += perturbation_amp_noise_scale_stride
-                print('\nThe grid search is enabled.')
 
                 # Initialize the lists for storing parameters
                 dwell_steps_list = []
