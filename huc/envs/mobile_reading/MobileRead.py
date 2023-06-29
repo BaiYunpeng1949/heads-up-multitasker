@@ -785,7 +785,7 @@ class MobileRead(Env):
 
         # Get termination condition
         terminate = False
-        info = None
+        info = {}
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
             info = {
