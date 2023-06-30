@@ -890,7 +890,7 @@ class WalkRead(Env):
         self._dwell_time_range = [0.2, 0.7]  # 200-700 ms
 
         # Initialize the locomotion/translation parameters
-        translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
+        translation_speed = 0     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
         self._step_wise_translation_speed = translation_speed / self._action_sample_freq
 
         # Initialize the perturbation parameters
@@ -946,7 +946,7 @@ class WalkRead(Env):
         self._vision_frames = None
         self._qpos_frames = None
         self._num_stateful_info = 6
-        unwanted_qpos_ctrl = ['agent_locomotion']
+        unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (self._model.nq - len(unwanted_qpos_ctrl))
