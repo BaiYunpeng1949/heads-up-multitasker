@@ -887,10 +887,10 @@ class WalkRead(Env):
         self._DFLT_RGBA = [0, 0, 0, 1]
 
         self._dwell_steps = None
-        self._dwell_time_range = [0.2, 0.7]  # 200-700 ms
+        self._dwell_time_range = [0.2, 0.5]  # 200-500 ms
 
         # Initialize the locomotion/translation parameters
-        translation_speed = 0     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
+        translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
         self._step_wise_translation_speed = translation_speed / self._action_sample_freq
 
         # Initialize the perturbation parameters
@@ -1021,11 +1021,10 @@ class WalkRead(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
-        # TODO if not learning well, try to
-        #  1. Include more information - e.g., the information of the target position, can be coordination or angle
+
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
-        stateful_info = np.array(
+        stateful_info = np.array(       # TODO include more target position information if needed - like a rough position
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm,
              fixation_norm, previous_fixation_norm]
         )
@@ -1064,19 +1063,18 @@ class WalkRead(Env):
         # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
         # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
-        # TODO debug delete later
+        # TODO debug delete later - temporarily training with no perturbations
         self._perturbation_amp_tuning_factor = 0
         self._perturbation_amp_noise_scale = 0
-        self._dwell_steps = int(0.5 * self._action_sample_freq)
-        # TODO debug delete later
+        self._dwell_steps = int(0.2 * self._action_sample_freq)
 
         # Initialize eyeball rotation angles
         init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
         init_eye_y_rotation = np.random.uniform(*self._eye_y_motor_translation_range)
         self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
-        self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
+        # self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
         self._data.qpos[self._eye_joint_y_mjidx] = init_eye_y_rotation
-        self._data.ctrl[self._eye_y_motor_mjidx] = init_eye_y_rotation
+        # self._data.ctrl[self._eye_y_motor_mjidx] = init_eye_y_rotation
 
         # Initialize the locomotion position
         init_locomotion_pos = np.random.uniform(*(0.5 * self._agent_y_translation_range))
@@ -1207,24 +1205,23 @@ class WalkRead(Env):
         # Normalise action from [-1, 1] to actuator control range
         # The control range was set to [-0.7854, 0.7854] as corresponding to [-45, 45] degrees
         # Ref: "Head-fixed saccades can have amplitudes of up to 90°", https://en.wikipedia.org/wiki/Saccade
-        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[0, :])
-        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[1, :])
+        action[0] = self.normalise(action[0], -1, 1, *self._model.actuator_ctrlrange[self._eye_x_motor_mjidx, :])
+        action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[self._eye_y_motor_mjidx, :])
 
         dist, geomid = self._get_focus(site_name="rangefinder-site")
-        amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
+        saccade_amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
         if geomid == self._sampled_target_mjidx:
             self._fixate_on_target = True
             ocular_motor_noise = 0
         else:
             self._fixate_on_target = False
             # Get the ocular motor noise
-            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * amplitude))
+            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * saccade_amplitude))
             action[0:2] += ocular_motor_noise
 
-        self._data.ctrl[0:2] = action[0:2]
+        self._data.ctrl[self._eye_x_motor_mjidx] = action[0]
+        self._data.ctrl[self._eye_y_motor_mjidx] = action[1]
 
-        # Log and save the control for fatigue calculation
-        self._ctrl_list.append(self._data.ctrl.copy())
         # Log and save the action for saccades and fixations calculation
         self._previous_fixate_on_target = self._fixate_on_target
 
@@ -1233,7 +1230,7 @@ class WalkRead(Env):
         self._steps += 1
 
         # Update the last step saccade qpos
-        self._last_step_saccade_qpos = self._data.qpos[0:2].copy()
+        self._last_step_saccade_qpos = self._data.qpos[self._eye_joint_x_mjidx:self._eye_joint_x_mjidx+2].copy()
 
         # State at t+1 - transition function?
         # Eye-sight detection
@@ -1278,9 +1275,6 @@ class WalkRead(Env):
                       f"\nThe amp tuning factor is: {amp_tuning_factor}, "
                       f"\nThe perturbation amp noise scale is: {perturbation_amp_noise_scale}"
                       f"\nThe total time steps is: {self._steps}")
-                # weight = 1
-                # print(f"The fatigue cost is: {weight * sum(np.array(self._ctrl_list) ** 2)}, "
-                #       f"the total value is: {sum(weight * sum(np.array(self._ctrl_list) ** 2))}")
 
                 directory = os.path.dirname(os.path.realpath(__file__))
                 # Create a folder called 'results' to save the figs

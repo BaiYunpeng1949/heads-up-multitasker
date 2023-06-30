@@ -42,15 +42,19 @@
     <worldbody>
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
+        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.45 0.45 0.45 1"/>
+        <geom name="ground" size="500 500 0.1" type="plane" rgba="1.0 0.7 0.4 1.0" condim="3"/>
 
         <body name="agent" pos="0 0 1.8" euler="0 0 1.08">
             <camera name="env" pos="0.25 -0.55 0.15" euler="1.4 0.1 0.02"/>
+            <geom name="ribcage" type="mesh" mesh="ribcage" pos="0 0 -0.15" euler="1.57 1.57 0" rgba="0.99 0.99 0.99 0.5"/>
+            <joint name="agent-joint-y" class="agent-translations" axis="0 1 0" range="-500 500"/>
 
             <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
                 <geom name="eye" type="sphere" size="0.0125" material="blue-eye" rgba="1 1 1 1" quat="0.6625191 0.0130711 0.7488417 0.0115643"/>
                 <camera name="eye" fovy="90"/>
-                <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-0.15 0.15"/>
-                <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-0.1 0.1"/>
+                <joint name="eye-joint-x" class="eye" axis="1 0 0" range="-0.2 0.2"/>
+                <joint name="eye-joint-y" class="eye" axis="0 1 0" range="-0.2 0.2"/>
                 <site name="rangefinder-site" quat="0 0 1 0"/>
             </body>
 
@@ -74,21 +78,14 @@
                 <joint name="head-joint-x" class="head-rotations" axis="1 0 0" range="-1 1"/>
                 <joint name="head-joint-z" class="head-rotations" axis="0 0 1" range="-1 1"/>
             </body>
-
-            <geom name="ribcage" type="mesh" mesh="ribcage" pos="0 0 -0.15" euler="1.57 1.57 0" rgba="0.99 0.99 0.99 0.5"/>
-            <joint name="agent-joint-y" class="agent-translations" axis="0 1 0" range="-500 500"/>
         </body>
-
-<!--        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.45 0.45 0.45 1"/>-->
-<!--        <geom name="ground" size="500 500 0.1" type="plane" rgba="1.0 0.7 0.4 1.0" condim="3"/>-->
-
     </worldbody>
     <actuator>
-        <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-0.15 0.15"/>
-        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.1 0.1"/>
+        <position name="agent-y-motor" joint="agent-joint-y" class="agent-translations" ctrlrange="-500 500"/>
+        <position name="eye-x-motor" joint="eye-joint-x" class="eye" ctrlrange="-0.2 0.2"/>
+        <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.2 0.2"/>
         <position name="head-x-motor" joint="head-joint-x" class="head-rotations" ctrlrange="-0.07 0.07"/>
         <position name="head-z-motor" joint="head-joint-z" class="head-rotations" ctrlrange="-0.15 0.15"/>
-        <position name="agent-y-motor" joint="agent-joint-y" class="agent-translations" ctrlrange="-500 500"/>
     </actuator>
     <sensor>
         <rangefinder name="rangefinder" site="rangefinder-site"/>
