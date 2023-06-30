@@ -946,9 +946,11 @@ class WalkRead(Env):
         self._vision_frames = None
         self._qpos_frames = None
         self._num_stateful_info = 6
+        unwanted_qpos_ctrl = ['agent_locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
-            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * self._model.nq + self._model.nu,)),
+            "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (self._model.nq - len(unwanted_qpos_ctrl))
+                                                         + (self._model.nu - len(unwanted_qpos_ctrl)),)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
         })
 
@@ -988,7 +990,10 @@ class WalkRead(Env):
 
         # Update the stack of frames
         self._vision_frames.append(gray_normalize)
-        self._qpos_frames.append(self._data.qpos.copy())
+        # Remove the locomotion value since it is not normalized
+        wanted_qpos = self._data.qpos.copy()
+        wanted_qpos = np.delete(wanted_qpos, self._agent_joint_y_mjidx)
+        self._qpos_frames.append(wanted_qpos)
         # Replicate the newest frame if the stack is not full
         while len(self._vision_frames) < self._num_stk_frm:
             self._vision_frames.append(self._vision_frames[-1])
@@ -1004,7 +1009,10 @@ class WalkRead(Env):
         # Get the proprioception observation
         qpos = np.stack(self._qpos_frames, axis=0)
         qpos = qpos.reshape((1, -1))
-        ctrl = self._data.ctrl.reshape((1, -1))
+        # Remove the locomotion control since it is not normalized
+        wanted_ctrl = self._data.ctrl.copy()
+        wanted_ctrl = np.delete(wanted_ctrl, self._agent_y_motor_mjidx)
+        ctrl = wanted_ctrl.reshape((1, -1))
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Get the stateful information observation - normalize to [-1, 1]
@@ -1014,9 +1022,7 @@ class WalkRead(Env):
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
         # TODO if not learning well, try to
-        #  1. Include more information.
-        #  2. Start from non-perturbation - easier scenarios.
-        #  3. Remove scene to see whether everything is working properly.
+        #  1. Include more information - e.g., the information of the target position, can be coordination or angle
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
