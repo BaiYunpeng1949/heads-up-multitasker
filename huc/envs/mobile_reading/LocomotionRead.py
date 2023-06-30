@@ -867,7 +867,9 @@ class WalkRead(Env):
 
         # Get the motors idx in MuJoCo
         self._eye_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-x-motor")
+        self._eye_x_motor_translation_range = self._model.actuator_ctrlrange[self._eye_x_motor_mjidx]
         self._eye_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-y-motor")
+        self._eye_y_motor_translation_range = self._model.actuator_ctrlrange[self._eye_y_motor_mjidx]
         self._head_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-x-motor")
         self._head_z_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-z-motor")
         self._agent_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "agent-y-motor")
@@ -1014,7 +1016,7 @@ class WalkRead(Env):
         # TODO if not learning well, try to
         #  1. Include more information.
         #  2. Start from non-perturbation - easier scenarios.
-        #  3. Remove scene to see whether everything is working porperly.
+        #  3. Remove scene to see whether everything is working properly.
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
@@ -1052,12 +1054,19 @@ class WalkRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
-        self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
-        self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+        # TODO debug uncomment later
+        # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
+        # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+
+        # TODO debug delete later
+        self._perturbation_amp_tuning_factor = 0
+        self._perturbation_amp_noise_scale = 0
+        self._dwell_steps = int(0.5 * self._action_sample_freq)
+        # TODO debug delete later
 
         # Initialize eyeball rotation angles
-        init_eye_x_rotation = np.random.uniform(-0.5, 0.5)
-        init_eye_y_rotation = np.random.uniform(-0.5, 0.5)
+        init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
+        init_eye_y_rotation = np.random.uniform(*self._eye_y_motor_translation_range)
         self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
         self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
         self._data.qpos[self._eye_joint_y_mjidx] = init_eye_y_rotation
