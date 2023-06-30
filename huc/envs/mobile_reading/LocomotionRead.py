@@ -1011,6 +1011,10 @@ class WalkRead(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
+        # TODO if not learning well, try to
+        #  1. Include more information.
+        #  2. Start from non-perturbation - easier scenarios.
+        #  3. Remove scene to see whether everything is working porperly.
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         stateful_info = np.array(
