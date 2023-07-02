@@ -880,6 +880,18 @@ class WalkRead(Env):
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
         self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
 
+        # Get all cells max and min coordinates
+        self._cells_x_index = 0
+        self._cells_z_index = 2
+        self._ils100_x_min = np.min(
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_x_max = np.max(
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_z_min = np.min(
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_z_max = np.max(
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+
         self._sampled_target_mjidx = None
 
         # Define the target idx probability distribution
@@ -945,7 +957,7 @@ class WalkRead(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 6
+        self._num_stateful_info = 8
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -1022,10 +1034,25 @@ class WalkRead(Env):
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
 
+        self._ils100_x_min = np.min(
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_x_max = np.max(
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_z_min = np.min(
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+        self._ils100_z_max = np.max(
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+        sampled_target_xpos_x = self._data.geom(self._sampled_target_mjidx).xpos[0]
+        sampled_target_xpos_x_norm = self.normalise(sampled_target_xpos_x, self._ils100_x_min, self._ils100_x_max, -1, 1)
+        sampled_target_xpos_z = self._data.geom(self._sampled_target_mjidx).xpos[2]
+        sampled_target_xpos_z_norm = self.normalise(sampled_target_xpos_z, self._ils100_z_min, self._ils100_z_max, -1, 1)
+
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
-        stateful_info = np.array(       # TODO include more target position information if needed - like a rough position
-            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm, sampled_target_mjidx_norm,
+
+        stateful_info = np.array(
+            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
+             sampled_target_mjidx_norm, sampled_target_xpos_x_norm, sampled_target_xpos_z_norm,
              fixation_norm, previous_fixation_norm]
         )
 
@@ -1063,7 +1090,7 @@ class WalkRead(Env):
         # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
         # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
-        # TODO debug delete later - temporarily training with no perturbations
+        # TODO debug delete later - temporarily training with no perturbations since it is easier
         self._perturbation_amp_tuning_factor = 0
         self._perturbation_amp_noise_scale = 0
         self._dwell_steps = int(0.2 * self._action_sample_freq)
@@ -1086,6 +1113,7 @@ class WalkRead(Env):
             self._data.qpos[self._eye_joint_y_mjidx] = 0
 
             if params is None:
+                # The test-demo mode
                 self._perturbation_amp_tuning_factor = 0
                 self._perturbation_amp_noise_scale = 0
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
@@ -1093,6 +1121,7 @@ class WalkRead(Env):
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
                       f"the dwell steps is: {self._dwell_steps}")
             else:
+                # The test-grid-search mode
                 self._perturbation_amp_tuning_factor = params["perturbation_amp_tuning_factor"]
                 self._perturbation_amp_noise_scale = params["perturbation_amp_noise_scale"]
                 self._dwell_steps = int(params["dwell_steps"] * self._action_sample_freq)
