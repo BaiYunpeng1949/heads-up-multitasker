@@ -1059,7 +1059,7 @@ class WalkRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
-        # TODO debug uncomment later
+        # TODO debug uncomment later to release the perturbations
         # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
         # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
