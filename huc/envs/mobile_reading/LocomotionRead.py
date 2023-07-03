@@ -902,7 +902,7 @@ class WalkRead(Env):
         self._dwell_time_range = [0.2, 0.5]  # 200-500 ms
 
         # Initialize the locomotion/translation parameters
-        translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
+        translation_speed = 10     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
         self._step_wise_translation_speed = translation_speed / self._action_sample_freq
 
         # Initialize the perturbation parameters
@@ -1109,8 +1109,8 @@ class WalkRead(Env):
 
             if params is None:
                 # The test-demo mode
-                self._perturbation_amp_tuning_factor = 0
-                self._perturbation_amp_noise_scale = 0
+                self._perturbation_amp_tuning_factor = 0.2
+                self._perturbation_amp_noise_scale = 0.001
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
