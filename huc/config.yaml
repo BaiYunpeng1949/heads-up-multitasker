@@ -5,7 +5,7 @@ rl:
 
   train:
     total_timesteps: 200000000
-    checkpoints_folder_name: 'checkpoints_0704_stationary_reading_nyc_no_vision_200m'
+    checkpoints_folder_name: 'checkpoints_0704_mobile_reading_nyc_no_vision_200m'
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # TODO do not change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`

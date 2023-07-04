@@ -1088,14 +1088,8 @@ class WalkRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
-        # TODO ablation study, uncomment later
-        # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
-        # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
-
-        # TODO ablation study, comment later
-        self._perturbation_amp_tuning_factor = 0
-        self._dwell_steps = int(0.5 * self._action_sample_freq)
-        self._perturbation_amp_noise_scale = 0
+        self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
+        self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
         # Initialize eyeball rotation angles
         init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
@@ -1249,6 +1243,9 @@ class WalkRead(Env):
             # Get the ocular motor noise
             ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * saccade_amplitude))
             action[0:2] += ocular_motor_noise
+            # TODO modify this later:
+            #  1. The ocular motor noise should be applied to the ballistic saccade, not the saparated vertical and horizontal saccades branches.
+            #  Meaning that when dividing the noise to both directions, it should be according to the saccade angle.
 
         self._data.ctrl[self._eye_x_motor_mjidx] = action[0]
         self._data.ctrl[self._eye_y_motor_mjidx] = action[1]
