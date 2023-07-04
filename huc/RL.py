@@ -232,25 +232,30 @@ class RL:
                                                         self._config_rl['train']['checkpoints_folder_name'])
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
-            # Configure the model - Initialise model that is run with multiple threads - TODO resume when training with vision
+
+            # Configure the model - Initialise model that is run with multiple threads
+            # TODO ablation study, uncomment later
+            # policy_kwargs = dict(
+            #     features_extractor_class=CustomCombinedExtractor,
+            #     features_extractor_kwargs=dict(vision_features_dim=128,
+            #                                    proprioception_features_dim=32,
+            #                                    stateful_information_features_dim=32),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
+            # TODO ablation study, comment it later
             policy_kwargs = dict(
-                features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128,
-                                               proprioception_features_dim=32,
+                features_extractor_class=NoVisionCombinedExtractor,
+                features_extractor_kwargs=dict(proprioception_features_dim=32,
                                                stateful_information_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
-            # policy_kwargs = dict(
-            #     features_extractor_class=StatefulInformationExtractor,
-            #     features_extractor_kwargs=dict(features_dim=32),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
             self._model = PPO(
                 policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,

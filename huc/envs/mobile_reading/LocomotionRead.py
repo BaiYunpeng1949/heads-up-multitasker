@@ -902,7 +902,7 @@ class WalkRead(Env):
         self._dwell_time_range = [0.2, 0.5]  # 200-500 ms
 
         # Initialize the locomotion/translation parameters
-        translation_speed = 10     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
+        translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
         self._step_wise_translation_speed = translation_speed / self._action_sample_freq
 
         # Initialize the perturbation parameters
@@ -960,7 +960,7 @@ class WalkRead(Env):
         self._num_stateful_info = 8
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
-            "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
+            # "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),  # TODO: ablation study, uncomment this later
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * (self._model.nq - len(unwanted_qpos_ctrl))
                                                          + (self._model.nu - len(unwanted_qpos_ctrl)),)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
@@ -1057,14 +1057,16 @@ class WalkRead(Env):
         )
 
         # Observation space check
-        if vision.shape != self.observation_space["vision"].shape:
-            raise ValueError("The shape of vision observation is not correct!")
+        # TODO ablation study, uncomment later
+        # if vision.shape != self.observation_space["vision"].shape:
+        #     raise ValueError("The shape of vision observation is not correct!")
         if proprioception.shape != self.observation_space["proprioception"].shape:
             raise ValueError("The shape of proprioception observation is not correct!")
         if stateful_info.shape != self.observation_space["stateful information"].shape:
             raise ValueError("The shape of stateful information observation is not correct!")
 
-        return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}
+        # return {"vision": vision, "proprioception": proprioception, "stateful information": stateful_info}    # TODO ablation study, uncomment later
+        return {"proprioception": proprioception, "stateful information": stateful_info}
 
     def reset(self, params=None):
 
@@ -1086,9 +1088,14 @@ class WalkRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
-        self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
-        self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+        # TODO ablation study, uncomment later
+        # self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
+        # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
+        # TODO ablation study, comment later
+        self._perturbation_amp_tuning_factor = 0
+        self._dwell_steps = int(0.5 * self._action_sample_freq)
+        self._perturbation_amp_noise_scale = 0
 
         # Initialize eyeball rotation angles
         init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
@@ -1109,8 +1116,8 @@ class WalkRead(Env):
 
             if params is None:
                 # The test-demo mode
-                self._perturbation_amp_tuning_factor = 0.2
-                self._perturbation_amp_noise_scale = 0.001
+                self._perturbation_amp_tuning_factor = 0
+                self._perturbation_amp_noise_scale = 0
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
