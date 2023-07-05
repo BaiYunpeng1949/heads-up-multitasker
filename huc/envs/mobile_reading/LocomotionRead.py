@@ -1110,8 +1110,8 @@ class WalkRead(Env):
 
             if params is None:
                 # The test-demo mode
-                self._perturbation_amp_tuning_factor = 0
-                self._perturbation_amp_noise_scale = 0
+                self._perturbation_amp_tuning_factor = 0.5
+                self._perturbation_amp_noise_scale = 0.01
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_tuning_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
