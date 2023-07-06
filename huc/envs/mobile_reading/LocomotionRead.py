@@ -957,7 +957,7 @@ class WalkRead(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 8
+        self._num_stateful_info = 6
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -1034,25 +1034,25 @@ class WalkRead(Env):
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils100_cells_mjidxs[0],
                                                    self._ils100_cells_mjidxs[-1], -1, 1)
 
-        self._ils100_x_min = np.min(
-            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
-        self._ils100_x_max = np.max(
-            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
-        self._ils100_z_min = np.min(
-            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
-        self._ils100_z_max = np.max(
-            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
-        sampled_target_xpos_x = self._data.geom(self._sampled_target_mjidx).xpos[0]
-        sampled_target_xpos_x_norm = self.normalise(sampled_target_xpos_x, self._ils100_x_min, self._ils100_x_max, -1, 1)
-        sampled_target_xpos_z = self._data.geom(self._sampled_target_mjidx).xpos[2]
-        sampled_target_xpos_z_norm = self.normalise(sampled_target_xpos_z, self._ils100_z_min, self._ils100_z_max, -1, 1)
+        # self._ils100_x_min = np.min(
+        #     [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        # self._ils100_x_max = np.max(
+        #     [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
+        # self._ils100_z_min = np.min(
+        #     [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+        # self._ils100_z_max = np.max(
+        #     [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils100_cells_mjidxs])
+        # sampled_target_xpos_x = self._data.geom(self._sampled_target_mjidx).xpos[0]
+        # sampled_target_xpos_x_norm = self.normalise(sampled_target_xpos_x, self._ils100_x_min, self._ils100_x_max, -1, 1)
+        # sampled_target_xpos_z = self._data.geom(self._sampled_target_mjidx).xpos[2]
+        # sampled_target_xpos_z_norm = self.normalise(sampled_target_xpos_z, self._ils100_z_min, self._ils100_z_max, -1, 1)
 
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
 
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
-             sampled_target_mjidx_norm, sampled_target_xpos_x_norm, sampled_target_xpos_z_norm,
+             sampled_target_mjidx_norm, #sampled_target_xpos_x_norm, sampled_target_xpos_z_norm,
              fixation_norm, previous_fixation_norm]
         )
 
@@ -1086,6 +1086,7 @@ class WalkRead(Env):
         self._fixate_on_target = False
         self._previous_fixate_on_target = False
 
+        # Initialize perturbation parameters for training
         self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
         self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
 
@@ -1232,18 +1233,18 @@ class WalkRead(Env):
         action[1] = self.normalise(action[1], -1, 1, *self._model.actuator_ctrlrange[self._eye_y_motor_mjidx, :])
 
         dist, geomid = self._get_focus(site_name="rangefinder-site")
-        saccade_amplitude = np.abs(action[0:2].copy() - self._last_step_saccade_qpos[0:2].copy())
         if geomid == self._sampled_target_mjidx:
             self._fixate_on_target = True
-            ocular_motor_noise = 0
         else:
             self._fixate_on_target = False
             # Get the ocular motor noise
-            ocular_motor_noise = np.random.normal(0, np.abs(self._rho_ocular_motor * saccade_amplitude))
-            action[0:2] += ocular_motor_noise
-            # TODO modify this later:
-            #  1. The ocular motor noise should be applied to the ballistic saccade, not the saparated vertical and horizontal saccades branches.
-            #  Meaning that when dividing the noise to both directions, it should be according to the saccade angle.
+            next_saccade_position = action[0:2].copy()
+            last_saccade_position = self._last_step_saccade_qpos[0:2].copy()
+            saccade_amplitude = np.abs(last_saccade_position - next_saccade_position)
+
+            # The noises for 2 motors are sampled differently
+            ocular_motor_noises = np.random.normal(0, np.abs(self._rho_ocular_motor * saccade_amplitude))
+            action[0:2] += ocular_motor_noises
 
         self._data.ctrl[self._eye_x_motor_mjidx] = action[0]
         self._data.ctrl[self._eye_y_motor_mjidx] = action[1]
@@ -1272,7 +1273,7 @@ class WalkRead(Env):
             self._fixate_on_target = True
         else:
             self._fixate_on_target = False
-            self._on_target_steps = 0
+            # self._on_target_steps = 0
 
         # Update the transitions - get rewards and next state
         if self._on_target_steps >= self._dwell_steps:
