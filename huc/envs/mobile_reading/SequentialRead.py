@@ -7,6 +7,7 @@ from gym import Env
 from gym.spaces import Box, Dict
 
 import yaml
+from collections import deque
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter
 
@@ -48,14 +49,15 @@ class SequentialRead(Env):
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
         self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
 
-        self._attention_pool = self._ils100_cells_mjidxs.copy()     # The pool of targets that can be attended to
+        # The pool of targets that can be attended to, -1 stands for attention switch away from reading
+        self._attention_pool = np.array([-1, *self._ils100_cells_mjidxs.copy()])
 
         # Mental state related variables
         self._true_target_mjidx = None
         self._intended_target_mjidx = None
         self._previous_intended_target_mjidx = None
         self._mental_state = {
-            'reading_memory': np.full(len(self._ils100_cells_mjidxs), -2),     # The memory of the words that have been read
+            'reading_memory': deque(maxlen=len(self._ils100_cells_mjidxs)),     # The memory of the words that have been read
             'attention': self._intended_target_mjidx,                          # The intended target mjidx
         }
 
@@ -68,7 +70,7 @@ class SequentialRead(Env):
         # Initialise RL related thresholds and counters
         self._steps = None
         self._on_target_steps = None
-        self.ep_len = 100
+        self.ep_len = 200
 
         # Define the observation space
         width, height = 80, 80
@@ -113,12 +115,12 @@ class SequentialRead(Env):
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         intended_target_mjidx_norm = self.normalise(self._intended_target_mjidx, self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1], -1, 1)
 
-        reading_memory_norm = np.zeros((len(self._mental_state['reading_memory']),))
-        for i in range(len(self._mental_state['reading_memory'])):
-            if self._mental_state['reading_memory'][i] == -2:
-                reading_memory_norm[i] = -1
-            else:
+        reading_memory_norm = np.zeros((len(self._ils100_cells_mjidxs)))
+        for i in range(len(self._ils100_cells_mjidxs)):
+            if i <= len(self._mental_state['reading_memory']) - 1:
                 reading_memory_norm[i] = self.normalise(self._mental_state['reading_memory'][i], self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1], 0, 1)
+            else:
+                reading_memory_norm[i] = -1
 
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, intended_target_mjidx_norm, *reading_memory_norm]
@@ -127,6 +129,7 @@ class SequentialRead(Env):
         # Observation space check
         if stateful_info.shape[0] != self._num_stateful_info:
             raise ValueError("The shape of stateful information observation is not correct!")
+        # TODO make the intended target yellow for faster eyeball rotation learning in the vision channel
 
         return stateful_info
 
@@ -135,21 +138,18 @@ class SequentialRead(Env):
         # Reset MuJoCo sim
         mujoco.mj_resetData(self._model, self._data)
 
-        # Initiate the stacked frames
-        self._vision_frames = deque(maxlen=self._num_stk_frm)
-        self._qpos_frames = deque(maxlen=self._num_stk_frm)
-
         # Reset the variables and counters
         self._steps = 0
         self._on_target_steps = 0
 
         # Mental state related variables
-        self._true_target_mjidx = -2
-        self._intended_target_mjidx = self._ils100_cells_mjidxs[0]
+        self._true_target_mjidx = self._ils100_cells_mjidxs[0]
+        # Randomly choose the intended target mjidx
+        self._intended_target_mjidx = np.random.choice(self._ils100_cells_mjidxs)
         self._previous_intended_target_mjidx = -2
         self._mental_state = {
             # The memory of the words that have been read
-            'reading_memory': np.full(len(self._ils100_cells_mjidxs), -2),
+            'reading_memory': deque(maxlen=len(self._ils100_cells_mjidxs)),
             'attention': self._intended_target_mjidx,  # The intended target mjidx
         }
 
@@ -173,10 +173,15 @@ class SequentialRead(Env):
     def step(self, action):
         # Action t+1 from state t - attention allocation - where should the agent look at - Reading is a sequential process (MDP)
         action[self._attention_action_idx] = self.normalise(action[self._attention_action_idx], -1, 1, 0, len(self._attention_pool))
+        finish_reading = False
         # Only if the previous intended target is processed, then the agent can process the next intended target
         if self._on_target_steps >= self._dwell_steps:
             # Decode the attention allocation from continuous value to discrete attention targets
-            self._intended_target_mjidx = self._attention_pool[int(np.floor(action[self._attention_action_idx]))]
+            discrete_attention = self._attention_pool[int(np.floor(action[self._attention_action_idx]))]
+            if discrete_attention >= 0:
+                self._intended_target_mjidx = discrete_attention
+            else:
+                finish_reading = True
             # Refresh the on target steps
             self._on_target_steps = 0
             # Update the mental state
@@ -218,19 +223,26 @@ class SequentialRead(Env):
         if self._on_target_steps >= self._dwell_steps:
             # Update the mental state
             # Find the first index in the self._mental_state['read_memory'] that is not -2 then assign it with the intended target
-            reading_memory = self._mental_state['reading_memory']
-            if np.any(reading_memory == -2):
-                index = np.where(reading_memory == -2)[0][0]
-            # index = np.where(self._mental_state['reading_memory'] == -2)[0][0]
-                self._mental_state['reading_memory'][index] = self._intended_target_mjidx
+            self._mental_state['reading_memory'].append(self._intended_target_mjidx)
 
-        # Time penalty
-        reward += -0.1
+        # Reward shaping - help the agent knows where to look at, based on the words from start to end
+        if len(self._mental_state['reading_memory']) < len(self._ils100_cells_mjidxs):
+            ref_array = self._ils100_cells_mjidxs[:len(self._mental_state['reading_memory'])]
+        else:
+            ref_array = self._ils100_cells_mjidxs.copy()
+        array_dist = np.array(self._mental_state['reading_memory']) - ref_array
+        array_dist = np.sum(np.abs(array_dist))
+
+        reward += 0.1 * (np.exp(-0.1 * array_dist) - 1)
 
         # If all materials are read, give a big reward
-        if not np.any(self._mental_state['reading_memory'] == -2) or self._steps >= self.ep_len:
+        if (finish_reading and len(self._mental_state['reading_memory']) >= len(self._ils100_cells_mjidxs)) \
+                or (self._steps >= self.ep_len):
             terminate = True
+            # Successfully comprehend the text
             if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
                 reward += 100
+            else:
+                reward += -100
 
         return self._get_obs(), reward, terminate, info
