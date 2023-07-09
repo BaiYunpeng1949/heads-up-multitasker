@@ -65,7 +65,9 @@ class SequentialRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.2 * self._action_sample_freq)  # The number of steps to dwell on a target
+        self._PAD_VALUE = -1
+
+        self._dwell_steps = int(0.05 * self._action_sample_freq)  # The number of steps to dwell on a target
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -170,6 +172,10 @@ class SequentialRead(Env):
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
 
+    @staticmethod
+    def euclidean_distance(x1, x2):
+        return np.sqrt(np.sum((x1 - x2) ** 2))
+
     def step(self, action):
         # Action t+1 from state t - attention allocation - where should the agent look at - Reading is a sequential process (MDP)
         action[self._attention_action_idx] = self.normalise(action[self._attention_action_idx], -1, 1, 0, len(self._attention_pool))
@@ -177,7 +183,9 @@ class SequentialRead(Env):
         # Only if the previous intended target is processed, then the agent can process the next intended target
         if self._on_target_steps >= self._dwell_steps:
             # Decode the attention allocation from continuous value to discrete attention targets
-            discrete_attention = self._attention_pool[int(np.floor(action[self._attention_action_idx]))]
+            # Clip the attention allocation to the attention pool
+            attention_pool_idx = np.clip(int(np.floor(action[self._attention_action_idx])), 0, len(self._attention_pool) - 1)
+            discrete_attention = self._attention_pool[attention_pool_idx]
             if discrete_attention >= 0:
                 self._intended_target_mjidx = discrete_attention
             else:
@@ -225,24 +233,23 @@ class SequentialRead(Env):
             # Find the first index in the self._mental_state['read_memory'] that is not -2 then assign it with the intended target
             self._mental_state['reading_memory'].append(self._intended_target_mjidx)
 
-        # Reward shaping - help the agent knows where to look at, based on the words from start to end
-        if len(self._mental_state['reading_memory']) < len(self._ils100_cells_mjidxs):
-            ref_array = self._ils100_cells_mjidxs[:len(self._mental_state['reading_memory'])]
-        else:
-            ref_array = self._ils100_cells_mjidxs.copy()
-        array_dist = np.array(self._mental_state['reading_memory']) - ref_array
-        array_dist = np.sum(np.abs(array_dist))
+        # Estimate the reward
+        reading_progress_seq = np.array(self._mental_state['reading_memory'])
 
-        reward += 0.1 * (np.exp(-0.1 * array_dist) - 1)
+        # Pad the reading progress sequence with -2 to the length of the ILS-100 cells
+        reading_progress_seq = np.pad(reading_progress_seq, (0, len(self._ils100_cells_mjidxs) - len(reading_progress_seq)), 'constant', constant_values=self._PAD_VALUE)
+        distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+
+        reward += 0.1 * (np.exp(-0.1 * distance) - 1)
 
         # If all materials are read, give a big reward
         if (finish_reading and len(self._mental_state['reading_memory']) >= len(self._ils100_cells_mjidxs)) \
                 or (self._steps >= self.ep_len):
             terminate = True
             # Successfully comprehend the text
-            if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
-                reward += 100
+            if np.array_equal(reading_progress_seq, self._ils100_cells_mjidxs):
+                reward += 20
             else:
-                reward += -100
+                reward += -20
 
         return self._get_obs(), reward, terminate, info
