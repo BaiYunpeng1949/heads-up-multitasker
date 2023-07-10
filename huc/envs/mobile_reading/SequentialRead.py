@@ -252,4 +252,6 @@ class SequentialRead(Env):
             else:
                 reward += -20
 
+        # TODO read the paper and find a better reading model encoding method
+
         return self._get_obs(), reward, terminate, info
