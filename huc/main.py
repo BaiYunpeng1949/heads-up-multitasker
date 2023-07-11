@@ -1,8 +1,6 @@
 from RL import RL
 import os
 
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-
 
 def main():
     # Run the RL pipeline with the given configurations.
@@ -11,4 +9,6 @@ def main():
 
 
 if __name__ == "__main__":
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+
     main()

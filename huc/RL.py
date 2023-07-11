@@ -25,7 +25,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from huc.utils.write_video import write_video
 from huc.envs.mobile_reading.LocomotionRead import Read, PerturbationRead, WalkRead
 from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
-from huc.envs.mobile_reading.SequentialRead import SequentialRead
+from huc.envs.mobile_reading.MDPRead import MDPRead
 
 _MODES = {
     'train': 'train',
@@ -212,7 +212,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = SequentialRead()    # SignWalk(), Read()
+        self._env = MDPRead()    # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
