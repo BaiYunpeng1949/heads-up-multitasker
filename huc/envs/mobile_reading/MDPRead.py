@@ -209,10 +209,14 @@ class MDPRead(Env):
                 # Reset the on target steps
                 self._on_target_steps = 0
         else:
-            # Resample a new target to read based on the memory observation from state
-            sample_target = self.normalise(action_attention_deployment, -1, self._attention_action_threshold,
-                                           self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1] + 1)
-            self._deployed_attention_target_mjidx = int(sample_target)
+            # Resample the latest word not read
+            indices = np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]
+            if len(indices) <= 0:
+                # The memory is empty, reset the memory
+                self._reset_stm()
+            else:
+                # Resample the latest word not read
+                self._deployed_attention_target_mjidx = self._mental_state['reading_memory'][indices[-1]]
             # Reset the on target steps
             self._on_target_steps = 0
 
@@ -281,18 +285,6 @@ class MDPRead(Env):
                 reward += -10
             # Reset the memory to -2
             self._reset_stm()
-
-        # TODO debug delete soon
-        if action[0] >= 0:
-            action_0 = 'next'
-        else:
-            action_0 = action[0]
-        print(f"reading_memory: {self._mental_state['reading_memory']}, "
-              f" the action[0] is {action_0} "
-              f" \nthe current deployed attention is {self._deployed_attention_target_mjidx}"
-              f" the on target steps is {self._on_target_steps}, "
-              f" the steps is {self._steps}"
-              f" the reward is {reward}\n")
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len:
