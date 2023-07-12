@@ -56,6 +56,7 @@ class MDPRead(Env):
 
         # Mental state related variables
         self._deployed_attention_target_mjidx = None
+        self._attention_action_threshold = 0
         self._mental_state = {  # The mental state of the agent, or it can be called the internal state
             'reading_memory': np.full((len(self._ils100_cells_mjidxs),), self._MEMORY_PAD_VALUE),
             # The memory of the words that have been read
@@ -66,7 +67,7 @@ class MDPRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]  # TODO later use this to hint agents where to look at
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.05 * self._action_sample_freq)  # The number of steps to dwell on a target
+        self._dwell_steps = int(0.2 * self._action_sample_freq)  # The number of steps to dwell on a target
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -162,6 +163,7 @@ class MDPRead(Env):
             'attention': init_deployed_attention,
         }
         self._deployed_attention_target_mjidx = init_deployed_attention
+        # To model memory loss, I can manipulate the internal state - mental state to simulate that
 
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
@@ -180,7 +182,7 @@ class MDPRead(Env):
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
 
-    def _refresh(self):
+    def _reset_stm(self):
         self._deployed_attention_target_mjidx = self._ils100_cells_mjidxs[0]
         self._mental_state['reading_memory'] = np.full_like(self._mental_state['reading_memory'],
                                                             self._MEMORY_PAD_VALUE)
@@ -191,24 +193,27 @@ class MDPRead(Env):
         # 1. should the agent read the next word;
         # 2. should the agent get back to the first word uncovered in the short-term memory
 
+        page_finish = False
+
         action_attention_deployment = action[self._action_attention_deployment_idx]
-        # Change the target of attention if the information has been encoded/processed
-        if self._on_target_steps >= self._dwell_steps:
-            if action_attention_deployment >= 0:
-                # Read the next word
+        # Change the target of attention anytime
+        if action_attention_deployment >= self._attention_action_threshold:
+            # Read the next word if the last one has been processed
+            if self._on_target_steps >= self._dwell_steps:
                 self._deployed_attention_target_mjidx += 1
                 # If all the words has been read, clear the short term memory and restart from the beginning like turning the page
                 if self._deployed_attention_target_mjidx > self._ils100_cells_mjidxs[-1]:
-                    self._refresh()
-            else:
-                # Get back to the first word uncovered in the short-term memory - TODO add stochasticity (memory/vision sample) later
-                indices = np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]
-                if len(indices) > 0:
-                    # The short term memory is not empty - TODO debug here - think about what is the correct trace back mechanism
-                    self._deployed_attention_target_mjidx = self._mental_state['reading_memory'][indices[-1]] + 1
-                else:
-                    # The short term memory is empty
-                    self._refresh()
+                    self._reset_stm()
+                    # Page finish
+                    page_finish = True
+                # Reset the on target steps
+                self._on_target_steps = 0
+        else:
+            # Resample a new target to read based on the memory observation from state
+            sample_target = self.normalise(action_attention_deployment, -1, self._attention_action_threshold,
+                                           self._ils100_cells_mjidxs[0], self._ils100_cells_mjidxs[-1] + 1)
+            self._deployed_attention_target_mjidx = int(sample_target)
+            # Reset the on target steps
             self._on_target_steps = 0
 
         # Eyeball movement
@@ -248,9 +253,9 @@ class MDPRead(Env):
             self._on_target_steps += 1
             self._model.geom(self._deployed_attention_target_mjidx).rgba = self._VISUALIZE_RGBA
 
-        # Update the transitions - update the mental state
+        # Update the transitions - update the mental state only after the agent has read the word
         if self._on_target_steps >= self._dwell_steps:
-            # Judge whether the agent has read the word
+            # Judge whether the agent has read the word, only update the new read words
             if self._deployed_attention_target_mjidx not in self._mental_state['reading_memory']:
                 # Find the first word that is not -2 in the memory
                 indices = np.where(self._mental_state['reading_memory'] == self._MEMORY_PAD_VALUE)[0]
@@ -260,23 +265,34 @@ class MDPRead(Env):
                 else:
                     pass
 
-        # TODO debug delete soon
-        print(f"reading_memory: {self._mental_state['reading_memory']}, the current deployed attention is {self._deployed_attention_target_mjidx}"
-              f" the action[0] is {-1 if action[0]<=0 else 1}")
-
-        # Time spent - penalties
-        reward += -0.1
+        # Reward shaping based on the reading progress - similarity
+        # Estimate the reward
+        reading_progress_seq = self._mental_state['reading_memory']
+        euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+        reward += 0.1 * (np.exp(-0.1 * euclidean_distance) - 1)
 
         # Judge the comprehension when the whole page has been read - memory is full:
         # When there is no -2 in the memory, the agent has read the whole page
-        if self._MEMORY_PAD_VALUE not in self._mental_state['reading_memory']:
+        if page_finish:
             # Successfully comprehend the text page-wise
             if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
-                reward += 5
+                reward += 10
             else:
-                reward += -5
+                reward += -10
             # Reset the memory to -2
-            self._refresh()
+            self._reset_stm()
+
+        # TODO debug delete soon
+        if action[0] >= 0:
+            action_0 = 'next'
+        else:
+            action_0 = action[0]
+        print(f"reading_memory: {self._mental_state['reading_memory']}, "
+              f" the action[0] is {action_0} "
+              f" \nthe current deployed attention is {self._deployed_attention_target_mjidx}"
+              f" the on target steps is {self._on_target_steps}, "
+              f" the steps is {self._steps}"
+              f" the reward is {reward}\n")
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len:
