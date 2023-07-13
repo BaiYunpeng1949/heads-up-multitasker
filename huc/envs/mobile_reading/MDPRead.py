@@ -222,7 +222,7 @@ class MDPRead(Env):
                     self._on_target_steps = 0
             else:
                 # Page finish, reset the memory
-                self._reset_stm()
+                # self._reset_stm()
                 # Page finish
                 finish_reading = True
         else:
@@ -323,11 +323,11 @@ class MDPRead(Env):
             else:
                 reward += -10
 
-        # # TODO debug delete later when training
-        # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
-        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
-        #       f"the on target steps is: {self._on_target_steps}, \n"
-        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-        #       f"The reward is: {reward}, \n")
+        # TODO debug delete later when training
+        print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
