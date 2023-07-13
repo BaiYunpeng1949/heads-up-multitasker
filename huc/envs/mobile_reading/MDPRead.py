@@ -64,6 +64,7 @@ class MDPRead(Env):
             'reading_memory': np.full((len(self._ils100_cells_mjidxs),), self._MEMORY_PAD_VALUE),
             # The memory of the words that have been read
             'attention': self._deployed_attention_target_mjidx,  # The intended target mjidx
+            'page_finish': False,  # Whether the page is finished
         }
 
         # Define the target idx probability distribution
@@ -82,7 +83,7 @@ class MDPRead(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 15
+        self._num_stateful_info = 16
 
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
@@ -128,8 +129,10 @@ class MDPRead(Env):
         reading_memory = self._mental_state['reading_memory'].copy()
         reading_memory_norm = self.normalise(reading_memory, self._MEMORY_PAD_VALUE, self._ils100_cells_mjidxs[-1], -1, 1)
 
+        page_finish_norm = -1 if self._mental_state['page_finish'] == False else 1
+
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_dwell_steps_norm, attention_deploy_target_mjidx_norm,
+            [remaining_ep_len_norm, remaining_dwell_steps_norm, attention_deploy_target_mjidx_norm, page_finish_norm,
              *reading_memory_norm]
         )
 
@@ -165,6 +168,7 @@ class MDPRead(Env):
             'prev_reading_memory': init_reading_memory,
             'reading_memory': init_reading_memory,
             'attention': init_deployed_attention,
+            'page_finish': False,
         }
         self._deployed_attention_target_mjidx = init_deployed_attention
         # To model memory loss, I can manipulate the internal state - mental state to simulate that
@@ -199,7 +203,7 @@ class MDPRead(Env):
         # 1. should the agent read the next word;
         # 2. should the agent get back to the first word uncovered in the short-term memory
 
-        page_finish = False
+        finish_reading = False
 
         action_attention_deployment = action[self._action_attention_deployment_idx]
         # Change the target of attention anytime
@@ -211,7 +215,7 @@ class MDPRead(Env):
                 if self._deployed_attention_target_mjidx > self._ils100_cells_mjidxs[-1]:
                     self._reset_stm()
                     # Page finish
-                    page_finish = True
+                    finish_reading = True
                 # Reset the on target steps
                 self._on_target_steps = 0
         else:
@@ -263,7 +267,12 @@ class MDPRead(Env):
             self._on_target_steps += 1
             self._model.geom(self._deployed_attention_target_mjidx).rgba = self._VISUALIZE_RGBA
 
-        # Update the mental state - the previous reading memory
+        # Update the mental state
+        # Update the page finish flag
+        if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
+            self._mental_state['page_finish'] = True
+
+        # Update the previous reading memory
         self._mental_state['prev_reading_memory'] = self._mental_state['reading_memory'].copy()
 
         # Update the mental state only after the agent has read the word - the current reading memory
@@ -297,12 +306,12 @@ class MDPRead(Env):
         reward += time_cost + new_knowledge_gain
 
         # If all materials are read, give a big bonus reward
-        if self._steps >= self.ep_len or page_finish:
+        if self._steps >= self.ep_len or finish_reading:
             terminate = True
 
-            if page_finish:
+            if finish_reading:
                 # Voluntarily finish reading the page
-                if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
+                if self._mental_state['page_finish']:
                     # Successfully comprehend the text page-wise
                     reward += 10
                 else:
@@ -311,11 +320,11 @@ class MDPRead(Env):
                 # Time out
                 reward += -10
 
-        # TODO debug delete later when training
-        print(f"The step is: {self._steps}, \n"
-              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
-              f"the on target steps is: {self._on_target_steps}, \n"
-              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-              f"The reward is: {reward}, \n")
+        # # TODO debug delete later when training
+        # print(f"The step is: {self._steps}, \n"
+        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
+        #       f"the on target steps is: {self._on_target_steps}, \n"
+        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+        #       f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
