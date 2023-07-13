@@ -311,11 +311,11 @@ class MDPRead(Env):
                 # Time out
                 reward += -10
 
-        # # TODO debug delete later when training
-        # print(f"The step is: {self._steps}, \n"
-        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
-        #       f"the on target steps is: {self._on_target_steps}, \n"
-        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-        #       f"The reward is: {reward}, \n")
+        # TODO debug delete later when training
+        print(f"The step is: {self._steps}, \n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
