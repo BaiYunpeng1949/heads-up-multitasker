@@ -252,7 +252,7 @@ class MDPRead(Env):
         terminate = False
         info = {}
 
-        # Eyeball movement driven by the intention / attention allocation
+        # Update Eyeball movement driven by the intention / attention allocation
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
         # Reset the scene first
@@ -263,32 +263,38 @@ class MDPRead(Env):
             self._on_target_steps += 1
             self._model.geom(self._deployed_attention_target_mjidx).rgba = self._VISUALIZE_RGBA
 
-        # Update the transitions - update the mental state only after the agent has read the word
+        # Update the mental state - the previous reading memory
+        self._mental_state['prev_reading_memory'] = self._mental_state['reading_memory'].copy()
+
+        # Update the mental state only after the agent has read the word - the current reading memory
         if self._on_target_steps >= self._dwell_steps:
             # Judge whether the agent has read the word, only update the new read words
             if self._deployed_attention_target_mjidx not in self._mental_state['reading_memory']:
                 # Find the first word that is not -2 in the memory
                 indices = np.where(self._mental_state['reading_memory'] == self._MEMORY_PAD_VALUE)[0]
                 if len(indices) > 0:
-                    self._mental_state['prev_reading_memory'] = self._mental_state['reading_memory'].copy()
                     new_memory_slot_idx = indices[0]
                     self._mental_state['reading_memory'][new_memory_slot_idx] = self._deployed_attention_target_mjidx
 
+                    if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
+                            np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
+                        new_knowledge_gain = 0.5
+                    else:
+                        new_knowledge_gain = 0
 
+                    reward += new_knowledge_gain
                 else:
                     pass
 
         # Reward shaping based on the reading progress - similarity
         # Estimate the reward
-        time_cost = -0.1
         if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
                 np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
-            new_knowledge_gain = 1
+            new_knowledge_gain = 0.5
         else:
             new_knowledge_gain = 0
-
-        reward += new_knowledge_gain
-        reward += time_cost
+        time_cost = -0.1
+        reward += time_cost + new_knowledge_gain
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or page_finish:
@@ -299,14 +305,5 @@ class MDPRead(Env):
                 reward += 10
             else:
                 reward += -10
-
-        # TODO redesign the reward function --> stuck to the local optima
-
-        # TODO debug delete later when training
-        print(f"The step is: {self._steps}, \n"
-              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
-              f"the on target steps is: {self._on_target_steps}, \n"
-              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-              f"the reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
