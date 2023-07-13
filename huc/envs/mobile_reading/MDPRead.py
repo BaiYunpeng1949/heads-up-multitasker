@@ -300,17 +300,22 @@ class MDPRead(Env):
         if self._steps >= self.ep_len or page_finish:
             terminate = True
 
-            # Successfully comprehend the text page-wise
-            if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
-                reward += 10
+            if page_finish:
+                # Voluntarily finish reading the page
+                if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
+                    # Successfully comprehend the text page-wise
+                    reward += 10
+                else:
+                    reward += -10
             else:
+                # Time out
                 reward += -10
 
-        # TODO debug delete later when training
-        print(f"The step is: {self._steps}, \n"
-              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
-              f"the on target steps is: {self._on_target_steps}, \n"
-              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-              f"The reward is: {reward}, \n")
+        # # TODO debug delete later when training
+        # print(f"The step is: {self._steps}, \n"
+        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
+        #       f"the on target steps is: {self._on_target_steps}, \n"
+        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+        #       f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
