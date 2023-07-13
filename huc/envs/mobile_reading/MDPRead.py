@@ -165,6 +165,9 @@ class MDPRead(Env):
         self._deployed_attention_target_mjidx = init_deployed_attention
         # To model memory loss, I can manipulate the internal state - mental state to simulate that
 
+        # TODO debug delete later during training
+        print(f"The initial mental state is {self._mental_state}\n")
+
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
 
@@ -220,14 +223,14 @@ class MDPRead(Env):
             # Reset the on target steps
             self._on_target_steps = 0
 
+        # # TODO uncomment later
         # Eyeball movement
-        action[self._action_eye_rotate_x_idx] = self.normalise(action[self._action_eye_rotate_x_idx], -1, 1,
-                                                               *self._model.actuator_ctrlrange[self._eye_x_motor_mjidx,
-                                                                :])
-        action[self._action_eye_rotate_y_idx] = self.normalise(action[self._action_eye_rotate_y_idx], -1, 1,
-                                                               *self._model.actuator_ctrlrange[self._eye_y_motor_mjidx,
-                                                                :])
-        # TODO uncomment later
+        # action[self._action_eye_rotate_x_idx] = self.normalise(action[self._action_eye_rotate_x_idx], -1, 1,
+        #                                                        *self._model.actuator_ctrlrange[self._eye_x_motor_mjidx,
+        #                                                         :])
+        # action[self._action_eye_rotate_y_idx] = self.normalise(action[self._action_eye_rotate_y_idx], -1, 1,
+        #                                                        *self._model.actuator_ctrlrange[self._eye_y_motor_mjidx,
+        #                                                         :])
         # self._data.ctrl[self._eye_x_motor_mjidx] = action[self._eye_x_action_idx]
         # self._data.ctrl[self._eye_y_motor_mjidx] = action[self._eye_y_action_idx]
 
@@ -285,6 +288,13 @@ class MDPRead(Env):
                 reward += -10
             # Reset the memory to -2
             self._reset_stm()
+
+        # TODO debug delete later when training
+        print(f"The step is: {self._steps}, \n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"The distance is: {euclidean_distance}, the reward is: {reward}, \n")
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len:
