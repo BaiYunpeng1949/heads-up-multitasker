@@ -273,17 +273,22 @@ class MDPRead(Env):
                     self._mental_state['prev_reading_memory'] = self._mental_state['reading_memory'].copy()
                     new_memory_slot_idx = indices[0]
                     self._mental_state['reading_memory'][new_memory_slot_idx] = self._deployed_attention_target_mjidx
+
+
                 else:
                     pass
 
         # Reward shaping based on the reading progress - similarity
         # Estimate the reward
         time_cost = -0.1
-        if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
+        if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
+                np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
             new_knowledge_gain = 1
         else:
             new_knowledge_gain = 0
-        reward += time_cost + new_knowledge_gain
+
+        reward += new_knowledge_gain
+        reward += time_cost
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or page_finish:
@@ -294,5 +299,14 @@ class MDPRead(Env):
                 reward += 10
             else:
                 reward += -10
+
+        # TODO redesign the reward function --> stuck to the local optima
+
+        # TODO debug delete later when training
+        print(f"The step is: {self._steps}, \n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, "
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"the reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
