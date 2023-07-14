@@ -25,7 +25,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from huc.utils.write_video import write_video
 from huc.envs.mobile_reading.LocomotionRead import Read, PerturbationRead, WalkRead
 from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
-from huc.envs.mobile_reading.MDPRead import MDPRead
+from huc.envs.mobile_reading.MDPRead import MDPRead, MDPEyeRead
 
 _MODES = {
     'train': 'train',
@@ -212,7 +212,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = MDPRead()    # SignWalk(), Read()
+        self._env = MDPEyeRead()    # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -235,30 +235,28 @@ class RL:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
             # Configure the model - Initialise model that is run with multiple threads
-            # TODO uncomment later
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=32),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
-            # TODO comment later
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=32),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
 
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=128),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy       # TODO change back to MultiInputPolicy later
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
