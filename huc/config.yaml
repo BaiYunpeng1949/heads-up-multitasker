@@ -1,7 +1,7 @@
 simulator_name: 'huc'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 200000000
@@ -21,9 +21,9 @@ rl:
     save_freq: 5000000  # Save a checkpoint every 0.5 million steps
 
   test:
-    num_episodes: 1
+    num_episodes: 10
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_120000000_steps'
+    loaded_model_name: 'rl_model_20000000_steps'
     continual_logs_name: 'PPO_201'
     grid_search:
       enable: False
