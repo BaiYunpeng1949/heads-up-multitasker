@@ -704,7 +704,7 @@ class MDPEyeRead(Env):
         # Estimate the reward
         if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
                 np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
-            new_knowledge_gain = 0.2
+            new_knowledge_gain = 10
         else:
             new_knowledge_gain = 0
         time_cost = -0.1
@@ -719,9 +719,9 @@ class MDPEyeRead(Env):
             # Voluntarily finish reading the page
             if self._mental_state['page_finish']:
                 # Successfully comprehend the text page-wise
-                reward += 10
+                reward += 100
             else:
-                reward += -10
+                reward += -100
 
         # # TODO debug comment later when training
         # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
