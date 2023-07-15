@@ -724,7 +724,7 @@ class MDPResumeRead(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v2.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -744,21 +744,38 @@ class MDPResumeRead(Env):
 
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                         "smart-glass-pane-interline-spacing-100")
-        # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
+        self._sgp_ils50_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+                                                       "smart-glass-pane-interline-spacing-50")
+        self._sgp_ils0_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+                                                      "smart-glass-pane-interline-spacing-0")
+        # Get geom mjidxs (geoms that belong to "smart-glass-pane-interline-spacing-100")
         self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
+        self._ils50_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils50_body_mjidx)[0]
+        self._ils0_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils0_body_mjidx)[0]
 
-        self._MEMORY_PAD_VALUE = -2
-        # The pool of targets that can be attended to, -1 stands for attention switch away from reading
-        self._attention_pool = np.array([self._MEMORY_PAD_VALUE, *self._ils100_cells_mjidxs.copy()])
+        # Initialize the layout related parameters
+        self._sigma_word_selection_range = [0.0075, 0.03]   # The cell horizontal distance is 0.015
+        self._sigma_word_selection = None
+        self._L100 = "L100"
+        self._L50 = "L50"
+        self._L0 = "L0"
+        self._layouts = [self._L100, self._L50, self._L0]
+        self._cells_mjidxs = None
+
+        # Initialize the mental state related parameters
+        self._MEMORY_PAD_VALUE = None   # TODO reset later
 
         # Mental state related variables
         self._deployed_attention_target_mjidx = None
+        self._true_attention_target_mjidx = None
         self._attention_action_threshold = 0
         self._mental_state = {  # The mental state of the agent, or it can be called the internal state
+            # The original memory before corruption
+            'original_memory': np.full((len(self._ils100_cells_mjidxs),), 0),
             # The previous state of the words that have been read
-            'prev_reading_memory': np.full((len(self._ils100_cells_mjidxs),), self._MEMORY_PAD_VALUE),
+            'prev_reading_memory': np.full((len(self._ils100_cells_mjidxs),), 0),
             # The memory of the words that have been read
-            'reading_memory': np.full((len(self._ils100_cells_mjidxs),), self._MEMORY_PAD_VALUE),
+            'reading_memory': np.full((len(self._ils100_cells_mjidxs),), 0),
             # The memory of the words that have been read
             'attention': self._deployed_attention_target_mjidx,  # The intended target mjidx
             'page_finish': False,  # Whether the page is finished
@@ -767,14 +784,14 @@ class MDPResumeRead(Env):
         # Define the belief state (memory) uncertainty - sigma position memory
         # Initial sigma position memory
         # Ref: Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning
-        self._init_sigma_position_memory_range = [0.5, 5]  # TODO reset it in the reset method
-        self._init_sigma_position_memory = None  # TODO reset it in the reset method
+        self._init_sigma_position_memory_range = [0.5, 5]
+        self._init_sigma_position_memory = None
         # The initial time interval of attention switch
         # 2s - time spent on the environmental task;
         # 4s - according to empirical results, most word selection time is finished within 2s; 2+2=4
         # Ref: Not all spacings are created equally
-        self._delta_t_range = [2, 4]  # TODO reset it in the reset method
-        self._delta_t = None  # TODO reset it in the reset method
+        self._delta_t_range = [2, 4]
+        self._delta_t = None
         # The decaying factor, ref: Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning
         self._rho = 0.5
         self._sigma_position_memory = None
@@ -783,7 +800,8 @@ class MDPResumeRead(Env):
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
         self._DFLT_RGBA = [0, 0, 0, 1]
 
-        self._dwell_steps = int(0.2 * self._action_sample_freq)  # The number of steps to dwell on a target
+        self._dwell_time = 0.2  # The time to dwell on a target
+        self._dwell_steps = int(self._dwell_time * self._action_sample_freq)  # The number of steps to dwell on a target
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -816,6 +834,69 @@ class MDPResumeRead(Env):
                                dt=1 / self._action_sample_freq)
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
+    def reset(self, params=None):
+
+        # Reset MuJoCo sim
+        mujoco.mj_resetData(self._model, self._data)
+
+        # Reset the variables and counters
+        self._steps = 0
+        self._on_target_steps = 0
+
+        # Initialize the memory model related parameters
+        self._delta_t = np.random.uniform(*self._delta_t_range)
+        self._init_sigma_position_memory = np.random.uniform(*self._init_sigma_position_memory_range)
+
+        # Initialize the word selection destination related parameters
+        layout_name = np.random.choice(self._layouts)
+        if layout_name == self._L100:
+            self._cells_mjidxs = self._ils100_cells_mjidxs
+        elif layout_name == self._L50:
+            self._cells_mjidxs = self._ils50_cells_mjidxs
+        elif layout_name == self._L0:
+            self._cells_mjidxs = self._ils0_cells_mjidxs
+        else:
+            raise ValueError("The layout name is not correct!")
+        self._sigma_word_selection = np.random.uniform(*self._sigma_word_selection_range)
+        self._MEMORY_PAD_VALUE = int(self._cells_mjidxs[0] - 2)
+
+        # Mental state related variables
+        # Randomly choose the intended target mjidx
+        init_deployed_attention = np.random.choice(self._cells_mjidxs)
+        # Initialize a number from 0 to len(_cells_mjidxs)
+        init_memory_length = int(np.random.randint(0, len(self._cells_mjidxs)))
+        init_reading_memory = np.pad(self._cells_mjidxs[:init_memory_length],
+                                     (0, len(self._cells_mjidxs) - init_memory_length),
+                                     constant_values=self._MEMORY_PAD_VALUE)
+        self._mental_state = {
+            # The short term memory of the processed information
+            'original_memory': init_reading_memory,
+            'prev_reading_memory': init_reading_memory,
+            'reading_memory': init_reading_memory,
+            'attention': init_deployed_attention,
+            'page_finish': False,
+        }
+
+        self._true_attention_target_mjidx = np.where(init_reading_memory != self._MEMORY_PAD_VALUE)[0][-1]
+
+        # Corrupt the memory
+        self._corrupt_memory()
+
+        # Initialize the deployed attention target
+        self._init_attention_deployment_mjidx_distribution()
+
+        # TODO initialize the deployed attention target later
+        self._deployed_attention_target_mjidx = init_deployed_attention
+
+        # Set up the whole scene by confirming the initializations
+        mujoco.mj_forward(self._model, self._data)
+
+        # TODO comment later debug here
+        print(f"the mental state initialization is: {self._mental_state}, "
+              f"the true attention target is: {self._true_attention_target_mjidx}\n")
+
+        return self._get_obs()
+
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
@@ -825,23 +906,20 @@ class MDPResumeRead(Env):
     def euclidean_distance(x1, x2):
         return np.sqrt(np.sum((x1 - x2) ** 2))
 
-    def _get_sigma_position_memory(self):
-        """ Get the current sigma position memory """
-        return self._init_sigma_position_memory / (1 + self._delta_t ** (-self._rho))
-
     def _corrupt_memory(self):
-        """ Init/Update the memory """
+        """ Init/Update/Corrupt the memory """
         # Update the sigma position memory
-        self._sigma_position_memory = self._get_sigma_position_memory()
-        # Corrupt the memory
-        original_memory = self._mental_state['reading_memory'].copy()
-        original_last_word_idx = np.where(original_memory == self._MEMORY_PAD_VALUE)[0][0] - 1
+        self._sigma_position_memory = self._init_sigma_position_memory / (1 + self._delta_t ** (-self._rho))
+
+        # Corrupt the memory by adding noise to the true attention target - the true attention target is the last word
+        original_memory = self._mental_state['original_memory'].copy()
+        original_last_word_idx = np.where(original_memory == self._true_attention_target_mjidx)[0][0]
         corrupted_last_word_idx = int(original_last_word_idx + np.random.normal(0, self._sigma_position_memory))
-        corrupted_last_word_idx = np.clip(corrupted_last_word_idx, 0, len(self._ils100_cells_mjidxs) - 1)
+        corrupted_last_word_idx = np.clip(corrupted_last_word_idx, 0, len(self._cells_mjidxs) - 1)
         length = int(corrupted_last_word_idx + 1)
         # Update the reading memory
-        corrupted_memory = np.pad(self._ils100_cells_mjidxs[:length],
-                                  (0, len(self._ils100_cells_mjidxs) - length),
+        corrupted_memory = np.pad(self._cells_mjidxs[:length],
+                                  (0, len(self._cells_mjidxs) - length),
                                   constant_values=self._MEMORY_PAD_VALUE)
         self._mental_state['prev_reading_memory'] = corrupted_memory
         self._mental_state['reading_memory'] = corrupted_memory
@@ -863,10 +941,10 @@ class MDPResumeRead(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         attention_deploy_target_mjidx_norm = self.normalise(self._deployed_attention_target_mjidx,
-                                                            self._attention_pool[0], self._attention_pool[-1], -1, 1)
+                                                            self._cells_mjidxs[0], self._cells_mjidxs[-1], -1, 1)
 
         reading_memory = self._mental_state['reading_memory'].copy()
-        reading_memory_norm = self.normalise(reading_memory, self._MEMORY_PAD_VALUE, self._ils100_cells_mjidxs[-1], -1,
+        reading_memory_norm = self.normalise(reading_memory, self._MEMORY_PAD_VALUE, self._cells_mjidxs[-1], -1,
                                              1)
 
         page_finish_norm = -1 if not self._mental_state['page_finish'] else 1
@@ -882,46 +960,6 @@ class MDPResumeRead(Env):
 
         return stateful_info
 
-    def reset(self, params=None):
-
-        # Reset MuJoCo sim
-        mujoco.mj_resetData(self._model, self._data)
-
-        # Reset the variables and counters
-        self._steps = 0
-        self._on_target_steps = 0
-
-        # Initialize the memory model related parameters
-        self._delta_t = np.random.uniform(*self._delta_t_range)
-        self._init_sigma_position_memory = np.random.uniform(*self._init_sigma_position_memory_range)
-
-        # Mental state related variables
-        # Randomly choose the intended target mjidx
-        init_deployed_attention = np.random.choice(self._ils100_cells_mjidxs)
-        # Initialize a number from 0 to len(self._ils100_cells_mjidxs)
-        init_memory_length = int(np.random.randint(0, len(self._ils100_cells_mjidxs)))
-        init_reading_memory = np.pad(self._ils100_cells_mjidxs[:init_memory_length],
-                                     (0, len(self._ils100_cells_mjidxs) - init_memory_length),
-                                     constant_values=self._MEMORY_PAD_VALUE)
-        self._mental_state = {
-            # The short term memory of the processed information
-            'prev_reading_memory': init_reading_memory,
-            'reading_memory': init_reading_memory,
-            'attention': init_deployed_attention,
-            'page_finish': False,
-        }
-
-        # Corrupt the memory
-        self._corrupt_memory()
-
-        self._deployed_attention_target_mjidx = init_deployed_attention
-        # To model memory loss, I can manipulate the internal state - mental state to simulate that
-
-        # Set up the whole scene by confirming the initializations
-        mujoco.mj_forward(self._model, self._data)
-
-        return self._get_obs()
-
     def _get_focus(self, site_name):
         site = self._data.site(site_name)
         pnt = site.xpos
@@ -934,8 +972,37 @@ class MDPResumeRead(Env):
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
 
+    def _init_attention_deployment_mjidx_distribution(self):
+        # Set up the simulation
+        mujoco.mj_forward(self._model, self._data)
+
+        # Reset the attention distribution
+        self._attention_mjidx_distribution = np.zeros(self._cells_mjidxs.shape[0])
+        # Get the true attention target's position
+        mu_xpos = self._data.geom(self._true_attention_target_mjidx).xpos
+
+        # Calculate every cell's distance to the target and get the attention distribution (probability)
+        for mjidx in self._cells_mjidxs:
+            xpos = self._data.geom(mjidx).xpos
+            dist = np.linalg.norm(xpos - mu_xpos)
+            idx = np.where(self._cells_mjidxs == mjidx)[0][0]
+            self._attention_mjidx_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_word_selection) ** 2)
+
+        # Normalization
+        self._attention_mjidx_distribution /= np.sum(self._attention_mjidx_distribution)
+
+    def _sample_attention_deployment_mjidx(self):
+        # Sample a new target to deploy attention
+        self._deployed_attention_target_mjidx = np.random.choice(self._cells_mjidxs,
+                                                                 p=self._attention_mjidx_distribution)
+        # Update the attention distribution, remove the deployed target by making its probability to 0
+        idx = np.where(self._cells_mjidxs == self._deployed_attention_target_mjidx)[0][0]
+        self._attention_mjidx_distribution[idx] = 0
+        # Normalization
+        self._attention_mjidx_distribution /= np.sum(self._attention_mjidx_distribution)
+
     def _reset_stm(self):
-        self._deployed_attention_target_mjidx = self._ils100_cells_mjidxs[0]
+        self._deployed_attention_target_mjidx = self._cells_mjidxs[0]
         self._mental_state['prev_reading_memory'] = np.full_like(self._mental_state['prev_reading_memory'],
                                                                  self._MEMORY_PAD_VALUE)
         self._mental_state['reading_memory'] = np.full_like(self._mental_state['reading_memory'],
@@ -943,11 +1010,15 @@ class MDPResumeRead(Env):
 
     def step(self, action):
         # Action t+1 from state t - attention allocation - Reading is a sequential process (MDP)
-        # Action for attention deployment
-        # 1. should the agent read the next word;
-        # 2. should the agent get back to the first word uncovered in the short-term memory
+        # Action for attention deployment - Make a decision - Take the current one to read or keep searching
+        # 1. should the agent continue to read the next word, do not search;
+        # 2. should the agent search for the target word, however, the more agent searches, the more the agent forgets
 
         finish_reading = False
+
+        # TODO debug delete here
+        action[0] = 1
+        print("Action: ", action)
 
         action_attention_deployment = action[self._action_attention_deployment_idx]
         # Change the target of attention anytime
@@ -957,12 +1028,6 @@ class MDPResumeRead(Env):
                 if self._on_target_steps >= self._dwell_steps:
                     # Read the next word if the previous one has been processed
                     self._deployed_attention_target_mjidx += 1
-                    # If the next read word exceeds the reading material limit,
-                    # clear the short term memory and restart from the beginning, just like turning the page
-                    if self._deployed_attention_target_mjidx > self._ils100_cells_mjidxs[-1]:
-                        self._reset_stm()
-                        # Page finish
-                        finish_reading = True
                     # Reset the on target steps
                     self._on_target_steps = 0
             else:
@@ -970,16 +1035,15 @@ class MDPResumeRead(Env):
                 # Actively finish reading
                 finish_reading = True
         else:
-            # Resample the latest word not read
-            indices = np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]
-            if len(indices) <= 0:
-                # The memory is empty, reset the memory
-                self._reset_stm()
-            else:
-                # Resample the latest word not read
-                self._deployed_attention_target_mjidx = self._mental_state['reading_memory'][indices[-1]]
-            # Reset the on target steps
-            self._on_target_steps = 0
+            if self._on_target_steps >= self._dwell_steps:
+                # Sample a new target to deploy attention based on the attention distribution
+                self._sample_attention_deployment_mjidx()
+                # Reset the on target steps
+                self._on_target_steps = 0
+                # Update the elapsed time
+                self._delta_t += self._dwell_time
+                # Update the corruption of the memory
+                self._corrupt_memory()
 
         xpos = self._data.geom(self._deployed_attention_target_mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
@@ -995,11 +1059,13 @@ class MDPResumeRead(Env):
         terminate = False
         info = {}
 
+        # TODO update - check whether the agent has sampled at the target
+
         # Update Eyeball movement driven by the intention / attention allocation
         # Eye-sight detection
         dist, geomid = self._get_focus(site_name="rangefinder-site")
         # Reset the scene first
-        for mj_idx in self._ils100_cells_mjidxs:
+        for mj_idx in self._cells_mjidxs:
             self._model.geom(mj_idx).rgba = self._DFLT_RGBA
         # Count the number of steps that the agent fixates on the target
         if geomid == self._deployed_attention_target_mjidx:
@@ -1007,10 +1073,6 @@ class MDPResumeRead(Env):
             self._model.geom(self._deployed_attention_target_mjidx).rgba = self._VISUALIZE_RGBA
 
         # Update the mental state
-        # Update the page finish flag
-        if np.array_equal(self._mental_state['reading_memory'], self._ils100_cells_mjidxs):
-            self._mental_state['page_finish'] = True
-
         # Update the previous reading memory
         self._mental_state['prev_reading_memory'] = self._mental_state['reading_memory'].copy()
 
@@ -1023,16 +1085,13 @@ class MDPResumeRead(Env):
                 if len(indices) > 0:
                     new_memory_slot_idx = indices[0]
                     self._mental_state['reading_memory'][new_memory_slot_idx] = self._deployed_attention_target_mjidx
-
-                    if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
-                            np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
-                        new_knowledge_gain = 0.5
-                    else:
-                        new_knowledge_gain = 0
-
-                    reward += new_knowledge_gain
                 else:
                     pass
+
+            # Check whether the agent has read all the words
+            # if np.array_equal(self._mental_state['reading_memory'], self._cells_mjidxs):
+            if self._deployed_attention_target_mjidx >= self._cells_mjidxs[-1]:
+                self._mental_state['page_finish'] = True
 
         # Reward shaping based on the reading progress - similarity
         # Estimate the reward
@@ -1050,14 +1109,16 @@ class MDPResumeRead(Env):
 
             # Get the comprehension reward
             reading_progress_seq = self._mental_state['reading_memory']
-            euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+            euclidean_distance = self.euclidean_distance(reading_progress_seq, self._cells_mjidxs)
             reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-        # # TODO debug delete later when training
-        # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
-        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
-        #       f"the on target steps is: {self._on_target_steps}, \n"
-        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-        #       f"The reward is: {reward}, \n")
+            # TODO modify the reward function to make more sense
+
+        # TODO debug comment later when training
+        print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
