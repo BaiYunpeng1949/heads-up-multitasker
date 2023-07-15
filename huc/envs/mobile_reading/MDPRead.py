@@ -235,15 +235,6 @@ class MDPRead(Env):
             self._on_target_steps = 0
 
         # Eyeball movement
-        # action[self._action_eye_rotate_x_idx] = self.normalise(action[self._action_eye_rotate_x_idx], -1, 1,
-        #                                                        *self._model.actuator_ctrlrange[self._eye_x_motor_mjidx,
-        #                                                         :])
-        # action[self._action_eye_rotate_y_idx] = self.normalise(action[self._action_eye_rotate_y_idx], -1, 1,
-        #                                                        *self._model.actuator_ctrlrange[self._eye_y_motor_mjidx,
-        #                                                         :])
-        # self._data.ctrl[self._eye_x_motor_mjidx] = action[self._eye_x_action_idx]
-        # self._data.ctrl[self._eye_y_motor_mjidx] = action[self._eye_y_action_idx]
-
         xpos = self._data.geom(self._deployed_attention_target_mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
         self._data.ctrl[self._eye_x_motor_mjidx] = np.arctan(z / y)
@@ -286,14 +277,6 @@ class MDPRead(Env):
                 if len(indices) > 0:
                     new_memory_slot_idx = indices[0]
                     self._mental_state['reading_memory'][new_memory_slot_idx] = self._deployed_attention_target_mjidx
-
-                    if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
-                            np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
-                        new_knowledge_gain = 0.5
-                    else:
-                        new_knowledge_gain = 0
-
-                    reward += new_knowledge_gain
                 else:
                     pass
 
@@ -315,13 +298,6 @@ class MDPRead(Env):
             reading_progress_seq = self._mental_state['reading_memory']
             euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
             reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
-
-            # # Voluntarily finish reading the page
-            # if self._mental_state['page_finish']:
-            #     # Successfully comprehend the text page-wise
-            #     reward += 10
-            # else:
-            #     reward += -10
 
         # # TODO debug delete later when training
         # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
@@ -719,12 +695,10 @@ class MDPEyeRead(Env):
         if self._steps >= self.ep_len or finish_reading:
             terminate = True
 
-            # Voluntarily finish reading the page
-            if self._mental_state['page_finish']:
-                # Successfully comprehend the text page-wise
-                reward += 100
-            else:
-                reward += -100
+            # Get the comprehension reward
+            reading_progress_seq = self._mental_state['reading_memory']
+            euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+            reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
         # # TODO debug comment later when training
         # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
