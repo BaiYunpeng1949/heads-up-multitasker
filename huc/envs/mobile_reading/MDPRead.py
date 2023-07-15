@@ -300,7 +300,7 @@ class MDPRead(Env):
         # Estimate the reward
         if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
                 np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
-            new_knowledge_gain = 0.2
+            new_knowledge_gain = 1
         else:
             new_knowledge_gain = 0
         time_cost = -0.1
@@ -310,19 +310,24 @@ class MDPRead(Env):
         if self._steps >= self.ep_len or finish_reading:
             terminate = True
 
-            # Voluntarily finish reading the page
-            if self._mental_state['page_finish']:
-                # Successfully comprehend the text page-wise
-                reward += 10
-            else:
-                reward += -10
+            # Get the comprehension reward
+            reading_progress_seq = self._mental_state['reading_memory']
+            euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+            reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-        # TODO debug delete later when training
-        print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
-              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
-              f"the on target steps is: {self._on_target_steps}, \n"
-              f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-              f"The reward is: {reward}, \n")
+            # # Voluntarily finish reading the page
+            # if self._mental_state['page_finish']:
+            #     # Successfully comprehend the text page-wise
+            #     reward += 10
+            # else:
+            #     reward += -10
+
+        # # TODO debug delete later when training
+        # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
+        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
+        #       f"the on target steps is: {self._on_target_steps}, \n"
+        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
+        #       f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
 
