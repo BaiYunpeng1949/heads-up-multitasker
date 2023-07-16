@@ -662,8 +662,8 @@ class MDPEyeRead(Env):
 
         # Update the mental state only after the agent has read the word - the current reading memory
         if self._on_target_steps >= self._dwell_steps:
-            # Once the agent has read the word, grant an eyeball rotation reward / ocular motor control reward
-            reward_eyeball_rotation = 1
+            # # Once the agent has read the word, grant an eyeball rotation reward / ocular motor control reward
+            # reward_eyeball_rotation = 1
 
             # Judge whether the agent has read the word, only update the new read words
             if self._deployed_attention_target_mjidx not in self._mental_state['reading_memory']:
@@ -674,20 +674,25 @@ class MDPEyeRead(Env):
                     self._mental_state['reading_memory'][new_memory_slot_idx] = self._deployed_attention_target_mjidx
                 else:
                     pass
-        else:
-            reward_eyeball_rotation = 0.1 * (np.exp(
-                -10 * self._angle_from_target(site_name="rangefinder-site",
-                                              target_idx=self._deployed_attention_target_mjidx)) - 1)
 
-        # Reward shaping based on the reading progress - similarity
-        # Estimate the reward
+        # Reward shaping based on the eyeball rotation
+        reward_eyeball_rotation = 0.1 * (np.exp(
+            -10 * self._angle_from_target(site_name="rangefinder-site",
+                                          target_idx=self._deployed_attention_target_mjidx)) - 1)
+
+        # Reward shaping based on the reading progress
+        # Estimate the reward - new word read
         if len(np.where(self._mental_state['reading_memory'] != self._MEMORY_PAD_VALUE)[0]) > len(
                 np.where(self._mental_state['prev_reading_memory'] != self._MEMORY_PAD_VALUE)[0]):
             new_knowledge_gain = 10
         else:
             new_knowledge_gain = 0
+        # Memory similarity
+        reading_progress_seq = self._mental_state['reading_memory']
+        euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+        reward_shaping_memory = 0.1 * (np.exp(-0.1 * euclidean_distance) - 1)
         time_cost = -0.1
-        reward_attention_deployment += time_cost + new_knowledge_gain
+        reward_attention_deployment += time_cost + new_knowledge_gain + reward_shaping_memory
 
         reward += reward_attention_deployment + reward_eyeball_rotation
 
@@ -695,10 +700,10 @@ class MDPEyeRead(Env):
         if self._steps >= self.ep_len or finish_reading:
             terminate = True
 
-            # Get the comprehension reward
-            reading_progress_seq = self._mental_state['reading_memory']
-            euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
-            reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+            # # Get the comprehension reward
+            # reading_progress_seq = self._mental_state['reading_memory']
+            # euclidean_distance = self.euclidean_distance(reading_progress_seq, self._ils100_cells_mjidxs)
+            # reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
         # # TODO debug comment later when training
         # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
