@@ -15,7 +15,7 @@
         </default>
 
         <default class="smart-glass-grid">
-            <geom type="box" size="0.045 0.0000001 0.045" rgba="0 0 0 1"/>
+            <geom type="box" size="0.045 0.0000001 0.045" rgba="0 0 0 0"/>
         </default>
 
     </default>
