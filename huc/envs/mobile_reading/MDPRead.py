@@ -1032,15 +1032,14 @@ class MDPResumeRead(Env):
             euclidean_distance = self.euclidean_distance(reading_progress_seq, self._cells_mjidxs)
             reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-        # # TODO debug comment later when training
-        # print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
-        #       f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
-        #       f"the on target steps is: {self._on_target_steps}, \n"
-        #       f"the reading memory is: {self._mental_state['reading_memory']}, \n"
-        #       f"The reward is: {reward}, \n"
-        #       f"The attention distribution is: {self._attention_mjidx_distribution}, \n"
-        #       f"The original memory is: {self._mental_state['original_memory']}, \n"
-        #       f"The reading memory is: {self._mental_state['reading_memory']}, \n")
+        # TODO debug comment later when training
+        print(f"The step is: {self._steps}, the finish page flag is: {self._mental_state['page_finish']}\n"
+              f"The action is: {action[0]}, the deployed target is: {self._deployed_attention_target_mjidx}, the geomid is: {geomid}, \n"
+              f"the on target steps is: {self._on_target_steps}, \n"
+              f"The attention distribution is: {self._attention_mjidx_distribution}, \n"
+              f"The original memory is: {self._mental_state['original_memory']}, \n"
+              f"The reading memory is: {self._mental_state['reading_memory']}, \n"
+              f"The reward is: {reward}, \n")
 
         return self._get_obs(), reward, terminate, info
 
