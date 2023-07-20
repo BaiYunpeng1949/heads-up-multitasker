@@ -1335,10 +1335,10 @@ class POMDPSelect(Env):
 
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
-            self._init_delta_t = 2.0
-            self._init_sigma_position_memory = 1
-            self._weight_memory_decay = 0.5
-            layout_name = self._L100
+            self._init_delta_t = 4
+            self._init_sigma_position_memory = 5
+            self._weight_memory_decay = 0.75
+            layout_name = self._L0
 
         # Initialize the scene after deciding the layout
         if layout_name == self._L100:
@@ -1368,7 +1368,9 @@ class POMDPSelect(Env):
 
         # Initialize the gaze mjidx
         while True:
-            self._init_gaze_mjidx()
+            # self._init_gaze_mjidx()
+            # Randomly generate a gaze mjidx that is not the same as the true last word mjidx
+            self._gaze_mjidx = np.random.choice(self._cells_mjidxs)
             if self._gaze_mjidx != self._true_last_word_mjidx:
                 break
 
