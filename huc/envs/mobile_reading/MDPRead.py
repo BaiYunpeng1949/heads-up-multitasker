@@ -1317,11 +1317,6 @@ class POMDPSelect(Env):
         self._steps = 0
         self._on_target_steps = 0
 
-        # Initialize the memory model related parameters
-        self._init_delta_t = np.random.uniform(*self._init_delta_t_range)
-        self._init_sigma_position_memory = np.random.uniform(*self._init_sigma_position_memory_range)
-        self._weight_memory_decay = np.random.uniform(*self._weight_memory_decay_range)
-
         # Reset all cells to transparent
         for mjidx in self._ils100_cells_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
@@ -1330,8 +1325,22 @@ class POMDPSelect(Env):
         for mjidx in self._ils0_cells_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
 
-        # Initialize the word selection destination related parameters
+        # Initialize the stochastic memory model related parameters
+        self._init_delta_t = np.random.uniform(*self._init_delta_t_range)
+        self._init_sigma_position_memory = np.random.uniform(*self._init_sigma_position_memory_range)
+        self._weight_memory_decay = np.random.uniform(*self._weight_memory_decay_range)
+
+        # Initialize the stochastic word selection destination related parameters
         layout_name = np.random.choice(self._layouts)
+
+        # Configure the stochastic hyperparameters in test mode
+        if self._config['rl']['mode'] == 'test':
+            self._init_delta_t = 2.0
+            self._init_sigma_position_memory = 1
+            self._weight_memory_decay = 0.5
+            layout_name = self._L100
+
+        # Initialize the scene after deciding the layout
         if layout_name == self._L100:
             self._cells_mjidxs = self._ils100_cells_mjidxs
         elif layout_name == self._L50:
@@ -1340,13 +1349,19 @@ class POMDPSelect(Env):
             self._cells_mjidxs = self._ils0_cells_mjidxs
         else:
             raise ValueError("The layout name is not correct!")
+
         # Set up the scene after deciding the layout
         mujoco.mj_forward(self._model, self._data)
 
-        # Initialize the local search related parameters
+        # Initialize the stochastic local search - likelihood function related parameters
         self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._cells_mjidxs[0]).xpos[1]
         self._spatial_dist_coeff = np.random.uniform(*self._spatial_dist_coeff_range)
         self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
+
+        # Configure the stochastic hyperparameters in test mode
+        if self._config['rl']['mode'] == 'test':
+            self._spatial_dist_coeff = 1
+            self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
 
         # Initialize the true last word read mjidx
         self._true_last_word_mjidx = np.random.choice(self._cells_mjidxs)
@@ -1366,11 +1381,6 @@ class POMDPSelect(Env):
 
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
-
-        # # TODO comment later debug here
-        # print(f"the mental state initialization is: {self._mental_state}, "
-        #       f"the true attention target is: {self._true_attention_target_mjidx}\n"
-        #       f"The deployed attention target is: {self._deployed_attention_target_mjidx}\n")
 
         return self._get_obs()
 
@@ -1457,13 +1467,13 @@ class POMDPSelect(Env):
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
             reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-        # # TODO debug comment later when training
-        # print(f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
-        #       f"the encodin flag is: {self._on_target_steps >= self._dwell_steps}\n"
-        #       f"The action is: {action}, the steps is: {self._steps},\n"
-        #       f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-        #       f"the true last word is: {self._true_last_word_mjidx}\n"
-        #       f"The belief is: {self._belief}\n")
+        # TODO debug comment later when training
+        print(f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
+              f"the encodin flag is: {self._on_target_steps >= self._dwell_steps}\n"
+              f"The action is: {action}, the steps is: {self._steps},\n"
+              f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
+              f"the true last word is: {self._true_last_word_mjidx}\n"
+              f"The belief is: {self._belief}\n")
 
         return self._get_obs(), reward, terminate, info
 
