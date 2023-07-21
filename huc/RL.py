@@ -203,7 +203,7 @@ class RL:
             print('Configuration:\n    The foveated vision is NOT applied.')
         print(
             f"    The mode is: {self._config_rl['mode']} \n"
-            f"        WARNING: The grid search is: {self._config_rl['test']['grid_search']['enable']}\n"
+            f"        WARNING: The grid search is: {self._config_rl['test']['grid_search_selection']['enable']}\n"
             f"    The layout name is: {self._config_rl['test']['layout_name']}"
         )
         if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
@@ -362,91 +362,18 @@ class RL:
         """
         This method generates the RL env testing results with or without a pre-trained RL model in a manual way.
         """
-        grid_search = self._config_rl['test']['grid_search']['enable']
+        grid_search_perturbation = self._config_rl['test']['grid_search_perturbation']['enable']
+        grid_search_selection = self._config_rl['test']['grid_search_selection']['enable']
         if self._mode == _MODES['debug']:
             print('\nThe MuJoCo env and tasks baseline: ')
         elif self._mode == _MODES['test']:
             print('\nThe pre-trained RL model testing: ')
-            if grid_search:
-                # Download the configurations
-                dwell_steps_range = self._config_rl['test']['grid_search']['dwell_steps'][0]
-                dwell_steps_stride = self._config_rl['test']['grid_search']['dwell_steps'][1]
-                dwell_steps_range[1] += dwell_steps_stride
-                amp_tuning_factor_range = self._config_rl['test']['grid_search']['amp_tuning_factor'][0]
-                amp_tuning_factor_stride = self._config_rl['test']['grid_search']['amp_tuning_factor'][1]
-                amp_tuning_factor_range[1] += amp_tuning_factor_stride
-                perturbation_amp_noise_scale_range = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][0]
-                perturbation_amp_noise_scale_stride = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][1]
-                perturbation_amp_noise_scale_range[1] += perturbation_amp_noise_scale_stride
+            if grid_search_perturbation:
+                self._grid_search_perturbation()
+            if grid_search_selection:
+                self._grid_search_selection()
 
-                # Initialize the lists for storing parameters
-                dwell_steps_list = []
-                perturbation_amp_noise_scale_list = []
-                perturbation_amp_tuning_factor_list = []
-                end_steps_list = []
-                csv_directory = None
-                num_cells = None
-                action_sample_freq = None
-
-                for dwell_steps in np.arange(*dwell_steps_range, dwell_steps_stride):
-                    for perturbation_amp_tuning_factor in np.arange(*amp_tuning_factor_range, amp_tuning_factor_stride):
-                        for perturbation_amp_noise_scale in np.arange(*perturbation_amp_noise_scale_range,
-                                                                      perturbation_amp_noise_scale_stride):
-                            dwell_steps = round(dwell_steps, 2)
-                            perturbation_amp_tuning_factor = round(perturbation_amp_tuning_factor, 2)
-                            perturbation_amp_noise_scale = round(perturbation_amp_noise_scale, 3)
-
-                            dwell_steps_list.append(dwell_steps)
-                            perturbation_amp_tuning_factor_list.append(perturbation_amp_tuning_factor)
-                            perturbation_amp_noise_scale_list.append(perturbation_amp_noise_scale)
-
-                            params = {
-                                'dwell_steps': dwell_steps,
-                                'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor,
-                                'perturbation_amp_noise_scale': perturbation_amp_noise_scale,
-                                'mode': 1,
-                            }
-
-                            obs = self._env.reset(params=params)
-                            done = False
-                            score = 0
-                            info = None
-
-                            while not done:
-                                action, _states = self._model.predict(obs, deterministic=True)
-                                obs, reward, done, info = self._env.step(action)
-                                score += reward
-
-                            end_steps_list.append(info['end_steps'])
-                            csv_directory = info['save_folder']
-                            num_cells = info['num_cells']
-                            action_sample_freq = info['action_sample_freq']
-
-                # Write parameters and results to a dataframe
-                df = pd.DataFrame({
-                    'dwell_steps': dwell_steps_list,
-                    'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor_list,
-                    'perturbation_amp_noise_scale': perturbation_amp_noise_scale_list,
-                    'end_steps': end_steps_list,
-                })
-                # Process the data in dataframe, add reading speed and mobile reading speed degradation
-                df['reading_speed_wps'] = num_cells * action_sample_freq / df['end_steps']
-                # Select the row with the desired criteria
-                reference_row = df[
-                    (df['perturbation_amp_tuning_factor'] == 0) & (df['perturbation_amp_noise_scale'] == 0)]
-                # Group the dataframe by 'dwell_steps' and divide each group by the reference row
-                df['walk_over_stand_percent'] = df.groupby('dwell_steps')['end_steps'].transform(lambda x: x.iloc[0] / x)
-                # Save the plot as an image file (e.g., PNG, JPEG, PDF)
-                directory = csv_directory
-                if not os.path.exists(directory):
-                    os.makedirs(directory)
-                csv_save_path = os.path.join(directory, "results.csv")
-                df.to_csv(csv_save_path, index=False)
-                print(
-                    f"\n--------------------------------------------------------------------------------------------"
-                    f"\nThe grid search results are stored in {csv_save_path}")
-
-        if grid_search and self._mode == _MODES['test']:
+        if (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
             pass
         else:
             imgs = []
@@ -483,6 +410,179 @@ class RL:
         #     evl = evaluate_policy(self._model, self._parallel_envs, n_eval_episodes=self._num_episodes, render=False)
         #     print('The evaluation results are: Mean {}; STD {}'.format(evl[0], evl[1]))
 
+    def _grid_search_perturbation(self):
+        # Download the configurations
+        dwell_steps_range = self._config_rl['test']['grid_search']['dwell_steps'][0]
+        dwell_steps_stride = self._config_rl['test']['grid_search']['dwell_steps'][1]
+        dwell_steps_range[1] += dwell_steps_stride
+        amp_tuning_factor_range = self._config_rl['test']['grid_search']['amp_tuning_factor'][0]
+        amp_tuning_factor_stride = self._config_rl['test']['grid_search']['amp_tuning_factor'][1]
+        amp_tuning_factor_range[1] += amp_tuning_factor_stride
+        perturbation_amp_noise_scale_range = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][0]
+        perturbation_amp_noise_scale_stride = self._config_rl['test']['grid_search']['perturbation_amp_noise_scale'][1]
+        perturbation_amp_noise_scale_range[1] += perturbation_amp_noise_scale_stride
+
+        # Initialize the lists for storing parameters
+        dwell_steps_list = []
+        perturbation_amp_noise_scale_list = []
+        perturbation_amp_tuning_factor_list = []
+        end_steps_list = []
+        csv_directory = None
+        num_cells = None
+        action_sample_freq = None
+
+        for dwell_steps in np.arange(*dwell_steps_range, dwell_steps_stride):
+            for perturbation_amp_tuning_factor in np.arange(*amp_tuning_factor_range, amp_tuning_factor_stride):
+                for perturbation_amp_noise_scale in np.arange(*perturbation_amp_noise_scale_range,
+                                                              perturbation_amp_noise_scale_stride):
+                    dwell_steps = round(dwell_steps, 2)
+                    perturbation_amp_tuning_factor = round(perturbation_amp_tuning_factor, 2)
+                    perturbation_amp_noise_scale = round(perturbation_amp_noise_scale, 3)
+
+                    dwell_steps_list.append(dwell_steps)
+                    perturbation_amp_tuning_factor_list.append(perturbation_amp_tuning_factor)
+                    perturbation_amp_noise_scale_list.append(perturbation_amp_noise_scale)
+
+                    params = {
+                        'dwell_steps': dwell_steps,
+                        'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor,
+                        'perturbation_amp_noise_scale': perturbation_amp_noise_scale,
+                        'mode': 1,
+                    }
+
+                    obs = self._env.reset(params=params)
+                    done = False
+                    score = 0
+                    info = None
+
+                    while not done:
+                        action, _states = self._model.predict(obs, deterministic=True)
+                        obs, reward, done, info = self._env.step(action)
+                        score += reward
+
+                    end_steps_list.append(info['end_steps'])
+                    csv_directory = info['save_folder']
+                    num_cells = info['num_cells']
+                    action_sample_freq = info['action_sample_freq']
+
+        # Write parameters and results to a dataframe
+        df = pd.DataFrame({
+            'dwell_steps': dwell_steps_list,
+            'perturbation_amp_tuning_factor': perturbation_amp_tuning_factor_list,
+            'perturbation_amp_noise_scale': perturbation_amp_noise_scale_list,
+            'end_steps': end_steps_list,
+        })
+        # Process the data in dataframe, add reading speed and mobile reading speed degradation
+        df['reading_speed_wps'] = num_cells * action_sample_freq / df['end_steps']
+        # Select the row with the desired criteria
+        reference_row = df[
+            (df['perturbation_amp_tuning_factor'] == 0) & (df['perturbation_amp_noise_scale'] == 0)]
+        # Group the dataframe by 'dwell_steps' and divide each group by the reference row
+        df['walk_over_stand_percent'] = df.groupby('dwell_steps')['end_steps'].transform(lambda x: x.iloc[0] / x)
+        # Save the plot as an image file (e.g., PNG, JPEG, PDF)
+        directory = csv_directory
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        csv_save_path = os.path.join(directory, "results.csv")
+        df.to_csv(csv_save_path, index=False)
+        print(
+            f"\n--------------------------------------------------------------------------------------------"
+            f"\nThe grid search results are stored in {csv_save_path}")
+
+    def _grid_search_selection(self):
+        # Download the configurations
+        init_delta_t_range = self._config_rl['test']['grid_search_selection']['init_delta_t'][0]
+        init_delta_t_stride = self._config_rl['test']['grid_search_selection']['init_delta_t'][1]
+        # Add stride to the end of the range, or the last value will be missed
+        init_delta_t_range[1] += init_delta_t_stride
+
+        init_sigma_position_memory_range = self._config_rl['test']['grid_search_selection']['init_sigma_position_memory'][0]
+        init_sigma_position_memory_stride = self._config_rl['test']['grid_search_selection']['init_sigma_position_memory'][1]
+        init_sigma_position_memory_range[1] += init_sigma_position_memory_stride
+
+        weight_memory_decay_range = self._config_rl['test']['grid_search_selection']['weight_memory_decay'][0]
+        weight_memory_decay_stride = self._config_rl['test']['grid_search_selection']['weight_memory_decay'][1]
+        weight_memory_decay_range[1] += weight_memory_decay_stride
+
+        spatial_dist_coeff_range = self._config_rl['test']['grid_search_selection']['spatial_dist_coeff'][0]
+        spatial_dist_coeff_stride = self._config_rl['test']['grid_search_selection']['spatial_dist_coeff'][1]
+        spatial_dist_coeff_range[1] += spatial_dist_coeff_stride
+
+        layouts = self._config_rl['test']['grid_search_selection']['layouts']
+        num_episodes = self._config_rl['test']['grid_search_selection']['num_episodes']
+
+        # Initialize the lists for storing parameters
+        init_delta_t_list = []
+        init_sigma_position_memory_list = []
+        weight_memory_decay_list = []
+        spatial_dist_coeff_list = []
+        layout_list = []
+        steps_list = []
+        error_list = []
+        csv_directory = "envs/mobile_reading/results/"
+
+        for init_delta_t in np.arange(*init_delta_t_range, init_delta_t_stride):
+            for init_sigma_position_memory in np.arange(*init_sigma_position_memory_range, init_sigma_position_memory_stride):
+                for weight_memory_decay in np.arange(*weight_memory_decay_range, weight_memory_decay_stride):
+                    for spatial_dist_coeff in np.arange(*spatial_dist_coeff_range, spatial_dist_coeff_stride):
+                        for i in range(len(layouts)):
+
+                            init_delta_t_list.append(init_delta_t)
+                            init_sigma_position_memory_list.append(init_sigma_position_memory)
+                            weight_memory_decay_list.append(weight_memory_decay)
+                            spatial_dist_coeff_list.append(spatial_dist_coeff)
+                            layout = layouts[i]
+                            layout_list.append(layout)
+
+                            params = {
+                                'init_delta_t': init_delta_t,
+                                'init_sigma_position_memory': init_sigma_position_memory,
+                                'weight_memory_decay': weight_memory_decay,
+                                'spatial_dist_coeff': spatial_dist_coeff,
+                                'layout': layout,
+                            }
+
+                            steps = []
+                            errors = []
+
+                            for episode in range(1, num_episodes + 1):
+                                obs = self._env.reset(params=params)
+                                done = False
+                                score = 0
+                                info = None
+
+                                while not done:
+                                    action, _states = self._model.predict(obs, deterministic=True)
+                                    obs, reward, done, info = self._env.step(action)
+                                    score += reward
+
+                                steps.append(info['steps'])
+                                errors.append(info['error'])
+
+                            steps_list.append(np.mean(steps))
+                            error_list.append(np.mean(errors))
+
+        # Write parameters and results to a dataframe
+        df = pd.DataFrame({
+            'init_delta_t': init_delta_t_list,
+            'init_sigma_position_memory': init_sigma_position_memory_list,
+            'weight_memory_decay': weight_memory_decay_list,
+            'spatial_dist_coeff': spatial_dist_coeff_list,
+            'layout': layout_list,
+            'steps': steps_list,
+            'error': error_list,
+        })
+
+        # Save the plot as an image file (e.g., PNG, JPEG, PDF)
+        directory = csv_directory
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        csv_save_path = os.path.join(directory, "selection_results.csv")
+        df.to_csv(csv_save_path, index=False)
+        print(
+            f"\n--------------------------------------------------------------------------------------------"
+            f"\nThe grid search results are stored in {csv_save_path}")
+
     def run(self):
         """
         This method helps run the RL pipeline.
@@ -494,7 +594,7 @@ class RL:
         elif self._mode == _MODES['continual_train']:
             self._continual_train()
         elif self._mode == _MODES['test'] or self._mode == _MODES['debug']:
-            if self._config_rl['test']['grid_search']['enable'] and self._mode == _MODES['test']:
+            if self._config_rl['test']['grid_search_selection']['enable'] and self._mode == _MODES['test']:
                 self._test()
             else:
                 # Generate the results from the pre-trained model.

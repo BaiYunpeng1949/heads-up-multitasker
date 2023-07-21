@@ -180,10 +180,16 @@ class POMDPSelect(Env):
 
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
-            self._init_delta_t = 4
-            self._init_sigma_position_memory = 5
-            self._weight_memory_decay = 0.75
-            layout_name = self._L0
+            if params is None:
+                self._init_delta_t = 2
+                self._init_sigma_position_memory = 3
+                self._weight_memory_decay = 0.75
+                layout_name = self._L0
+            else:
+                self._init_delta_t = params['init_delta_t']
+                self._init_sigma_position_memory = params['init_sigma_position_memory']
+                self._weight_memory_decay = params['weight_memory_decay']
+                layout_name = params['layout']
 
         # Initialize the scene after deciding the layout
         if layout_name == self._L100:
@@ -205,7 +211,10 @@ class POMDPSelect(Env):
 
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
-            self._spatial_dist_coeff = 2.5
+            if params is None:
+                self._spatial_dist_coeff = 2.5
+            else:
+                self._spatial_dist_coeff = params['spatial_dist_coeff']
             self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
 
         # Initialize the true last word read mjidx
@@ -310,17 +319,20 @@ class POMDPSelect(Env):
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
             reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-        # TODO debug comment later when training
-        print(
-              f"The action is: {action_gaze}, the steps is: {self._steps},\n"
-              f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
-              f"The prior probability distribution is: {self._prior_prob_dist},\n"
-              f"The likelihood is: {self._likelihood_prob_dist},\n"
-              f"The belief is: {self._belief}\n"
-              
-              f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-              f"the true last word is: {self._true_last_word_mjidx}\n"
-        )
+            info['steps'] = self._steps
+            info['error'] = euclidean_distance
+
+        # # TODO debug comment later when training
+        # print(
+        #       f"The action is: {action_gaze}, the steps is: {self._steps},\n"
+        #       f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
+        #       f"The prior probability distribution is: {self._prior_prob_dist},\n"
+        #       f"The likelihood is: {self._likelihood_prob_dist},\n"
+        #       f"The belief is: {self._belief}\n"
+        #
+        #       f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
+        #       f"the true last word is: {self._true_last_word_mjidx}\n"
+        # )
 
         return self._get_obs(), reward, terminate, info
 

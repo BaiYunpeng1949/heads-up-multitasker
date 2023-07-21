@@ -25,11 +25,19 @@ rl:
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
     loaded_model_name: 'rl_model_30000000_steps'
     continual_logs_name: 'PPO_201'
-    grid_search:
+    grid_search_perturbation:
       enable: False
       dwell_steps: [[0.2, 0.5], 0.01]
       amp_tuning_factor: [[0, 1], 0.01]
       perturbation_amp_noise_scale: [[0, 0.015], 0.001]
+    grid_search_selection:
+      enable: True
+      init_delta_t: [[2, 4], 0.5]
+      init_sigma_position_memory: [[0.5, 5], 0.5]
+      weight_memory_decay: [[0.5, 0.75], 0.05]
+      spatial_dist_coeff: [[1, 5], 0.5]
+      layouts: ['L0', 'L50', 'L100']
+      num_episodes: 20
 
 mj_env:
   xml: ''
