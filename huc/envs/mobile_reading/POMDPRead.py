@@ -26,7 +26,7 @@ class POMDPSelect(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v2.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -80,13 +80,13 @@ class POMDPSelect(Env):
         # Initialize the memory model that can be used to update the prior probability distribution (activation level from ACT-R)
         # Initial sigma position memory
         # Ref: Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning
-        self._init_sigma_position_memory_range = [0.5, 5]
+        self._init_sigma_position_memory_range = [0.5, 10]
         self._init_sigma_position_memory = None
         # The initial time interval of attention switch
         # 2s - time spent on the environmental task;
         # 4s - according to empirical results, most word selection time is finished within 2s; 2+2=4
         # Ref: Not all spacings are created equally
-        self._init_delta_t_range = [2, 4]
+        self._init_delta_t_range = [1, 5]
         self._init_delta_t = None
         self._delta_t = None
         # The decaying factor Bi formular is a simplified version of the learning component from ACT-R
@@ -101,12 +101,12 @@ class POMDPSelect(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [1, 5]
+        self._spatial_dist_coeff_range = [0.05, 10]
         self._spatial_dist_coeff = None
         self._sigma_likelihood = None
 
         # Initialize the memory decay weight
-        self._weight_memory_decay_range = [0.5, 0.75]
+        self._weight_memory_decay_range = [0.05, 1]
         self._weight_memory_decay = None
 
         # Define the display related parameters
@@ -127,7 +127,7 @@ class POMDPSelect(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 15
+        self._num_stateful_info = 35
 
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
@@ -314,11 +314,23 @@ class POMDPSelect(Env):
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or finish_search:
+            # Termination of the episode
             terminate = True
 
+            # Reward
+            # Selection accuracy related reward
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-            reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+            reward_selection_accuracy = 10 * (np.exp(-0.4 * euclidean_distance) - 1)
+            # Reward option 2: reward_selection_accuracy = 10 * np.exp(-0.4 * euclidean_distance)
+            # Comprehension related reward - determined by: whether the agent select the word from the previous read content
+            if self._gaze_mjidx <= self._true_last_word_mjidx:
+                reward_comprehension = 2 * (np.exp(-1 * euclidean_distance))
+            else:
+                reward_comprehension = 0
+            # Estimate the total reward
+            reward += reward_selection_accuracy + reward_comprehension
 
+            # Info updating
             info['steps'] = self._steps
             info['error'] = euclidean_distance
 
