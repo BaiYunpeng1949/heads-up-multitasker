@@ -25,7 +25,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from huc.utils.write_video import write_video
 from huc.envs.mobile_reading.LocomotionRead import Read, PerturbationRead, WalkRead
 from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
-from huc.envs.mobile_reading.MDPRead import MDPRead, MDPEyeRead, MDPResumeRead, POMDPSelect
+from huc.envs.mobile_reading.MDPRead import MDPRead, MDPEyeRead, MDPResumeRead
+from huc.envs.mobile_reading.POMDPRead import POMDPSelect
 
 _MODES = {
     'train': 'train',
