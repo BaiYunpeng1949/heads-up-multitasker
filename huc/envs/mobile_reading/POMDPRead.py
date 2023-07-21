@@ -101,12 +101,12 @@ class POMDPSelect(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [0.05, 10]
+        self._spatial_dist_coeff_range = [0.1, 10]
         self._spatial_dist_coeff = None
         self._sigma_likelihood = None
 
         # Initialize the memory decay weight
-        self._weight_memory_decay_range = [0.05, 1]
+        self._weight_memory_decay_range = [0.1, 1]
         self._weight_memory_decay = None
 
         # Define the display related parameters
@@ -128,7 +128,6 @@ class POMDPSelect(Env):
         self._vision_frames = None
         self._qpos_frames = None
         self._num_stateful_info = 35
-
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space
@@ -152,6 +151,9 @@ class POMDPSelect(Env):
         self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
                                dt=1 / self._action_sample_freq)
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
+
+        # Define the training related parameters
+        self._epsilon = 1e-100
 
     def reset(self, params=None):
 
@@ -357,6 +359,13 @@ class POMDPSelect(Env):
     def euclidean_distance(x1, x2):
         return np.sqrt(np.sum((x1 - x2) ** 2))
 
+    @staticmethod
+    def detect_invalid_array(array, array_name):
+        if not np.all(array):
+            print(f"Array contains NaN or Inf, the array is: {array_name}\n"
+                  f"{array}\n"
+                  f"")
+
     def _get_obs(self):
         """ Get the observation of the environment state """
         # Get the stateful information observation - normalize to [-1, 1]
@@ -416,14 +425,18 @@ class POMDPSelect(Env):
         mu = true_last_word_idx
         init_memory_decay_prob_dist = np.zeros(self._cells_mjidxs.shape[0])
         memory_decay_prob_dist = np.exp(-(np.arange(init_memory_decay_prob_dist.shape[0]) - mu)**2 / (2 * self._sigma_position_memory**2))
+        memory_decay_prob_dist += self._epsilon     # Prevent invalid values in array
         memory_decay_prob_dist /= np.sum(memory_decay_prob_dist)
+        self.detect_invalid_array(memory_decay_prob_dist, "memory_decay_prob_dist")     # Detect in debug, in case crash during training
 
         # Update the prior probability distribution with the weighted memory decay
         weight_decay = self._weight_memory_decay
         weight_prior = 1 - weight_decay
         self._prior_prob_dist = weight_decay * memory_decay_prob_dist + weight_prior * self._prior_prob_dist
+        self._prior_prob_dist += self._epsilon   # Prevent invalid values in array
         # Normalise the prior probability distribution
         self._prior_prob_dist /= np.sum(self._prior_prob_dist)
+        self.detect_invalid_array(self._prior_prob_dist, "prior_prob_dist")
 
     def _get_likelihood(self):
         """
@@ -451,15 +464,22 @@ class POMDPSelect(Env):
             # Get the likelihood
             self._likelihood_prob_dist[i] = np.exp(-0.5 * (dist / self._sigma_likelihood) ** 2)
 
+        # Prevent invalid values in array
+        self._likelihood_prob_dist += self._epsilon
+
         # Normalization
         self._likelihood_prob_dist /= np.sum(self._likelihood_prob_dist)
+        self.detect_invalid_array(self._likelihood_prob_dist, "likelihood_prob_dist")
 
     def _get_posterior(self):
         """Get the posterior probability distribution of the attention according to the Bayes' rules"""
         # Get the posterior probability distribution = prior * likelihood
         self._posterior_prob_dist = self._prior_prob_dist.copy() * self._likelihood_prob_dist.copy()
+        # Prevent invalid values in array
+        self._posterior_prob_dist += self._epsilon
         # Normalization
         self._posterior_prob_dist /= np.sum(self._posterior_prob_dist)
+        self.detect_invalid_array(self._posterior_prob_dist, "posterior_prob_dist")
 
     def _get_belief(self):
         """Get the belief of the agent's attention distribution"""
