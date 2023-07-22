@@ -336,17 +336,16 @@ class POMDPSelect(Env):
             info['steps'] = self._steps
             info['error'] = euclidean_distance
 
-        # # TODO debug comment later when training
-        # print(
-        #       f"The action is: {action_gaze}, the steps is: {self._steps},\n"
-        #       f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
-        #       f"The prior probability distribution is: {self._prior_prob_dist},\n"
-        #       f"The likelihood is: {self._likelihood_prob_dist},\n"
-        #       f"The belief is: {self._belief}\n"
-        #
-        #       f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-        #       f"the true last word is: {self._true_last_word_mjidx}\n"
-        # )
+        # TODO debug comment later when training
+        print(
+              f"The action is: {action_gaze}, the steps is: {self._steps},\n"
+              f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
+              # f"The prior probability distribution is: {self._prior_prob_dist},\n"
+              # f"The likelihood is: {self._likelihood_prob_dist},\n"
+              f"The belief is: {self._belief}\n"
+              f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
+              f"the true last word is: {self._true_last_word_mjidx}\n"
+        )
 
         return self._get_obs(), reward, terminate, info
 

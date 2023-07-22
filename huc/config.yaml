@@ -21,9 +21,9 @@ rl:
     save_freq: 5000000  # Save a checkpoint every 0.5 million steps
 
   test:
-    num_episodes: 100
+    num_episodes: 5
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_200000000_steps'
+    loaded_model_name: 'rl_model_95000000_steps'
     continual_logs_name: 'PPO_201'
     grid_search_perturbation:
       enable: False
@@ -31,7 +31,7 @@ rl:
       amp_tuning_factor: [[0, 1], 0.01]
       perturbation_amp_noise_scale: [[0, 0.015], 0.001]
     grid_search_selection:
-      enable: True
+      enable: False
       init_delta_t: [[1, 5], 0.2]
       init_sigma_position_memory: [[0.5, 10], 0.5]
       weight_memory_decay: [[0.1, 1], 0.05]
