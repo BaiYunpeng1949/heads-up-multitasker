@@ -2,6 +2,7 @@ import os
 
 import yaml
 import cv2
+import csv
 from tqdm import tqdm
 import numpy as np
 from typing import Callable
@@ -517,9 +518,30 @@ class RL:
         weight_memory_decay_list = []
         spatial_dist_coeff_list = []
         layout_list = []
-        steps_list = []
-        error_list = []
+        # steps_list = []
+        # error_list = []
+        # csv_directory = "envs/mobile_reading/results/"
+
+        df_columns = [
+            'init_delta_t',
+            'init_sigma_position_memory',
+            'weight_memory_decay',
+            'spatial_dist_coeff',
+            'layout',
+            'steps',
+            'error'
+        ]
+
+        # Create or open CSV file with the column headers
         csv_directory = "envs/mobile_reading/results/"
+        if not os.path.exists(csv_directory):
+            os.makedirs(csv_directory)
+        csv_save_path = os.path.join(csv_directory, "selection_results.csv")
+
+        if not os.path.isfile(csv_save_path):
+            with open(csv_save_path, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(df_columns)
 
         for init_delta_t in np.arange(*init_delta_t_range, init_delta_t_stride):
             for init_sigma_position_memory in np.arange(*init_sigma_position_memory_range, init_sigma_position_memory_stride):
@@ -527,12 +549,12 @@ class RL:
                     for spatial_dist_coeff in np.arange(*spatial_dist_coeff_range, spatial_dist_coeff_stride):
                         for i in range(len(layouts)):
 
-                            init_delta_t_list.append(init_delta_t)
-                            init_sigma_position_memory_list.append(init_sigma_position_memory)
-                            weight_memory_decay_list.append(weight_memory_decay)
-                            spatial_dist_coeff_list.append(spatial_dist_coeff)
+                            # init_delta_t_list.append(init_delta_t)
+                            # init_sigma_position_memory_list.append(init_sigma_position_memory)
+                            # weight_memory_decay_list.append(weight_memory_decay)
+                            # spatial_dist_coeff_list.append(spatial_dist_coeff)
                             layout = layouts[i]
-                            layout_list.append(layout)
+                            # layout_list.append(layout)
 
                             params = {
                                 'init_delta_t': init_delta_t,
@@ -559,26 +581,39 @@ class RL:
                                 steps.append(info['steps'])
                                 errors.append(info['error'])
 
-                            steps_list.append(np.mean(steps))
-                            error_list.append(np.mean(errors))
+                            avg_steps = np.mean(steps)
+                            avg_errors = np.mean(errors)
 
-        # Write parameters and results to a dataframe
-        df = pd.DataFrame({
-            'init_delta_t': init_delta_t_list,
-            'init_sigma_position_memory': init_sigma_position_memory_list,
-            'weight_memory_decay': weight_memory_decay_list,
-            'spatial_dist_coeff': spatial_dist_coeff_list,
-            'layout': layout_list,
-            'steps': steps_list,
-            'error': error_list,
-        })
+                            # Save to CSV after each cluster of episodes is finished
+                            with open(csv_save_path, 'a') as f:
+                                writer = csv.writer(f)
+                                writer.writerow([
+                                    init_delta_t,
+                                    init_sigma_position_memory,
+                                    weight_memory_decay,
+                                    spatial_dist_coeff,
+                                    layouts[i],
+                                    avg_steps,
+                                    avg_errors
+                                ])
 
-        # Save the plot as an image file (e.g., PNG, JPEG, PDF)
-        directory = csv_directory
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        csv_save_path = os.path.join(directory, "selection_results.csv")
-        df.to_csv(csv_save_path, index=False)
+        # # Write parameters and results to a dataframe
+        # df = pd.DataFrame({
+        #     'init_delta_t': init_delta_t_list,
+        #     'init_sigma_position_memory': init_sigma_position_memory_list,
+        #     'weight_memory_decay': weight_memory_decay_list,
+        #     'spatial_dist_coeff': spatial_dist_coeff_list,
+        #     'layout': layout_list,
+        #     'steps': steps_list,
+        #     'error': error_list,
+        # })
+        #
+        # # Save the plot as an image file (e.g., PNG, JPEG, PDF)
+        # directory = csv_directory
+        # if not os.path.exists(directory):
+        #     os.makedirs(directory)
+        # csv_save_path = os.path.join(directory, "selection_results.csv")
+        # df.to_csv(csv_save_path, index=False)
         print(
             f"\n--------------------------------------------------------------------------------------------"
             f"\nThe grid search results are stored in {csv_save_path}")
