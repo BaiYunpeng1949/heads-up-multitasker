@@ -729,7 +729,7 @@ class MDPResumeRead(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "pomdp-resume-read-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 

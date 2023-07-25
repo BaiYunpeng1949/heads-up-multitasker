@@ -26,7 +26,7 @@ class POMDPSelect(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "pomdp-resume-read-v2.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -59,7 +59,7 @@ class POMDPSelect(Env):
         self._L100 = "L100"
         self._L50 = "L50"
         self._L0 = "L0"
-        self._FOUR = 4  # The number of cells in a row
+        self._EIGHT = 8  # The number of cells in a row TODO Check it with different layouts
         self._layouts = [self._L100, self._L50, self._L0]
         self._cells_mjidxs = None
 
@@ -130,7 +130,7 @@ class POMDPSelect(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 15
+        self._num_stateful_info = 35
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space
@@ -190,7 +190,7 @@ class POMDPSelect(Env):
         if self._config['rl']['mode'] == 'test':
             if params is None:
                 self._init_delta_t = 4
-                self._init_sigma_position_memory = 5
+                self._init_sigma_position_memory = 2
                 self._weight_memory_decay = 0.75
                 layout_name = self._L0
             else:
@@ -269,12 +269,12 @@ class POMDPSelect(Env):
                 finish_search = True
             # Move the gaze to the next word above
             elif self._action_up_range[0] <= action_gaze <= self._action_up_range[1]:
-                if self._gaze_mjidx - self._FOUR >= self._cells_mjidxs[0]:
-                    self._gaze_mjidx -= self._FOUR
+                if self._gaze_mjidx - self._EIGHT >= self._cells_mjidxs[0]:
+                    self._gaze_mjidx -= self._EIGHT
             # Move the gaze to the next word below
             elif self._action_down_range[0] < action_gaze <= self._action_down_range[1]:
-                if self._gaze_mjidx + self._FOUR <= self._cells_mjidxs[-1]:
-                    self._gaze_mjidx += self._FOUR
+                if self._gaze_mjidx + self._EIGHT <= self._cells_mjidxs[-1]:
+                    self._gaze_mjidx += self._EIGHT
             # Move the gaze to the next word left
             elif self._action_left_range[0] < action_gaze <= self._action_left_range[1]:
                 if self._gaze_mjidx - 1 >= self._cells_mjidxs[0]:
