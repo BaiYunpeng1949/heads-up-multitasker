@@ -117,6 +117,9 @@ class POMDPSelect(Env):
         self._dwell_time = 0.2  # The time to dwell on a target
         self._dwell_steps = int(self._dwell_time * self._action_sample_freq)  # The number of steps to dwell on a target
 
+        # Initialize the log related parameters
+        self._true_last_word_belief_list = None
+
         # Initialise RL related thresholds and counters
         self._steps = None
         self._on_target_steps = None
@@ -159,6 +162,9 @@ class POMDPSelect(Env):
 
         # Reset MuJoCo sim
         mujoco.mj_resetData(self._model, self._data)
+
+        # Reset the log related parameters
+        self._true_last_word_belief_list = []
 
         # Reset the variables and counters
         self._steps = 0
@@ -336,16 +342,23 @@ class POMDPSelect(Env):
             info['steps'] = self._steps
             info['error'] = euclidean_distance
 
-        # TODO debug comment later when training
-        print(
-              f"The action is: {action_gaze}, the steps is: {self._steps},\n"
-              f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
-              # f"The prior probability distribution is: {self._prior_prob_dist},\n"
-              # f"The likelihood is: {self._likelihood_prob_dist},\n"
-              f"The belief is: {self._belief}\n"
-              f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-              f"the true last word is: {self._true_last_word_mjidx}\n"
-        )
+            if self._config['rl']['mode'] == 'test' and \
+                    self._config['rl']['test']['grid_search_selection']['enable'] == False \
+                    or self._config['rl']['mode'] == 'debug':
+                self._plot_belief()
+
+        if self._config['rl']['mode'] == 'test' and \
+                self._config['rl']['test']['grid_search_selection']['enable'] == False \
+                or self._config['rl']['mode'] == 'debug':
+            print(
+                  f"The action is: {action_gaze}, the steps is: {self._steps},\n"
+                  f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
+                  # f"The prior probability distribution is: {self._prior_prob_dist},\n"
+                  # f"The likelihood is: {self._likelihood_prob_dist},\n"
+                  f"The belief is: {self._belief}\n"
+                  f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
+                  f"the true last word is: {self._true_last_word_mjidx}\n"
+            )
 
         return self._get_obs(), reward, terminate, info
 
@@ -488,6 +501,12 @@ class POMDPSelect(Env):
         self._get_posterior()
         self._belief = self._posterior_prob_dist.copy()
 
+        # Log the belief in the test mode
+        if self._config['rl']['mode'] == 'test' and \
+                self._config['rl']['test']['grid_search_selection']['enable'] == False:
+            idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
+            self._true_last_word_belief_list.append(self._belief[idx])
+
     def _get_focus(self, site_name):
         site = self._data.site(site_name)
         pnt = site.xpos
@@ -499,3 +518,19 @@ class POMDPSelect(Env):
             self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
+
+    def _plot_belief(self):
+        y_values = self._true_last_word_belief_list.copy()
+        x_values = range(1, len(self._true_last_word_belief_list) + 1)  # Use integers as x-coordinates starting from 1
+
+        plt.plot(x_values, y_values, marker='o', linestyle='-', color='b')
+        plt.xlabel('Times of Actions')
+        plt.ylabel('Belief of the True Last Word')
+        plt.title('Belief Update')
+        plt.grid(True)
+
+        # Save the plot to the specified location (replace 'save_path' with the desired file path)
+        directory = os.path.dirname(os.path.realpath(__file__))
+        save_path = os.path.join(directory, "results", "belief_update.png")
+        plt.savefig(save_path)
+        print(f"The belief update plot is saved to: {save_path}")

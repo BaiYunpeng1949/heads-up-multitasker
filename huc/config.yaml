@@ -21,7 +21,7 @@ rl:
     save_freq: 5000000  # Save a checkpoint every 0.5 million steps
 
   test:
-    num_episodes: 5
+    num_episodes: 1
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
     loaded_model_name: 'rl_model_95000000_steps'
     continual_logs_name: 'PPO_201'
