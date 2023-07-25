@@ -26,7 +26,7 @@ class POMDPSelect(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v2.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -130,7 +130,7 @@ class POMDPSelect(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 35
+        self._num_stateful_info = 15
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space
@@ -189,8 +189,8 @@ class POMDPSelect(Env):
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
             if params is None:
-                self._init_delta_t = 2
-                self._init_sigma_position_memory = 3
+                self._init_delta_t = 4
+                self._init_sigma_position_memory = 5
                 self._weight_memory_decay = 0.75
                 layout_name = self._L0
             else:
@@ -394,7 +394,8 @@ class POMDPSelect(Env):
 
         # Observation space check
         if stateful_info.shape[0] != self._num_stateful_info:
-            raise ValueError("The shape of stateful information observation is not correct!")
+            raise ValueError(f"The shape of stateful information observation is not correct! "
+                             f"The allocated shape is: {self._num_stateful_info}, the actual shape is: {stateful_info.shape[0]}")
 
         return stateful_info
 
