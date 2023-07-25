@@ -119,6 +119,7 @@ class POMDPSelect(Env):
 
         # Initialize the log related parameters
         self._true_last_word_belief_list = None
+        self._true_last_word_memory_decay_list = None
 
         # Initialise RL related thresholds and counters
         self._steps = None
@@ -165,6 +166,7 @@ class POMDPSelect(Env):
 
         # Reset the log related parameters
         self._true_last_word_belief_list = []
+        self._true_last_word_memory_decay_list = []
 
         # Reset the variables and counters
         self._steps = 0
@@ -345,7 +347,7 @@ class POMDPSelect(Env):
             if self._config['rl']['mode'] == 'test' and \
                     self._config['rl']['test']['grid_search_selection']['enable'] == False \
                     or self._config['rl']['mode'] == 'debug':
-                self._plot_belief()
+                self._plot_belief_and_memory_decay()
 
         if self._config['rl']['mode'] == 'test' and \
                 self._config['rl']['test']['grid_search_selection']['enable'] == False \
@@ -451,6 +453,12 @@ class POMDPSelect(Env):
         self._prior_prob_dist /= np.sum(self._prior_prob_dist)
         self.detect_invalid_array(self._prior_prob_dist, "prior_prob_dist")
 
+        # Log the memory decay in the test mode
+        if self._config['rl']['mode'] == 'test' and \
+                self._config['rl']['test']['grid_search_selection']['enable'] == False:
+            idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
+            self._true_last_word_memory_decay_list.append(memory_decay_prob_dist[idx])
+
     def _get_likelihood(self):
         """
         Calculate the likelihood function: assumption
@@ -520,18 +528,31 @@ class POMDPSelect(Env):
             bodyexclude=bodyexclude, geomid=geomid_out)
         return distance, geomid_out[0]
 
-    def _plot_belief(self):
-        y_values = self._true_last_word_belief_list.copy()
-        x_values = range(1, len(self._true_last_word_belief_list) + 1)  # Use integers as x-coordinates starting from 1
+    def _plot_belief_and_memory_decay(self):
+        # Create a new figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
 
-        plt.plot(x_values, y_values, marker='o', linestyle='-', color='b')
-        plt.xlabel('Times of Actions')
-        plt.ylabel('Belief of the True Last Word')
-        plt.title('Belief Update')
-        plt.grid(True)
+        # Plot the belief update on the first subplot
+        x_values_belief = range(1, len(self._true_last_word_belief_list) + 1)
+        ax1.plot(x_values_belief, self._true_last_word_belief_list, marker='o', linestyle='-', color='b')
+        ax1.set_xlabel('Times of Actions')
+        ax1.set_ylabel('Belief of the True Last Word')
+        ax1.set_title('Belief Update')
+        ax1.grid(True)
+
+        # Plot the memory decay on the second subplot
+        x_values_memory_decay = range(1, len(self._true_last_word_memory_decay_list) + 1)
+        ax2.plot(x_values_memory_decay, self._true_last_word_memory_decay_list, marker='o', linestyle='-', color='b')
+        ax2.set_xlabel('Times of Actions')
+        ax2.set_ylabel('Memory decay of the True Last Word')
+        ax2.set_title('Memory Decay')
+        ax2.grid(True)
+
+        # Adjust layout to prevent overlapping titles and labels
+        plt.tight_layout()
 
         # Save the plot to the specified location (replace 'save_path' with the desired file path)
         directory = os.path.dirname(os.path.realpath(__file__))
-        save_path = os.path.join(directory, "results", "belief_update.png")
+        save_path = os.path.join(directory, "results", "belief_and_memory_decay.png")
         plt.savefig(save_path)
-        print(f"The belief update plot is saved to: {save_path}")
+        print(f"The combined plot is saved to: {save_path}")
