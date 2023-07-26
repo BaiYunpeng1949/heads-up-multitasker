@@ -101,8 +101,12 @@ class POMDPSelect(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [0.1, 5]
+        self._spatial_dist_coeff_gaze_init_range = [3, 5]
+        self._spatial_dist_coeff_gaze_init = None
+        # TODO maybe also relate this to the forgetting rate. More time passes, more uncertainty about the rough area as well.
+        self._spatial_dist_coeff_range = [5, 10]
         self._spatial_dist_coeff = None
+        self._sigma_gaze_init_likelihood = None
         self._sigma_likelihood = None
 
         # Initialize the memory decay weight
@@ -216,6 +220,8 @@ class POMDPSelect(Env):
 
         # Initialize the stochastic local search - likelihood function related parameters
         self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._cells_mjidxs[0]).xpos[1]
+        self._spatial_dist_coeff_gaze_init = np.random.uniform(*self._spatial_dist_coeff_gaze_init_range)
+        self._sigma_gaze_init_likelihood = self._fovea_size * self._spatial_dist_coeff_gaze_init
         self._spatial_dist_coeff = np.random.uniform(*self._spatial_dist_coeff_range)
         self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
 
@@ -332,7 +338,7 @@ class POMDPSelect(Env):
             # Reward estimation - final milestone rewards
             # Comprehension related reward - determined by: whether the agent select the word from the previous read content
             if self._gaze_mjidx <= self._true_last_word_mjidx:
-                reward_comprehension = 20 * (np.exp(-1 * euclidean_distance))
+                reward_comprehension = 10 * (np.exp(-0.5 * euclidean_distance))
             else:
                 reward_comprehension = 0
             # Estimate the total reward
@@ -353,9 +359,11 @@ class POMDPSelect(Env):
             gaze_idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
             true_last_word_idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             print(
+                  f"The current layout is: {self._cells_mjidxs[0]}\n"
                   f"Last step's action a is: {action_gaze}, "
                   f"The current steps is: {self._steps}, "
-                  f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
+                  f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, "
+                  f"the spatial dist init sigma is: {self._spatial_dist_coeff_gaze_init}\n"
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
                   f"The s' belief is: {self._belief}\n"
@@ -415,7 +423,7 @@ class POMDPSelect(Env):
             xpos = self._data.geom(mjidx).xpos
             dist = np.linalg.norm(xpos - mu_xpos)
             idx = np.where(self._cells_mjidxs == mjidx)[0][0]
-            gaze_prob_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_likelihood) ** 2)
+            gaze_prob_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_gaze_init_likelihood) ** 2)
         # Normalization
         gaze_prob_distribution /= np.sum(gaze_prob_distribution)
 
