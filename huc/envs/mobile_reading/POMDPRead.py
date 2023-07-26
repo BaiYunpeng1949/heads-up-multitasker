@@ -186,7 +186,7 @@ class POMDPSelect(Env):
         self._weight_memory_decay = np.random.uniform(*self._weight_memory_decay_range)
 
         # Initialize the stochastic word selection destination related parameters
-        layout_name = np.random.choice(self._layouts)
+        layout = np.random.choice(self._layouts)
 
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
@@ -194,19 +194,19 @@ class POMDPSelect(Env):
                 self._init_delta_t = 4
                 self._init_sigma_position_memory = 2
                 self._weight_memory_decay = 0.75
-                layout_name = self._L0
+                layout = self._L0
             else:
                 self._init_delta_t = params['init_delta_t']
                 self._init_sigma_position_memory = params['init_sigma_position_memory']
                 self._weight_memory_decay = params['weight_memory_decay']
-                layout_name = params['layout']
+                layout = params['layout']
 
         # Initialize the scene after deciding the layout
-        if layout_name == self._L100:
+        if layout == self._L100:
             self._cells_mjidxs = self._ils100_cells_mjidxs
-        elif layout_name == self._L50:
+        elif layout == self._L50:
             self._cells_mjidxs = self._ils50_cells_mjidxs
-        elif layout_name == self._L0:
+        elif layout == self._L0:
             self._cells_mjidxs = self._ils0_cells_mjidxs
         else:
             raise ValueError("The layout name is not correct!")
@@ -352,14 +352,18 @@ class POMDPSelect(Env):
         if self._config['rl']['mode'] == 'test' and \
                 self._config['rl']['test']['grid_search_selection']['enable'] == False \
                 or self._config['rl']['mode'] == 'debug':
+            gaze_idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
+            true_last_word_idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             print(
-                  f"The action is: {action_gaze}, the steps is: {self._steps},\n"
+                  f"Last step's action a is: {action_gaze}, "
+                  f"The current steps is: {self._steps}, "
                   f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
-                  f"The belief is: {self._belief}\n"
-                  f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-                  f"the true last word is: {self._true_last_word_mjidx}\n"
+                  f"The s' belief is: {self._belief}\n"
+                  f"the r(s'|a, s) reward is: {reward}, \n"
+                  f"the gaze position is: {self._gaze_mjidx}, its belief is {self._belief[gaze_idx]}\n"
+                  f"the true last word is: {self._true_last_word_mjidx}, its belief is {self._belief[true_last_word_idx]}\n"
             )
 
         return self._get_obs(), reward, terminate, info
