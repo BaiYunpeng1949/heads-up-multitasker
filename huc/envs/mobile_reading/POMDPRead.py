@@ -319,26 +319,24 @@ class POMDPSelect(Env):
             # Get belief
             self._get_belief()
 
-        # Reward estimate
-        reward += -0.1
+        # Reward estimate - reward shaping based on the word selection (gaze) accuracy
+        euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
+        reward_shaping_selection_accuracy = 0.1 * (np.exp(-0.2 * euclidean_distance) - 1)
+        reward += reward_shaping_selection_accuracy
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or finish_search:
             # Termination of the episode
             terminate = True
 
-            # Reward
-            # Selection accuracy related reward
-            euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-            reward_selection_accuracy = 10 * (np.exp(-0.2 * euclidean_distance) - 1)
-            # Reward option 2: reward_selection_accuracy = 10 * np.exp(-0.4 * euclidean_distance)
+            # Reward estimation - final milestone rewards
             # Comprehension related reward - determined by: whether the agent select the word from the previous read content
             if self._gaze_mjidx <= self._true_last_word_mjidx:
-                reward_comprehension = 2 * (np.exp(-1 * euclidean_distance))
+                reward_comprehension = 20 * (np.exp(-1 * euclidean_distance))
             else:
                 reward_comprehension = 0
             # Estimate the total reward
-            reward += reward_selection_accuracy + reward_comprehension
+            reward += reward_comprehension
 
             # Info updating
             info['steps'] = self._steps
