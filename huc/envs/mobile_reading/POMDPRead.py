@@ -101,7 +101,7 @@ class POMDPSelect(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [0.1, 10]
+        self._spatial_dist_coeff_range = [0.1, 5]
         self._spatial_dist_coeff = None
         self._sigma_likelihood = None
 
@@ -330,7 +330,7 @@ class POMDPSelect(Env):
             # Reward
             # Selection accuracy related reward
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-            reward_selection_accuracy = 10 * (np.exp(-0.4 * euclidean_distance) - 1)
+            reward_selection_accuracy = 10 * (np.exp(-0.2 * euclidean_distance) - 1)
             # Reward option 2: reward_selection_accuracy = 10 * np.exp(-0.4 * euclidean_distance)
             # Comprehension related reward - determined by: whether the agent select the word from the previous read content
             if self._gaze_mjidx <= self._true_last_word_mjidx:
