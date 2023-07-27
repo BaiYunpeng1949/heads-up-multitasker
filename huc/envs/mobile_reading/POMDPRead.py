@@ -241,7 +241,7 @@ class POMDPSelect(Env):
         # If one needs to let agent make mistakes, may use gaze initialization with more noise/stochasticity/increasing the sigma
         self._init_gaze_mjidx()
 
-        # Initialize the probability distributions
+        # Initialize the probability distributions as uniform distributions
         self._prior_prob_dist = np.ones(len(self._cells_mjidxs)) / len(self._cells_mjidxs)
         self._posterior_prob_dist = np.ones(len(self._cells_mjidxs)) / len(self._cells_mjidxs)
 
@@ -468,6 +468,11 @@ class POMDPSelect(Env):
                 self._config['rl']['test']['grid_search_selection']['enable'] == False:
             idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             self._true_last_word_memory_decay_list.append(memory_decay_prob_dist[idx])
+
+            print(f"The memory decay weight is: {weight_decay}, the sigma likelihood is: {self._sigma_likelihood}\n"
+                  f"The memory decay is: {memory_decay_prob_dist}, the target's is: {memory_decay_prob_dist[idx]}\n"
+                  f"The updated prior probability distribution is: {self._prior_prob_dist}, "
+                  f"the target's is: {self._prior_prob_dist[idx]}\n")
 
     def _get_likelihood(self):
         """
