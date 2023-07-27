@@ -24,10 +24,8 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
-from huc.envs.mobile_reading.LocomotionRead import Read, PerturbationRead, WalkRead
-from huc.envs.locomotion.Locomotion import StraightWalk, SignWalk
-from huc.envs.mobile_reading.MDPRead import MDPRead, MDPEyeRead, MDPResumeRead
-from huc.envs.mobile_reading.POMDPRead import POMDPSelect
+
+from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 
 _MODES = {
     'train': 'train',
@@ -205,7 +203,6 @@ class RL:
         print(
             f"    The mode is: {self._config_rl['mode']} \n"
             f"        WARNING: The grid search is: {self._config_rl['test']['grid_search_selection']['enable']}\n"
-            f"    The layout name is: {self._config_rl['test']['layout_name']}"
         )
         if self._mode == _MODES['continual_train'] or self._mode == _MODES['test']:
             print(
@@ -214,7 +211,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = POMDPSelect()   # MDPEyeRead()    # SignWalk(), Read()
+        self._env = OcularMotorControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -237,28 +234,28 @@ class RL:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
             # Configure the model - Initialise model that is run with multiple threads
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=64),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=64),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
 
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=128),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -596,24 +593,6 @@ class RL:
                                     avg_steps,
                                     avg_errors
                                 ])
-
-        # # Write parameters and results to a dataframe
-        # df = pd.DataFrame({
-        #     'init_delta_t': init_delta_t_list,
-        #     'init_sigma_position_memory': init_sigma_position_memory_list,
-        #     'weight_memory_decay': weight_memory_decay_list,
-        #     'spatial_dist_coeff': spatial_dist_coeff_list,
-        #     'layout': layout_list,
-        #     'steps': steps_list,
-        #     'error': error_list,
-        # })
-        #
-        # # Save the plot as an image file (e.g., PNG, JPEG, PDF)
-        # directory = csv_directory
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        # csv_save_path = os.path.join(directory, "selection_results.csv")
-        # df.to_csv(csv_save_path, index=False)
         print(
             f"\n--------------------------------------------------------------------------------------------"
             f"\nThe grid search results are stored in {csv_save_path}")
@@ -639,8 +618,7 @@ class RL:
                 video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
                 if os.path.exists(video_folder_path) is False:
                     os.makedirs(video_folder_path)
-                layout_name = self._config_rl['test']['layout_name']
-                video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_' + layout_name
+                video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_'
                 video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
                 write_video(
                     filepath=video_path,

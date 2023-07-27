@@ -433,7 +433,7 @@ class OcularMotorControl(Env):
 
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
-             sampled_target_mjidx_norm,   # sampled_target_xpos_x_norm, sampled_target_xpos_z_norm,
+             sampled_target_mjidx_norm,
              fixation_norm, previous_fixation_norm]
         )
 
