@@ -128,6 +128,8 @@ class OcularMotorControl(Env):
         self._on_target_steps = None
         self._num_trials = None  # Cells are already been read
         self._max_trials = 10  # Maximum number of cells to read - more trials in one episode will boost the convergence
+        if self._config["rl"]["mode"] == "debug":
+            self._max_trials = 1
         self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self._action_sample_freq * 5)
 
         # Define the observation space
@@ -218,8 +220,8 @@ class OcularMotorControl(Env):
 
             if params is None:
                 # The test-demo mode
-                self._perturbation_amp_coeff_factor = 0.5
-                self._perturbation_amp_noise_scale = 0.01
+                self._perturbation_amp_coeff_factor = 0
+                self._perturbation_amp_noise_scale = 0
                 self._dwell_steps = int(0.5 * self._action_sample_freq)
                 print(f"The pert amp tuning factor was: {self._perturbation_amp_coeff_factor}, "
                       f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
