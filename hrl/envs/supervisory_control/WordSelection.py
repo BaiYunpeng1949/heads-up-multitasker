@@ -181,6 +181,8 @@ class WordSelection(Env):
         # TODO determine in this task do I need to use MuJoCo, or just use the pre-trained omc feedback from {info}
         self._omc_tuples = None
 
+        self._omc_params = None
+
     def reset(self, params=None):
 
         # Reset MuJoCo sim
@@ -269,9 +271,19 @@ class WordSelection(Env):
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
 
+        self._omc_params = {
+            'cells_mjidxs': self._cells_mjidxs.copy(),
+            'perturbation_amp_tuning_factor': 0,
+            'perturbation_amp_noise_scale': 0,
+            'dwell_time': self._dwell_time,
+            'eye_x_rotation': 0,    # TODO store the last step's q values
+            'eye_y_rotation': 0,    # TODO store the last step's q values
+            'target_mjidx': self._gaze_mjidx,
+        }
+
         # Reset the pre-trained omc agent
         self._omc_tuples = {
-            'obs': self._omc_env.reset(),
+            'obs': self._omc_env.reset(load_model_params=self._omc_params),
             'done': False,
             'score': 0,
             'info': {},
@@ -299,7 +311,7 @@ class WordSelection(Env):
             self._on_target_steps = 0
 
             # TODO start of the macro action (middle level) - pass info to the omc agent
-            self._omc_tuples['obs'] = self._omc_env.reset()
+            self._omc_tuples['obs'] = self._omc_env.reset(load_model_params=self._omc_params)
 
             # Select the word, finish searching
             if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
@@ -326,6 +338,9 @@ class WordSelection(Env):
         # Update the eye movement - TODO later get it from the low level ocular motor control policy
         omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
         self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
+        # Update ocular motor control's reset ocm_params eye rotation angles from info
+        self._omc_params['eye_x_rotation'] = info['eye_x_rotation']
+        self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
         # TODO if all actions are done in the lower level task - ocular motor control,
         #  then middle level reading should be not touching mujoco simulation,
         #  then I need to change the ocular motor agent's methods, e.g., make some of them public,
