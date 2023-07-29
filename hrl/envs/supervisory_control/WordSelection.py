@@ -12,6 +12,7 @@ from scipy.ndimage import gaussian_filter
 from stable_baselines3 import PPO
 
 from huc.utils.rendering import Camera, Context
+from huc.utils.write_video import write_video
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 
 
@@ -183,6 +184,8 @@ class WordSelection(Env):
 
         self._omc_params = None
 
+        self._omc_images = None
+
     def reset(self, params=None):
 
         # Reset MuJoCo sim
@@ -271,6 +274,7 @@ class WordSelection(Env):
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
 
+        # Reset the ocular motor control agent
         self._omc_params = {
             'cells_mjidxs': self._cells_mjidxs.copy(),
             'perturbation_amp_tuning_factor': 0,
@@ -288,6 +292,9 @@ class WordSelection(Env):
             'score': 0,
             'info': {},
         }
+
+        self._omc_images = []
+        self._omc_images.append(self._omc_env.render()[0])
 
         return self._get_obs()
 
@@ -309,9 +316,6 @@ class WordSelection(Env):
         if self._on_target_steps >= self._dwell_steps:
             # Reset the on target steps
             self._on_target_steps = 0
-
-            # TODO start of the macro action (middle level) - pass info to the omc agent
-            self._omc_tuples['obs'] = self._omc_env.reset(load_model_params=self._omc_params)
 
             # Select the word, finish searching
             if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
@@ -335,12 +339,19 @@ class WordSelection(Env):
             else:
                 raise ValueError(f"The action is not correct! It is: {action_gaze}")
 
+            # TODO start of the macro action (middle level) - pass info to the omc agent
+            # Update the ocular motor control agent parameters
+            self._omc_params['target_mjidx'] = self._gaze_mjidx
+            self._omc_tuples['obs'] = self._omc_env.reset(load_model_params=self._omc_params)
+            self._omc_images.append(self._omc_env.render()[0])
+
         # Update the eye movement - TODO later get it from the low level ocular motor control policy
         omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
         self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
         # Update ocular motor control's reset ocm_params eye rotation angles from info
         self._omc_params['eye_x_rotation'] = info['eye_x_rotation']
         self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
+        self._omc_images.append(self._omc_env.render()[0])
         # TODO if all actions are done in the lower level task - ocular motor control,
         #  then middle level reading should be not touching mujoco simulation,
         #  then I need to change the ocular motor agent's methods, e.g., make some of them public,
@@ -408,11 +419,15 @@ class WordSelection(Env):
             if self._config['rl']['mode'] == 'test' and \
                     self._config['rl']['test']['grid_search_selection']['enable'] == False \
                     or self._config['rl']['mode'] == 'debug':
+                # Plot the belief and memory decay
                 self._plot_belief_and_memory_decay()
+                # Record the video of ocular motor control
+                self._write_omc_video()
 
         if self._config['rl']['mode'] == 'test' and \
                 self._config['rl']['test']['grid_search_selection']['enable'] == False \
                 or self._config['rl']['mode'] == 'debug':
+            # Print logs
             gaze_idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
             true_last_word_idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             print(
@@ -423,7 +438,7 @@ class WordSelection(Env):
                   f"the spatial dist init sigma is: {self._spatial_dist_coeff_gaze_init}\n"
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
-                  f"The s' belief is: {self._belief}\n"
+                  # f"The s' belief is: {self._belief}\n"
                   f"the r(s'|a, s) reward is: {reward}, \n"
                   f"the gaze position is: {self._gaze_mjidx}, its belief is {self._belief[gaze_idx]}\n"
                   f"the true last word is: {self._true_last_word_mjidx}, its belief is {self._belief[true_last_word_idx]}\n"
@@ -628,3 +643,15 @@ class WordSelection(Env):
         save_path = os.path.join(directory, "results", "belief_and_memory_decay.png")
         plt.savefig(save_path)
         print(f"The combined plot is saved to: {save_path}")
+
+    def _write_omc_video(self):
+        directory = os.path.dirname(os.path.realpath(__file__))
+        video_path = os.path.join(directory, "results", 'ocular_motor_control_agent.avi')
+        rgb_images = self._omc_images
+        write_video(
+            filepath=video_path,
+            fps=int(self._omc_env.action_sample_freq),
+            rgb_images=rgb_images,
+            width=rgb_images[0].shape[1],
+            height=rgb_images[0].shape[0],
+        )

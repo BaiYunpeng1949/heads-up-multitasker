@@ -39,8 +39,8 @@ class OcularMotorControl(Env):
         mujoco.mj_forward(self._model, self._data)
 
         # Define how often policy is queried
-        self._action_sample_freq = 20
-        self._frame_skip = int((1 / self._action_sample_freq) / self._model.opt.timestep)
+        self.action_sample_freq = 20
+        self._frame_skip = int((1 / self.action_sample_freq) / self._model.opt.timestep)
 
         # Get the joints idx in MuJoCo
         self._eye_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
@@ -96,7 +96,7 @@ class OcularMotorControl(Env):
 
         # Initialize the locomotion/translation parameters
         translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
-        self._step_wise_translation_speed = translation_speed / self._action_sample_freq
+        self._step_wise_translation_speed = translation_speed / self.action_sample_freq
 
         # Initialize the perturbation parameters
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
@@ -110,8 +110,8 @@ class OcularMotorControl(Env):
         self._yaw_2nd_predominant_freq = 2.75  # 3 Hz
         self._pitch_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
         self._yaw_2nd_predominant_relative_amp = 0.1  # 10% of the 1st predominant frequency
-        self._pitch_period_stepwise = int(self._action_sample_freq / self._pitch_freq)
-        self._yaw_period_stepwise = int(self._action_sample_freq / self._yaw_freq)
+        self._pitch_period_stepwise = int(self.action_sample_freq / self._pitch_freq)
+        self._yaw_period_stepwise = int(self.action_sample_freq / self._yaw_freq)
         self._perturbation_amp_noise_scale = 0.015
 
         # Oculomotor control related parameters
@@ -130,7 +130,8 @@ class OcularMotorControl(Env):
         self._max_trials = 10  # Maximum number of cells to read - more trials in one episode will boost the convergence
         if self._config["rl"]["mode"] == "debug":
             self._max_trials = 1
-        self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self._action_sample_freq * 5)
+        self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self.action_sample_freq * 5)
+        self._in_hrl = False
 
         # Define the observation space
         width, height = 80, 80
@@ -153,9 +154,9 @@ class OcularMotorControl(Env):
         context = Context(self._model, max_resolution=[1280, 960])
         self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height],
                                maxgeom=100,
-                               dt=1 / self._action_sample_freq)
+                               dt=1 / self.action_sample_freq)
         self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
-                               dt=1 / self._action_sample_freq)
+                               dt=1 / self.action_sample_freq)
         self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
 
         # Define the training related parameters
@@ -175,6 +176,7 @@ class OcularMotorControl(Env):
         self._on_target_steps = 0
         self._num_trials = 0
         self._fixate_on_target = False
+        self._in_hrl = False
 
         # Reset all cells to transparent
         for mjidx in self._L100_cells_mjidxs:
@@ -188,7 +190,7 @@ class OcularMotorControl(Env):
         if load_model_params is None:
             # Initialize perturbation parameters for training
             self._perturbation_amp_coeff_factor = np.random.uniform(*self._perturbation_amp_coeff_range)
-            self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+            self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self.action_sample_freq)
 
             # Initialize eyeball rotation angles
             init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
@@ -211,7 +213,7 @@ class OcularMotorControl(Env):
                     # The test-demo mode
                     self._perturbation_amp_coeff_factor = 0
                     self._perturbation_amp_noise_scale = 0
-                    self._dwell_steps = int(0.5 * self._action_sample_freq)
+                    self._dwell_steps = int(0.5 * self.action_sample_freq)
                     print(f"The pert amp tuning factor was: {self._perturbation_amp_coeff_factor}, "
                           f"the pert amp noise factor is; {self._perturbation_amp_noise_scale}, "
                           f"the dwell steps is: {self._dwell_steps}")
@@ -219,7 +221,7 @@ class OcularMotorControl(Env):
                     # The test-grid-search mode
                     self._perturbation_amp_coeff_factor = grid_search_params["perturbation_amp_tuning_factor"]
                     self._perturbation_amp_noise_scale = grid_search_params["perturbation_amp_noise_scale"]
-                    self._dwell_steps = int(grid_search_params["dwell_steps"] * self._action_sample_freq)
+                    self._dwell_steps = int(grid_search_params["dwell_steps"] * self.action_sample_freq)
 
             # Initialize the saccade from qpos
             self._last_step_saccade_qpos = self._data.qpos[self._eye_joint_x_mjidx:self._eye_joint_x_mjidx + 2].copy()
@@ -231,7 +233,7 @@ class OcularMotorControl(Env):
             self._cells_mjidxs = load_model_params["cells_mjidxs"]
             self._perturbation_amp_coeff_factor = load_model_params["perturbation_amp_tuning_factor"]
             self._perturbation_amp_noise_scale = load_model_params["perturbation_amp_noise_scale"]
-            self._dwell_steps = int(load_model_params["dwell_time"] * self._action_sample_freq)
+            self._dwell_steps = int(load_model_params["dwell_time"] * self.action_sample_freq)
 
             # Initialize eyeball rotation angles
             init_eye_x_rotation = load_model_params["eye_x_rotation"]
@@ -246,6 +248,13 @@ class OcularMotorControl(Env):
 
             # Sample a target according to the target idx probability distribution
             self._sampled_target_mjidx = load_model_params["target_mjidx"]
+
+            # Reset the scene
+            for mjidx in self._cells_mjidxs:
+                self._model.geom(mjidx).rgba = self._DFLT_RGBA
+            self._model.geom(self._sampled_target_mjidx).rgba = self._VISUALIZE_RGBA
+
+            self._in_hrl = True
 
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
@@ -273,10 +282,10 @@ class OcularMotorControl(Env):
         yaw_amp = self._theoretical_yaw_amp_peak * amp_tuning_factor
         pitch = pitch_amp * np.sin(2 * np.pi * self._steps / self._pitch_period_stepwise) + \
             pitch_amp * self._pitch_2nd_predominant_relative_amp * np.sin(
-            2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self._action_sample_freq)
+            2 * np.pi * self._steps * self._pitch_2nd_predominant_freq / self.action_sample_freq)
         yaw = yaw_amp * np.sin(2 * np.pi * self._steps / self._yaw_period_stepwise) + \
             yaw_amp * self._yaw_2nd_predominant_relative_amp * np.sin(
-            2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self._action_sample_freq)
+            2 * np.pi * self._steps * self._yaw_2nd_predominant_freq / self.action_sample_freq)
 
         # Add some random noise
         pitch += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=pitch.shape)
@@ -329,15 +338,27 @@ class OcularMotorControl(Env):
         else:
             self._fixate_on_target = False
 
-        # Update the transitions - get rewards and next state
-        if self._on_target_steps >= self._dwell_steps:
-            # Update the milestone bonus reward for finish reading a cell
-            reward = 10
-            # Get the next target
-            self._sample_target()
+        # In the separate training/testing scenario (not in the hrl):
+        if self._in_hrl:
+            # Update the transitions - get rewards and next state
+            if self._on_target_steps >= self._dwell_steps:
+                # Update the milestone bonus reward for finish reading a cell
+                reward = 10
+                self._num_trials += 1
+            else:
+                reward = 0.1 * (np.exp(
+                    -10 * self._angle_from_target(site_name="rangefinder-site",
+                                                  target_idx=self._sampled_target_mjidx)) - 1)
         else:
-            reward = 0.1 * (np.exp(
-                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
+            # Update the transitions - get rewards and next state
+            if self._on_target_steps >= self._dwell_steps:
+                # Update the milestone bonus reward for finish reading a cell
+                reward = 10
+                # Get the next target
+                self._sample_target()
+            else:
+                reward = 0.1 * (np.exp(
+                    -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
 
         # Get termination condition
         terminate = False
@@ -345,13 +366,19 @@ class OcularMotorControl(Env):
             'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
             'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
         }
+        # TODO debug delete later
+        print(f"****************************************************************************"
+              f"   Ocular Motor Control:\n"
+              f"the current layouts is: {self._cells_mjidxs},"
+              f"the sampled target is: {self._sampled_target_mjidx}, the geomid is: {geomid}")
+
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
             info = {
                 'end_steps': self._steps,
                 'save_folder': None,
                 'num_cells': len(self._cells_mjidxs),
-                'action_sample_freq': self._action_sample_freq,
+                'action_sample_freq': self.action_sample_freq,
                 'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
                 'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
             }
