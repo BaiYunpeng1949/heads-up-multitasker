@@ -25,8 +25,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
 
-from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
-from hrl.envs.supervisory_control.WordSelection import WordSelection
+from hrl.envs.supervisory_control._OcularMotorControl import OcularMotorControl
+from hrl.envs.supervisory_control._WordSelection import WordSelection
 
 _MODES = {
     'train': 'train',
