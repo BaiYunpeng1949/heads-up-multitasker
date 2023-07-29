@@ -251,7 +251,7 @@ class OcularMotorControl(Env):
             self._max_trials = 1
             self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self.action_sample_freq * 5)
 
-            # self._layout = load_model_params["layout"]  # TODO add this later
+            self._layout = load_model_params["layout"]
             self._cells_mjidxs = load_model_params["cells_mjidxs"]
             self._perturbation_amp_coeff_factor = load_model_params["perturbation_amp_tuning_factor"]
             self._perturbation_amp_noise_scale = load_model_params["perturbation_amp_noise_scale"]

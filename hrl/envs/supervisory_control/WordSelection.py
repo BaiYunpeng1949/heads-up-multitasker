@@ -33,7 +33,7 @@ class WordSelection(Env):
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
-        self._action_sample_freq = 20
+        self.action_sample_freq = 20
 
         # Get the smart glasses plane mjidx in MuJoCo
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
@@ -94,7 +94,7 @@ class WordSelection(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [1, 10]
+        self._spatial_dist_coeff_range = [2, 10]
         self._spatial_dist_coeff = None
         self._sigma_likelihood = None
 
@@ -148,8 +148,8 @@ class WordSelection(Env):
         # Initialize the variables for the ocular motor control task
         self._omc_tuples = None
         self._omc_params = None
-        self.omc_images = None
         self._omc_finish_fixation = None
+        self.omc_images = None
 
     def reset(self, params=None):
 
@@ -181,7 +181,8 @@ class WordSelection(Env):
         self._layout = np.random.choice(self._layouts)
 
         # Initialize the stochastic local search - likelihood function related parameters
-        self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._sgp_ils0_body_mjidx[0]).xpos[1]
+        mujoco.mj_forward(self._model, self._data)
+        self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._ils0_cells_mjidxs[0]).xpos[1]
         self._spatial_dist_coeff = np.random.uniform(*self._spatial_dist_coeff_range)
         self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
 
@@ -241,6 +242,7 @@ class WordSelection(Env):
             'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
             'eye_y_rotation': 0,
             'target_mjidx': self._gaze_mjidx,
+            'layout': self._layout,
         }
 
         # Reset the pre-trained omc agent
@@ -251,7 +253,7 @@ class WordSelection(Env):
             'info': {},
         }
 
-        self.omc_images = []       # TODO pass this out, so I can record multiple episodes' images
+        self.omc_images = []
         self.omc_images.append(self._omc_env.render()[0])
 
         self._omc_finish_fixation = False
@@ -402,6 +404,9 @@ class WordSelection(Env):
         return stateful_info
 
     def _init_gaze_mjidx(self):
+        # Set everything
+        mujoco.mj_forward(self._model, self._data)
+
         # Initialize the gaze position probability distribution
         gaze_prob_distribution = np.zeros(len(self._cells_mjidxs))
 
@@ -415,6 +420,7 @@ class WordSelection(Env):
             idx = np.where(self._cells_mjidxs == mjidx)[0][0]
             gaze_prob_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_likelihood) ** 2)
         # Normalization
+        gaze_prob_distribution += self._epsilon
         gaze_prob_distribution /= np.sum(gaze_prob_distribution)
 
         # Initialize the gaze position
@@ -430,7 +436,7 @@ class WordSelection(Env):
     def _update_prior(self):
         """Update the prior probability distribution of the attention corrupted by the memory decays"""
         # Update the elapsed time in second
-        self._delta_t = self._init_delta_t + self._steps / self._action_sample_freq
+        self._delta_t = self._init_delta_t + self._steps / self.action_sample_freq
         # Update the sigma position memory
         self._sigma_position_memory = self._init_sigma_position_memory / (1 + self._delta_t ** (-self._rho))
 

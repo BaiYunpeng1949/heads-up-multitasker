@@ -25,8 +25,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from huc.utils.write_video import write_video
 
-from hrl.envs.supervisory_control._OcularMotorControl import OcularMotorControl
-from hrl.envs.supervisory_control._WordSelection import WordSelection
+from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
+from hrl.envs.supervisory_control.WordSelection import WordSelection
 
 _MODES = {
     'train': 'train',
@@ -379,8 +379,8 @@ class RL:
             imgs_eye = []
             for episode in range(1, self._num_episodes + 1):
                 obs = self._env.reset()
-                imgs.append(self._env.render()[0])
-                imgs_eye.append(self._env.render()[1])
+                # imgs.append(self._env.render()[0])
+                # imgs_eye.append(self._env.render()[1])
                 done = False
                 score = 0
                 info = None
@@ -393,8 +393,9 @@ class RL:
                     else:
                         action = 0
                     obs, reward, done, info = self._env.step(action)
-                    imgs.append(self._env.render()[0])
-                    imgs_eye.append(self._env.render()[1])
+                    # imgs.append(self._env.render()[0])
+                    # imgs_eye.append(self._env.render()[1])
+                    imgs.append(self._env.omc_images)
                     score += reward
 
                 print(
@@ -623,20 +624,20 @@ class RL:
                 video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
                 write_video(
                     filepath=video_path,
-                    fps=int(self._env._action_sample_freq),
+                    fps=int(self._env.action_sample_freq),
                     rgb_images=rgb_images,
-                    width=rgb_images[0].shape[1],
-                    height=rgb_images[0].shape[0],
+                    width=rgb_images[0][0].shape[1],
+                    height=rgb_images[0][0].shape[0],
                 )
-                # Write the agent's visual perception
-                video_path_eye = os.path.join(video_folder_path, video_name_prefix + '_eye.avi')
-                write_video(
-                    filepath=video_path_eye,
-                    fps=int(self._env._action_sample_freq),
-                    rgb_images=rgb_eye_images,
-                    width=rgb_eye_images[0].shape[1],
-                    height=rgb_eye_images[0].shape[0],
-                )
+                # # Write the agent's visual perception
+                # video_path_eye = os.path.join(video_folder_path, video_name_prefix + '_eye.avi')
+                # write_video(
+                #     filepath=video_path_eye,
+                #     fps=int(self._env.action_sample_freq),
+                #     rgb_images=rgb_eye_images,
+                #     width=rgb_eye_images[0].shape[1],
+                #     height=rgb_eye_images[0].shape[0],
+                # )
         else:
             pass
 
