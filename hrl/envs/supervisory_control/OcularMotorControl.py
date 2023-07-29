@@ -137,7 +137,7 @@ class OcularMotorControl(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 6
+        self._num_stateful_info = 7
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -388,11 +388,11 @@ class OcularMotorControl(Env):
             'on_target_steps': self._on_target_steps,
             'terminate': terminate,
         }
-        # TODO debug delete later
-        print(f"****************************************************************************"
-              f"   Ocular Motor Control:\n"
-              f"the current layouts is: {self._cells_mjidxs},"
-              f"the sampled target is: {self._sampled_target_mjidx}, the geomid is: {geomid}")
+        # # TODO debug delete later
+        # print(f"****************************************************************************"
+        #       f"   Ocular Motor Control:\n"
+        #       f"the current layouts is: {self._cells_mjidxs},"
+        #       f"the sampled target is: {self._sampled_target_mjidx}, the geomid is: {geomid}")
 
         return self._get_obs(), reward, terminate, info
 
@@ -477,7 +477,6 @@ class OcularMotorControl(Env):
 
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
-        # TODO add a layout index to the stateful information
         if self._layout == self._L0:
             layout_norm = -1
         elif self._layout == self._L50:
@@ -489,7 +488,7 @@ class OcularMotorControl(Env):
 
         stateful_info = np.array(
             [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
-             # layout_norm,     # TODO add layout index later, hope it can accelerate training
+             layout_norm,
              sampled_target_mjidx_norm, fixation_norm, previous_fixation_norm]
         )
 

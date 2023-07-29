@@ -212,7 +212,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = WordSelection()    # OcularMotorControl()
+        self._env = OcularMotorControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -235,28 +235,28 @@ class RL:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
             # Configure the model - Initialise model that is run with multiple threads
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=64),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=64),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
 
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=128),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -374,7 +374,29 @@ class RL:
 
         if (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
             pass
-        else:
+        if self._mode == _MODES['debug']:
+            imgs = []
+            imgs_eye = []
+            for episode in range(1, self._num_episodes + 1):
+                obs = self._env.reset()
+                imgs.append(self._env.render()[0])
+                imgs_eye.append(self._env.render()[1])
+                done = False
+                score = 0
+                info = None
+
+                while not done:
+                    if self._mode == _MODES['debug']:
+                        action = self._env.action_space.sample()
+                    elif self._mode == _MODES['test']:
+                        action, _states = self._model.predict(obs, deterministic=True)
+                    else:
+                        action = 0
+                    obs, reward, done, info = self._env.step(action)
+                    imgs.append(self._env.render()[0])
+                    imgs_eye.append(self._env.render()[1])
+                    score += reward
+        if not (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
             imgs = []
             imgs_eye = []
             for episode in range(1, self._num_episodes + 1):
