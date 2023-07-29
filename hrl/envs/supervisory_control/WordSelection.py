@@ -28,25 +28,14 @@ class WordSelection(Env):
         with open(os.path.join(root_dir, "config.yaml")) as f:
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
-        # Load the MuJoCo model for this task
+        # Load the MuJoCo model for this task - TODO mujoco here is just providing the mjidx and spatial relationships
         self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
-        # Define how often policy is queried
         self._action_sample_freq = 20
-        self._frame_skip = int((1 / self._action_sample_freq) / self._model.opt.timestep)
 
-        # Get the joints idx in MuJoCo
-        self._eye_joint_x_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-x")
-        self._eye_joint_y_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, "eye-joint-y")
-
-        # Get the motors idx in MuJoCo
-        self._eye_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-x-motor")
-        self._eye_x_motor_translation_range = self._model.actuator_ctrlrange[self._eye_x_motor_mjidx]
-        self._eye_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-y-motor")
-        self._eye_y_motor_translation_range = self._model.actuator_ctrlrange[self._eye_y_motor_mjidx]
-
+        # Get the smart glasses plane mjidx in MuJoCo
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                         "smart-glass-pane-interline-spacing-100")
         self._sgp_ils50_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
@@ -64,6 +53,7 @@ class WordSelection(Env):
         self._L0 = "L0"
         self._FOUR = 4  # The number of cells in a row TODO Check it with different layouts
         self._layouts = [self._L100, self._L50, self._L0]
+        self._layout = None
         self._cells_mjidxs = None
 
         # Initialize the true last word mjidx
@@ -104,25 +94,16 @@ class WordSelection(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_gaze_init_range = [3, 5]
-        self._spatial_dist_coeff_gaze_init = None
-        # TODO maybe also relate this to the forgetting rate. More time passes, more uncertainty about the rough area as well.
-        self._spatial_dist_coeff_range = [5, 10]
+        self._spatial_dist_coeff_range = [1, 10]
         self._spatial_dist_coeff = None
-        self._sigma_gaze_init_likelihood = None
         self._sigma_likelihood = None
 
         # Initialize the memory decay weight
         self._weight_memory_decay_range = [0.1, 1]
         self._weight_memory_decay = None
 
-        # Define the display related parameters
-        self._VISUALIZE_RGBA = [1, 1, 0, 1]
-        self._DFLT_RGBA = [0, 0, 0, 1]
-
-        # Visual encoding settings
+        # Visual encoding settings - TODO remove it from this task?
         self._dwell_time = 0.2  # The time to dwell on a target
-        self._dwell_steps = int(self._dwell_time * self._action_sample_freq)  # The number of steps to dwell on a target
 
         # Initialize the log related parameters
         self._true_last_word_belief_list = None
@@ -132,13 +113,11 @@ class WordSelection(Env):
         self._steps = None
         self._on_target_steps = None
         self.ep_len = 100
+        # Define the training related parameters
+        self._epsilon = 1e-100
 
         # Define the observation space
-        width, height = 80, 80
-        self._num_stk_frm = 1
-        self._vision_frames = None
-        self._qpos_frames = None
-        self._num_stateful_info = 15
+        self._num_stateful_info = 14
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space
@@ -154,18 +133,6 @@ class WordSelection(Env):
         self._action_select_range = [4, 5]
         self.action_space = Box(low=-1, high=1, shape=(1,))
 
-        # Initialize the context and camera
-        context = Context(self._model, max_resolution=[1280, 960])
-        self._eye_cam = Camera(context, self._model, self._data, camera_id="eye", resolution=[width, height],
-                               maxgeom=100,
-                               dt=1 / self._action_sample_freq)
-        self._env_cam = Camera(context, self._model, self._data, camera_id="env", maxgeom=100,
-                               dt=1 / self._action_sample_freq)
-        self._eye_cam_fovy = self._model.cam_fovy[mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "eye")]
-
-        # Define the training related parameters
-        self._epsilon = 1e-100
-
         # Initialize the pre-trained RL model
         # Load the MuJoCo model for the ocular motor control task (omc) - we create 1 env for each training env
         self._omc_env = OcularMotorControl()
@@ -175,16 +142,14 @@ class WordSelection(Env):
         self._loaded_model_name = "rl_model_55000000_steps"
         self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models', self._checkpoints_dir_name,
                                                self._loaded_model_name)
+        # omc stands for ocular motor control
+        self._omc_model = PPO.load(self._loaded_model_path, self._omc_env)
 
-        # TODO determine whether to reset this in the reset method - any difference?
-        self._omc_model = PPO.load(self._loaded_model_path, self._omc_env)  # omc stands for ocular motor control
-
-        # TODO determine in this task do I need to use MuJoCo, or just use the pre-trained omc feedback from {info}
+        # Initialize the variables for the ocular motor control task
         self._omc_tuples = None
-
         self._omc_params = None
-
-        self._omc_images = None
+        self.omc_images = None
+        self._omc_finish_fixation = None
 
     def reset(self, params=None):
 
@@ -213,48 +178,41 @@ class WordSelection(Env):
         self._weight_memory_decay = np.random.uniform(*self._weight_memory_decay_range)
 
         # Initialize the stochastic word selection destination related parameters
-        layout = np.random.choice(self._layouts)
-
-        # Configure the stochastic hyperparameters in test mode
-        if self._config['rl']['mode'] == 'test':
-            if params is None:
-                self._init_delta_t = 4
-                self._init_sigma_position_memory = 2
-                self._weight_memory_decay = 0.75
-                layout = self._L0
-            else:
-                self._init_delta_t = params['init_delta_t']
-                self._init_sigma_position_memory = params['init_sigma_position_memory']
-                self._weight_memory_decay = params['weight_memory_decay']
-                layout = params['layout']
-
-        # Initialize the scene after deciding the layout
-        if layout == self._L100:
-            self._cells_mjidxs = self._ils100_cells_mjidxs
-        elif layout == self._L50:
-            self._cells_mjidxs = self._ils50_cells_mjidxs
-        elif layout == self._L0:
-            self._cells_mjidxs = self._ils0_cells_mjidxs
-        else:
-            raise ValueError("The layout name is not correct!")
-
-        # Set up the scene after deciding the layout
-        mujoco.mj_forward(self._model, self._data)
+        self._layout = np.random.choice(self._layouts)
 
         # Initialize the stochastic local search - likelihood function related parameters
-        self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._cells_mjidxs[0]).xpos[1]
-        self._spatial_dist_coeff_gaze_init = np.random.uniform(*self._spatial_dist_coeff_gaze_init_range)
-        self._sigma_gaze_init_likelihood = self._fovea_size * self._spatial_dist_coeff_gaze_init
+        self._fovea_size = np.tan(np.radians(self._fovea_degrees / 2)) * self._data.geom(self._sgp_ils0_body_mjidx[0]).xpos[1]
         self._spatial_dist_coeff = np.random.uniform(*self._spatial_dist_coeff_range)
         self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
 
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
+            # Normal testings
             if params is None:
+                self._init_delta_t = 4
+                self._init_sigma_position_memory = 2
+                self._weight_memory_decay = 0.75
+                self._layout = self._L0
                 self._spatial_dist_coeff = 2.5
+                self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
+            # Testing - grid search
             else:
+                self._init_delta_t = params['init_delta_t']
+                self._init_sigma_position_memory = params['init_sigma_position_memory']
+                self._weight_memory_decay = params['weight_memory_decay']
+                self._layout = params['layout']
                 self._spatial_dist_coeff = params['spatial_dist_coeff']
-            self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
+                self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
+
+        # Initialize the scene after deciding the layout
+        if self._layout == self._L100:
+            self._cells_mjidxs = self._ils100_cells_mjidxs
+        elif self._layout == self._L50:
+            self._cells_mjidxs = self._ils50_cells_mjidxs
+        elif self._layout == self._L0:
+            self._cells_mjidxs = self._ils0_cells_mjidxs
+        else:
+            raise ValueError("The layout name is not correct!")
 
         # Initialize the true last word read mjidx
         self._true_last_word_mjidx = np.random.choice(self._cells_mjidxs)
@@ -280,8 +238,8 @@ class WordSelection(Env):
             'perturbation_amp_tuning_factor': 0,
             'perturbation_amp_noise_scale': 0,
             'dwell_time': self._dwell_time,
-            'eye_x_rotation': 0,    # TODO store the last step's q values
-            'eye_y_rotation': 0,    # TODO store the last step's q values
+            'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
+            'eye_y_rotation': 0,
             'target_mjidx': self._gaze_mjidx,
         }
 
@@ -293,18 +251,18 @@ class WordSelection(Env):
             'info': {},
         }
 
-        self._omc_images = []
-        self._omc_images.append(self._omc_env.render()[0])
+        self.omc_images = []       # TODO pass this out, so I can record multiple episodes' images
+        self.omc_images.append(self._omc_env.render()[0])
+
+        self._omc_finish_fixation = False
 
         return self._get_obs()
 
     def render(self, mode="rgb_array"):
-        rgb, _ = self._env_cam.render()
-        rgb_eye, _ = self._eye_cam.render()
-        return rgb, rgb_eye
+        return
 
     def step(self, action):
-        # Action t+1 from state t - attention allocation - Reading is a sequential process (MDP)
+        # Action a from state s - attention allocation - Reading is a sequential process (MDP)
         # Action for attention deployment - Make a decision - Take the current one to read or keep searching
         # Move one word left, right, up, down, select the word
 
@@ -313,9 +271,7 @@ class WordSelection(Env):
         finish_search = False
 
         # Only when one word is processed
-        if self._on_target_steps >= self._dwell_steps:
-            # Reset the on target steps
-            self._on_target_steps = 0
+        if self._omc_finish_fixation:
 
             # Select the word, finish searching
             if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
@@ -339,64 +295,31 @@ class WordSelection(Env):
             else:
                 raise ValueError(f"The action is not correct! It is: {action_gaze}")
 
-            # TODO start of the macro action (middle level) - pass info to the omc agent
+            # Start a new fixation (a macro action)
             # Update the ocular motor control agent parameters
             self._omc_params['target_mjidx'] = self._gaze_mjidx
             self._omc_tuples['obs'] = self._omc_env.reset(load_model_params=self._omc_params)
-            self._omc_images.append(self._omc_env.render()[0])
+            self.omc_images.append(self._omc_env.render()[0])
 
-        # Update the eye movement - TODO later get it from the low level ocular motor control policy
+        # Update the eye movement
         omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
         self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
         # Update ocular motor control's reset ocm_params eye rotation angles from info
-        self._omc_params['eye_x_rotation'] = info['eye_x_rotation']
+        self._omc_params['eye_x_rotation'] = info['eye_x_rotation']     # These are just for connecting different fixations
         self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
-        self._omc_images.append(self._omc_env.render()[0])
-        # TODO if all actions are done in the lower level task - ocular motor control,
-        #  then middle level reading should be not touching mujoco simulation,
-        #  then I need to change the ocular motor agent's methods, e.g., make some of them public,
-        #  input: gaze_mjidx (the intended target), the required dwell duration,
-        #  output: geomid, on_target_steps (status)
+        self._omc_finish_fixation = info['terminate']
+        self.omc_images.append(self._omc_env.render()[0])
 
-        # TODO but firstly try with the mixed version - the word selection is also done in mujoco env.
-        self._data.ctrl[self._eye_x_motor_mjidx] = omc_action[0]
-        self._data.ctrl[self._eye_y_motor_mjidx] = omc_action[1]
-
-        # xpos = self._data.geom(self._gaze_mjidx).xpos
-        # x, y, z = xpos[0], xpos[1], xpos[2]
-        # self._data.ctrl[self._eye_x_motor_mjidx] = np.arctan(z / y)
-        # self._data.ctrl[self._eye_y_motor_mjidx] = np.arctan(-x / y)
-
-        # Advance the simulation
-        mujoco.mj_step(self._model, self._data, self._frame_skip)
+        # State s'
         self._steps += 1
-
-        # State t+1
         reward = 0
         terminate = False
         info = {}
 
-        # Update Eyeball movement driven by the intention / attention allocation
-        # Eye-sight detection
-        dist, geomid = self._get_focus(site_name="rangefinder-site")
-        # Reset the scene first
-        for mj_idx in self._cells_mjidxs:
-            self._model.geom(mj_idx).rgba = self._DFLT_RGBA
-        # Count the number of steps that the agent fixates on the target
-        if geomid == self._gaze_mjidx:
-            self._on_target_steps += 1
-            self._model.geom(self._gaze_mjidx).rgba = self._VISUALIZE_RGBA
-
         # Update the mental state / internal representation / belief
-        if self._on_target_steps >= self._dwell_steps:
+        if self._omc_finish_fixation:
             # Get belief
             self._get_belief()
-
-        # Reward estimate - reward shaping based on the word selection (gaze) accuracy
-        # TODO consider the time steps that does not have valid geomid
-        euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-        reward_shaping_selection_accuracy = 0.1 * (np.exp(-0.2 * euclidean_distance) - 1)
-        reward += reward_shaping_selection_accuracy
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or finish_search:
@@ -404,13 +327,10 @@ class WordSelection(Env):
             terminate = True
 
             # Reward estimation - final milestone rewards
-            # Comprehension related reward - determined by: whether the agent select the word from the previous read content
-            if self._gaze_mjidx <= self._true_last_word_mjidx:
-                reward_comprehension = 10 * (np.exp(-0.5 * euclidean_distance))
-            else:
-                reward_comprehension = 0
-            # Estimate the total reward
-            reward += reward_comprehension
+            # Reward estimate - reward shaping based on the word selection (gaze) accuracy
+            euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
+            reward_shaping_selection_accuracy = 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+            reward += reward_shaping_selection_accuracy
 
             # Info updating
             info['steps'] = self._steps
@@ -435,7 +355,6 @@ class WordSelection(Env):
                   f"Last step's action a is: {action_gaze}, "
                   f"The current steps is: {self._steps}, "
                   f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, "
-                  f"the spatial dist init sigma is: {self._spatial_dist_coeff_gaze_init}\n"
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
                   # f"The s' belief is: {self._belief}\n"
@@ -466,13 +385,12 @@ class WordSelection(Env):
         """ Get the observation of the environment state """
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
-        remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
 
         gaze_target_mjidx_norm = self.normalise(self._gaze_mjidx, self._cells_mjidxs[0], self._cells_mjidxs[-1], -1, 1)
         belief = self._belief.copy()
 
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_dwell_steps_norm, gaze_target_mjidx_norm,
+            [remaining_ep_len_norm, gaze_target_mjidx_norm,
              *belief]
         )
 
@@ -495,7 +413,7 @@ class WordSelection(Env):
             xpos = self._data.geom(mjidx).xpos
             dist = np.linalg.norm(xpos - mu_xpos)
             idx = np.where(self._cells_mjidxs == mjidx)[0][0]
-            gaze_prob_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_gaze_init_likelihood) ** 2)
+            gaze_prob_distribution[idx] = np.exp(-0.5 * (dist / self._sigma_likelihood) ** 2)
         # Normalization
         gaze_prob_distribution /= np.sum(gaze_prob_distribution)
 
@@ -603,18 +521,6 @@ class WordSelection(Env):
             idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             self._true_last_word_belief_list.append(self._belief[idx])
 
-    def _get_focus(self, site_name):
-        site = self._data.site(site_name)
-        pnt = site.xpos
-        vec = site.xmat.reshape((3, 3))[:, 2]
-        # Exclude the body that contains the site, like in the rangefinder sensor
-        bodyexclude = self._model.site_bodyid[site.id]
-        geomid_out = np.array([-1], np.int32)
-        distance = mujoco.mj_ray(
-            self._model, self._data, pnt, vec, geomgroup=None, flg_static=1,
-            bodyexclude=bodyexclude, geomid=geomid_out)
-        return distance, geomid_out[0]
-
     def _plot_belief_and_memory_decay(self):
         # Create a new figure with two subplots
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
@@ -647,7 +553,7 @@ class WordSelection(Env):
     def _write_omc_video(self):
         directory = os.path.dirname(os.path.realpath(__file__))
         video_path = os.path.join(directory, "results", 'ocular_motor_control_agent.avi')
-        rgb_images = self._omc_images
+        rgb_images = self.omc_images
         write_video(
             filepath=video_path,
             fps=int(self._omc_env.action_sample_freq),
