@@ -103,7 +103,7 @@ class WordSelection(Env):
         self._weight_memory_decay = None
 
         # Visual encoding settings - TODO remove it from this task?
-        self._dwell_time = 0.2  # The time to dwell on a target
+        self._dwell_time = 0.5  # The time to dwell on a target
 
         # Initialize the log related parameters
         self._true_last_word_belief_list = None

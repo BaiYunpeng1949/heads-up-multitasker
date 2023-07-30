@@ -376,24 +376,12 @@ class OcularMotorControl(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
-
-            # if self._config["rl"]["mode"] == "debug" or self._config["rl"]["mode"] == "test":
-            #     print(f"\nThe dwell steps is: {self._dwell_steps}, "
-            #           f"\nThe amp tuning factor is: {amp_tuning_factor}, "
-            #           f"\nThe perturbation amp noise scale is: {perturbation_amp_noise_scale}"
-            #           f"\nThe total time steps is: {self._steps}")
         info = {
             'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
             'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
             'on_target_steps': self._on_target_steps,
             'terminate': terminate,
         }
-        # # TODO debug delete later
-        # print(f"****************************************************************************"
-        #       f"   Ocular Motor Control:\n"
-        #       f"the current layouts is: {self._cells_mjidxs},"
-        #       f"the sampled target is: {self._sampled_target_mjidx}, the geomid is: {geomid}")
-
         return self._get_obs(), reward, terminate, info
 
     @staticmethod
@@ -474,7 +462,6 @@ class OcularMotorControl(Env):
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._cells_mjidxs[0],
                                                    self._cells_mjidxs[-1], -1, 1)
-
         fixation_norm = 1 if self._fixate_on_target else -1
         previous_fixation_norm = 1 if self._previous_fixate_on_target else -1
         if self._layout == self._L0:
