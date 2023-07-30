@@ -28,7 +28,7 @@ class WordSelection(Env):
         with open(os.path.join(root_dir, "config.yaml")) as f:
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
-        # Load the MuJoCo model for this task - TODO mujoco here is just providing the mjidx and spatial relationships
+        # Load the MuJoCo model for this task
         self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
@@ -51,7 +51,7 @@ class WordSelection(Env):
         self._L100 = "L100"
         self._L50 = "L50"
         self._L0 = "L0"
-        self._FOUR = 4  # The number of cells in a row TODO Check it with different layouts
+        self._FOUR = 4  # The number of cells in a row
         self._layouts = [self._L100, self._L50, self._L0]
         self._layout = None
         self._cells_mjidxs = None
@@ -139,8 +139,8 @@ class WordSelection(Env):
         # Load the pre-trained low level task model - Ocular motor control model
         self._checkpoints_dir_name = "0729_hrl_ocular_motor_control_100m"
         self._loaded_model_name = "rl_model_55000000_steps"
-        self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models', self._checkpoints_dir_name,
-                                               self._loaded_model_name)
+        self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models',
+                                               self._checkpoints_dir_name, self._loaded_model_name)
         # omc stands for ocular motor control
         self._omc_model = PPO.load(self._loaded_model_path, self._omc_env)
 
@@ -161,14 +161,6 @@ class WordSelection(Env):
 
         # Reset the variables and counters
         self._steps = 0
-
-        # Reset all cells to transparent
-        for mjidx in self._ils100_cells_mjidxs:
-            self._model.geom(mjidx).rgba[3] = 0
-        for mjidx in self._ils50_cells_mjidxs:
-            self._model.geom(mjidx).rgba[3] = 0
-        for mjidx in self._ils0_cells_mjidxs:
-            self._model.geom(mjidx).rgba[3] = 0
 
         # Initialize the stochastic memory model related parameters
         self._init_delta_t = np.random.uniform(*self._init_delta_t_range)
@@ -237,8 +229,8 @@ class WordSelection(Env):
             'perturbation_amp_tuning_factor': 0,
             'perturbation_amp_noise_scale': 0,
             'dwell_time': self._dwell_time,
-            'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
-            'eye_y_rotation': 0,
+            # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
+            # 'eye_y_rotation': 0,
             'target_mjidx': self._gaze_mjidx,
             'layout': self._layout,
         }
@@ -272,10 +264,6 @@ class WordSelection(Env):
 
         # Only when one word is processed
         if self._omc_finish_fixation:
-
-            # TODO debug delete later
-            print(f"Remake a decision here")
-
             # Select the word, finish searching
             if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
                 finish_search = True
@@ -305,13 +293,22 @@ class WordSelection(Env):
             self.omc_images.append(self._omc_env.render()[0])
 
         # Update the eye movement
-        omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
-        self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
-        # Update ocular motor control's reset ocm_params eye rotation angles from info
-        self._omc_params['eye_x_rotation'] = info['eye_x_rotation']     # These are just for connecting different fixations
-        self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
-        self._omc_finish_fixation = info['terminate']
-        self.omc_images.append(self._omc_env.render()[0])
+        # omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
+        # self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
+        # # Update ocular motor control's reset ocm_params eye rotation angles from info
+        # # self._omc_params['eye_x_rotation'] = info['eye_x_rotation']     # These are just for connecting different fixations
+        # # self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
+        # self._omc_finish_fixation = info['terminate']
+        # self.omc_images.append(self._omc_env.render()[0])
+
+        # Update the gaze position by moving the eyeball in the scene
+        obs = self._omc_tuples['obs']
+        done = False
+        while not done:
+            action, _states = self._omc_model.predict(obs, deterministic=True)
+            obs, reward, done, info = self._omc_env.step(action)
+            self.omc_images.append(self._omc_env.render()[0])
+        self._omc_finish_fixation = done
 
         # State s'
         self._steps += 1
