@@ -213,7 +213,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = WordSelection()
+        self._env = OcularMotorControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -236,28 +236,28 @@ class RL:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
             # Configure the model - Initialise model that is run with multiple threads
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=64),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=CustomCombinedExtractor,
+                features_extractor_kwargs=dict(vision_features_dim=128,
+                                               proprioception_features_dim=32,
+                                               stateful_information_features_dim=64),
                 activation_fn=th.nn.LeakyReLU,
                 net_arch=[256, 256],
                 log_std_init=-1.0,
                 normalize_images=False
             )
 
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=128),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -409,8 +409,23 @@ class RL:
         if not (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
             imgs = []
             imgs_eye = []
+
+            # # TODO debug test, delete later
+            omc_params = {
+                'cells_mjidxs': np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+                'perturbation_amp_tuning_factor': 0,
+                'perturbation_amp_noise_scale': 0,
+                'dwell_time': 0.5,
+                # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
+                # 'eye_y_rotation': 0,
+                'target_mjidx': 4,
+                'layout': "L100",
+            }
+
             for episode in range(1, self._num_episodes + 1):
-                obs = self._env.reset()
+                omc_params['target_mjidx'] += 1
+
+                obs = self._env.reset(load_model_params=omc_params)     # TODO the problem seems to lie in the parameterised reset function
                 imgs.append(self._env.render()[0])
                 imgs_eye.append(self._env.render()[1])
                 done = False

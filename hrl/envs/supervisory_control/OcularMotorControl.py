@@ -263,6 +263,8 @@ class OcularMotorControl(Env):
             # init_eye_y_rotation = load_model_params["eye_y_rotation"]
             init_eye_x_rotation = 0
             init_eye_y_rotation = 0
+            init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_rotation_range)
+            init_eye_y_rotation = np.random.uniform(*self._eye_y_motor_rotation_range)
             self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
             self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
             self._data.qpos[self._eye_joint_y_mjidx] = init_eye_y_rotation
@@ -379,6 +381,9 @@ class OcularMotorControl(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_trials > self._max_trials:
             terminate = True
+            print(f"The number of trials is {self._num_trials}."
+                  f"the on-target steps is {self._on_target_steps}.")
+                  # TODO debug delete later
         info = {
             'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
             'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
