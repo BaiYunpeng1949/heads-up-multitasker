@@ -137,7 +137,7 @@ class OcularMotorControl(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 7
+        self._num_stateful_info = 5
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -193,7 +193,7 @@ class OcularMotorControl(Env):
         # The low level ocular motor control related training, testing (including the grid search), and debugging
         #  separately, out of HRL
         if self._in_hrl == False:
-            self._max_trials = 10
+            self._max_trials = 1
             self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self.action_sample_freq * 5)
 
             # Initialize perturbation parameters for training
@@ -243,8 +243,13 @@ class OcularMotorControl(Env):
             # Initialize the saccade from qpos
             self._last_step_saccade_qpos = self._data.qpos[self._eye_joint_x_mjidx:self._eye_joint_x_mjidx + 2].copy()
 
-            # Sample a target according to the target idx probability distribution
-            self._sample_target()
+            # Sample a target cell
+            self._sampled_target_mjidx = np.random.choice(self._cells_mjidxs.copy())
+
+            # Reset the scene
+            for mjidx in self._cells_mjidxs:
+                self._model.geom(mjidx).rgba = self._DFLT_RGBA
+            self._model.geom(self._sampled_target_mjidx).rgba = self._VISUALIZE_RGBA
 
         # Using the loaded model in HRL - the model has to be pre-trained before loading
         else:
@@ -363,26 +368,24 @@ class OcularMotorControl(Env):
         if self._on_target_steps >= self._dwell_steps:
             # Update the milestone bonus reward for finish reading a cell
             reward = 10
-            # In the HRL:
-            if self._in_hrl:
-                # No need to resample the target, since this episode ends now
-                # self._num_trials += 1
-                self._sample_target()
-            # In the separate training/testing scenario (not in the HRL):
-            else:
-                # Get the next target
-                self._sample_target()
+            self._num_trials += 1
+            # # In the HRL:
+            # if self._in_hrl:
+            #     # No need to resample the target, since this episode ends now
+            #     # self._num_trials += 1
+            #     self._sample_target()
+            # # In the separate training/testing scenario (not in the HRL):
+            # else:
+            #     # Get the next target
+            #     self._sample_target()
         else:
             reward = 0.1 * (np.exp(
                 -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
 
         # Get termination condition
         terminate = False
-        if self._steps >= self.ep_len or self._num_trials > self._max_trials:
+        if self._steps >= self.ep_len or self._num_trials >= self._max_trials:
             terminate = True
-            print(f"The number of trials is {self._num_trials}."
-                  f"the on-target steps is {self._on_target_steps}.")
-                  # TODO debug delete later
         info = {
             'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
             'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
@@ -464,9 +467,9 @@ class OcularMotorControl(Env):
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Compute the stateful information observation - normalize to [-1, 1]
-        remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
+        # remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
-        remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
+        # remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._cells_mjidxs[0],
                                                    self._cells_mjidxs[-1], -1, 1)
         fixation_norm = 1 if self._fixate_on_target else -1
@@ -481,8 +484,8 @@ class OcularMotorControl(Env):
             raise ValueError(f"Unknown layout {self._layout}")
 
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_dwell_steps_norm, remaining_trials_norm,
-             layout_norm,
+            [remaining_dwell_steps_norm, layout_norm,
+             # remaining_ep_len_norm, remaining_trials_norm,
              sampled_target_mjidx_norm, fixation_norm, previous_fixation_norm]
         )
 

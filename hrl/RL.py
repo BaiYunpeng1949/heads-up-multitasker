@@ -381,8 +381,8 @@ class RL:
             imgs_eye = []
             for episode in range(1, self._num_episodes + 1):
                 obs = self._env.reset()
-                # imgs.append(self._env.render()[0])
-                # imgs_eye.append(self._env.render()[1])
+                imgs.append(self._env.render()[0])
+                imgs_eye.append(self._env.render()[1])
                 done = False
                 score = 0
                 info = None
@@ -395,10 +395,10 @@ class RL:
                     else:
                         action = 0
                     obs, reward, done, info = self._env.step(action)
-                    # imgs.append(self._env.render()[0])
-                    # imgs_eye.append(self._env.render()[1])
+                    imgs.append(self._env.render()[0])
+                    imgs_eye.append(self._env.render()[1])
                     score += reward
-                imgs.append(self._env.omc_images)
+                # imgs.append(self._env.omc_images)
 
                 print(
                     f'Episode:{episode}     Score:{score} \n'
