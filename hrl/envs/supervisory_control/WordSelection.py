@@ -102,7 +102,7 @@ class WordSelection(Env):
         self._weight_memory_decay_range = [0.1, 1]
         self._weight_memory_decay = None
 
-        # Visual encoding settings - TODO remove it from this task?
+        # Initialize the dwell time
         self._dwell_time = 0.5  # The time to dwell on a target
 
         # Initialize the log related parameters
@@ -272,6 +272,9 @@ class WordSelection(Env):
 
         # Only when one word is processed
         if self._omc_finish_fixation:
+
+            # TODO debug delete later
+            print(f"Remake a decision here")
 
             # Select the word, finish searching
             if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:

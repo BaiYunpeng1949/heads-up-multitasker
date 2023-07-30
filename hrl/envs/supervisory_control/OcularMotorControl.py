@@ -56,7 +56,7 @@ class OcularMotorControl(Env):
 
         # Get the motors idx in MuJoCo
         self._eye_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-x-motor")
-        self._eye_x_motor_translation_range = self._model.actuator_ctrlrange[self._eye_x_motor_mjidx]
+        self._eye_x_motor_rotation_range = self._model.actuator_ctrlrange[self._eye_x_motor_mjidx]
         self._eye_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-y-motor")
         self._eye_y_motor_rotation_range = self._model.actuator_ctrlrange[self._eye_y_motor_mjidx]
         self._head_x_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "head-x-motor")
@@ -201,7 +201,7 @@ class OcularMotorControl(Env):
             self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self.action_sample_freq)
 
             # Initialize eyeball rotation angles
-            init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
+            init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_rotation_range)
             init_eye_y_rotation = np.random.uniform(*self._eye_y_motor_rotation_range)
             self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
             self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
@@ -258,8 +258,11 @@ class OcularMotorControl(Env):
             self._dwell_steps = int(load_model_params["dwell_time"] * self.action_sample_freq)
 
             # Initialize eyeball rotation angles
-            init_eye_x_rotation = load_model_params["eye_x_rotation"]
-            init_eye_y_rotation = load_model_params["eye_y_rotation"]
+            # Comment this assignment greatly improves the performance :) - 2023/07/30
+            # init_eye_x_rotation = load_model_params["eye_x_rotation"]
+            # init_eye_y_rotation = load_model_params["eye_y_rotation"]
+            init_eye_x_rotation = 0
+            init_eye_y_rotation = 0
             self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
             self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
             self._data.qpos[self._eye_joint_y_mjidx] = init_eye_y_rotation
