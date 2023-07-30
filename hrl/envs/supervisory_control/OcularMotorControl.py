@@ -263,8 +263,6 @@ class OcularMotorControl(Env):
             # init_eye_y_rotation = load_model_params["eye_y_rotation"]
             init_eye_x_rotation = 0
             init_eye_y_rotation = 0
-            init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_rotation_range)
-            init_eye_y_rotation = np.random.uniform(*self._eye_y_motor_rotation_range)
             self._data.qpos[self._eye_joint_x_mjidx] = init_eye_x_rotation
             self._data.ctrl[self._eye_x_motor_mjidx] = init_eye_x_rotation
             self._data.qpos[self._eye_joint_y_mjidx] = init_eye_y_rotation
@@ -368,7 +366,8 @@ class OcularMotorControl(Env):
             # In the HRL:
             if self._in_hrl:
                 # No need to resample the target, since this episode ends now
-                self._num_trials += 1
+                # self._num_trials += 1
+                self._sample_target()
             # In the separate training/testing scenario (not in the HRL):
             else:
                 # Get the next target

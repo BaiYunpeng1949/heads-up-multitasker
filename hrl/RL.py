@@ -418,7 +418,7 @@ class RL:
                 'dwell_time': 0.5,
                 # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
                 # 'eye_y_rotation': 0,
-                'target_mjidx': 4,
+                'target_mjidx': 0,
                 'layout': "L100",
             }
 
