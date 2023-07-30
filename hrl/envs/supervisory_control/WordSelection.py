@@ -111,7 +111,6 @@ class WordSelection(Env):
 
         # Initialise RL related thresholds and counters
         self._steps = None
-        self._on_target_steps = None
         self.ep_len = 100
         # Define the training related parameters
         self._epsilon = 1e-100
@@ -138,7 +137,7 @@ class WordSelection(Env):
         self._omc_env = OcularMotorControl()
 
         # Load the pre-trained low level task model - Ocular motor control model
-        self._checkpoints_dir_name = "0727_mdp_ocular_motor_control_100m"
+        self._checkpoints_dir_name = "0729_hrl_ocular_motor_control_100m"
         self._loaded_model_name = "rl_model_55000000_steps"
         self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models', self._checkpoints_dir_name,
                                                self._loaded_model_name)
@@ -162,7 +161,6 @@ class WordSelection(Env):
 
         # Reset the variables and counters
         self._steps = 0
-        self._on_target_steps = 0
 
         # Reset all cells to transparent
         for mjidx in self._ils100_cells_mjidxs:
@@ -341,10 +339,11 @@ class WordSelection(Env):
             if self._config['rl']['mode'] == 'test' and \
                     self._config['rl']['test']['grid_search_selection']['enable'] == False \
                     or self._config['rl']['mode'] == 'debug':
-                # Plot the belief and memory decay
-                self._plot_belief_and_memory_decay()
-                # Record the video of ocular motor control
-                self._write_omc_video()
+                # # Plot the belief and memory decay
+                # self._plot_belief_and_memory_decay()
+                # # Record the video of ocular motor control
+                # self._write_omc_video()
+                pass
 
         if self._config['rl']['mode'] == 'test' and \
                 self._config['rl']['test']['grid_search_selection']['enable'] == False \
@@ -356,7 +355,7 @@ class WordSelection(Env):
                   f"The current layout is: {self._cells_mjidxs[0]}\n"
                   f"Last step's action a is: {action_gaze}, "
                   f"The current steps is: {self._steps}, "
-                  f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, "
+                  f"Finish search is: {finish_search}, the terminate flag is: {self._omc_finish_fixation}, "
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
                   # f"The s' belief is: {self._belief}\n"
