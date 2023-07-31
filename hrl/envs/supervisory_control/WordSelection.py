@@ -137,8 +137,8 @@ class WordSelection(Env):
         self._omc_env = OcularMotorControl()
 
         # Load the pre-trained low level task model - Ocular motor control model
-        self._checkpoints_dir_name = "0729_hrl_ocular_motor_control_100m"
-        self._loaded_model_name = "rl_model_55000000_steps"
+        self._checkpoints_dir_name = "0730_hrl_ocular_motor_control_100m"
+        self._loaded_model_name = "rl_model_50000000_steps"
         self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models',
                                                self._checkpoints_dir_name, self._loaded_model_name)
         # omc stands for ocular motor control
@@ -309,6 +309,12 @@ class WordSelection(Env):
             obs, reward, done, info = self._omc_env.step(action)
             self.omc_images.append(self._omc_env.render()[0])
         self._omc_finish_fixation = done
+
+        # TODO:
+        #  1. elapsed time for memory update,
+        #  2. use the spatial info get method in ocular motor to separate mujoco from this env,
+        #  3. add the episode length info to the observation to accelerate training
+
 
         # State s'
         self._steps += 1
