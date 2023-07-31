@@ -409,17 +409,20 @@ class RL:
         if not (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
             imgs = []
             imgs_eye = []
+            L100_index_array = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+            L50_index_array = np.array([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
+            L0_index_array = np.array([25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])
 
             # # TODO debug test, delete later
             omc_params = {
-                'cells_mjidxs': np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+                'cells_mjidxs': L0_index_array,
                 'perturbation_amp_tuning_factor': 0,
                 'perturbation_amp_noise_scale': 0,
                 'dwell_time': 0.5,
                 # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
                 # 'eye_y_rotation': 0,
-                'target_mjidx': 0,
-                'layout': "L100",
+                'target_mjidx': 24,
+                'layout': "L0",
             }
 
             for episode in range(1, self._num_episodes + 1):
