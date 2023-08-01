@@ -13,15 +13,14 @@ from scipy.ndimage import gaussian_filter
 from huc.utils.rendering import Camera, Context
 
 
-class OcularMotorControl(Env):
+class LocomotionControl(Env):
 
     def __init__(self):
         """
-        Model the vision perception and ocular motor control of human
+        Model the locomotion control in the lane switch task - Low level motor control task
 
-        The agent learns: with given target index and image input, control the eyeball to fixate on the target
-        Ocular motor control has uncertainty, denoted by the ocular motor noise,
-        which is from the paper: An Adaptive Model of Gaze-based Selection
+        The agent learns: with the given instructions received from the middle-level attending environment task,
+        whether to switch lanes or not
         """
         # Get directory of this file
         directory = os.path.dirname(os.path.realpath(__file__))
