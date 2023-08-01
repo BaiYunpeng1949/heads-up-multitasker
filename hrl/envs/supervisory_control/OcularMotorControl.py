@@ -369,15 +369,6 @@ class OcularMotorControl(Env):
             # Update the milestone bonus reward for finish reading a cell
             reward = 10
             self._num_trials += 1
-            # # In the HRL:
-            # if self._in_hrl:
-            #     # No need to resample the target, since this episode ends now
-            #     # self._num_trials += 1
-            #     self._sample_target()
-            # # In the separate training/testing scenario (not in the HRL):
-            # else:
-            #     # Get the next target
-            #     self._sample_target()
         else:
             reward = 0.1 * (np.exp(
                 -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
@@ -386,13 +377,7 @@ class OcularMotorControl(Env):
         terminate = False
         if self._steps >= self.ep_len or self._num_trials >= self._max_trials:
             terminate = True
-        info = {
-            'eye_x_rotation': self._data.qpos[self._eye_joint_x_mjidx],
-            'eye_y_rotation': self._data.qpos[self._eye_joint_y_mjidx],
-            'on_target_steps': self._on_target_steps,
-            'terminate': terminate,
-        }
-        return self._get_obs(), reward, terminate, info
+        return self._get_obs(), reward, terminate, {}
 
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
@@ -538,3 +523,5 @@ class OcularMotorControl(Env):
         self._num_trials += 1
 
     # TODO add a get_spatial_info function to get the spatial information of the target
+    def _get_spatial_info(self):
+        pass

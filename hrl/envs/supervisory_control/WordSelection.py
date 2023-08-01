@@ -130,6 +130,7 @@ class WordSelection(Env):
         self._action_left_range = [2, 3]
         self._action_right_range = [3, 4]
         self._action_select_range = [4, 5]
+        self._action_name = None
         self.action_space = Box(low=-1, high=1, shape=(1,))
 
         # Initialize the pre-trained RL model
@@ -147,7 +148,6 @@ class WordSelection(Env):
         # Initialize the variables for the ocular motor control task
         self._omc_tuples = None
         self._omc_params = None
-        self._omc_finish_fixation = None
         self.omc_images = None
 
     def reset(self, params=None):
@@ -158,12 +158,14 @@ class WordSelection(Env):
         # Reset the log related parameters
         self._true_last_word_belief_list = []
         self._true_last_word_memory_decay_list = []
+        self._action_name = ''
 
         # Reset the variables and counters
         self._steps = 0
 
         # Initialize the stochastic memory model related parameters
         self._init_delta_t = np.random.uniform(*self._init_delta_t_range)
+        self._delta_t = self._init_delta_t
         self._init_sigma_position_memory = np.random.uniform(*self._init_sigma_position_memory_range)
         self._weight_memory_decay = np.random.uniform(*self._weight_memory_decay_range)
 
@@ -243,10 +245,9 @@ class WordSelection(Env):
             'info': {},
         }
 
-        self.omc_images = []
-        self.omc_images.append(self._omc_env.render()[0])
-
-        self._omc_finish_fixation = False
+        if self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+            self.omc_images = []
+            self.omc_images.append(self._omc_env.render()[0])
 
         return self._get_obs()
 
@@ -262,59 +263,51 @@ class WordSelection(Env):
 
         finish_search = False
 
-        # Only when one word is processed
-        if self._omc_finish_fixation:
-            # Select the word, finish searching
-            if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
-                finish_search = True
-            # Move the gaze to the next word above
-            elif self._action_up_range[0] <= action_gaze <= self._action_up_range[1]:
-                if self._gaze_mjidx - self._FOUR >= self._cells_mjidxs[0]:
-                    self._gaze_mjidx -= self._FOUR
-            # Move the gaze to the next word below
-            elif self._action_down_range[0] < action_gaze <= self._action_down_range[1]:
-                if self._gaze_mjidx + self._FOUR <= self._cells_mjidxs[-1]:
-                    self._gaze_mjidx += self._FOUR
-            # Move the gaze to the next word left
-            elif self._action_left_range[0] < action_gaze <= self._action_left_range[1]:
-                if self._gaze_mjidx - 1 >= self._cells_mjidxs[0]:
-                    self._gaze_mjidx -= 1
-            # Move the gaze to the next word right
-            elif self._action_right_range[0] < action_gaze <= self._action_right_range[1]:
-                if self._gaze_mjidx + 1 <= self._cells_mjidxs[-1]:
-                    self._gaze_mjidx += 1
-            else:
-                raise ValueError(f"The action is not correct! It is: {action_gaze}")
+        # Select the word, finish searching
+        if self._action_select_range[0] < action_gaze <= self._action_select_range[1]:
+            finish_search = True
+            self._action_name = 'select'
+        # Move the gaze to the next word above
+        elif self._action_up_range[0] <= action_gaze <= self._action_up_range[1]:
+            if self._gaze_mjidx - self._FOUR >= self._cells_mjidxs[0]:
+                self._gaze_mjidx -= self._FOUR
+            self._action_name = 'up'
+        # Move the gaze to the next word below
+        elif self._action_down_range[0] < action_gaze <= self._action_down_range[1]:
+            if self._gaze_mjidx + self._FOUR <= self._cells_mjidxs[-1]:
+                self._gaze_mjidx += self._FOUR
+            self._action_name = 'down'
+        # Move the gaze to the next word left
+        elif self._action_left_range[0] < action_gaze <= self._action_left_range[1]:
+            if self._gaze_mjidx - 1 >= self._cells_mjidxs[0]:
+                self._gaze_mjidx -= 1
+            self._action_name = 'left'
+        # Move the gaze to the next word right
+        elif self._action_right_range[0] < action_gaze <= self._action_right_range[1]:
+            if self._gaze_mjidx + 1 <= self._cells_mjidxs[-1]:
+                self._gaze_mjidx += 1
+            self._action_name = 'right'
+        else:
+            raise ValueError(f"The action is not correct! It is: {action_gaze}")
 
-            # Start a new fixation (a macro action)
-            # Update the ocular motor control agent parameters
-            self._omc_params['target_mjidx'] = self._gaze_mjidx
-            self._omc_tuples['obs'] = self._omc_env.reset(load_model_params=self._omc_params)
-            self.omc_images.append(self._omc_env.render()[0])
-
-        # Update the eye movement
-        # omc_action, omc_states = self._omc_model.predict(self._omc_tuples['obs'], deterministic=True)
-        # self._omc_tuples['obs'], reward, done, info = self._omc_env.step(omc_action)
-        # # Update ocular motor control's reset ocm_params eye rotation angles from info
-        # # self._omc_params['eye_x_rotation'] = info['eye_x_rotation']     # These are just for connecting different fixations
-        # # self._omc_params['eye_y_rotation'] = info['eye_y_rotation']
-        # self._omc_finish_fixation = info['terminate']
-        # self.omc_images.append(self._omc_env.render()[0])
+        # Start a new fixation (a macro action)
+        # Update the ocular motor control agent parameters
+        self._omc_params['target_mjidx'] = self._gaze_mjidx
 
         # Update the gaze position by moving the eyeball in the scene
-        obs = self._omc_tuples['obs']
-        done = False
-        while not done:
-            action, _states = self._omc_model.predict(obs, deterministic=True)
-            obs, reward, done, info = self._omc_env.step(action)
-            self.omc_images.append(self._omc_env.render()[0])
-        self._omc_finish_fixation = done
-
-        # TODO:
-        #  1. elapsed time for memory update,
-        #  2. use the spatial info get method in ocular motor to separate mujoco from this env,
-        #  3. add the episode length info to the observation to accelerate training
-
+        # In the training mode we don't do anything
+        if self._config['rl']['mode'] == 'train' or self._config['rl']['mode'] == 'continual_train':
+            pass
+        # In the testing mode we move the eyeball in the scene using the pre-trained model
+        elif self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+            obs = self._omc_env.reset(load_model_params=self._omc_params)
+            done = False
+            while not done:
+                action, _states = self._omc_model.predict(obs, deterministic=True)
+                obs, reward, done, info = self._omc_env.step(action)
+                self.omc_images.append(self._omc_env.render()[0])
+        else:
+            raise ValueError(f"The mode is not correct! It is: {self._config['rl']['mode']}")
 
         # State s'
         self._steps += 1
@@ -323,9 +316,7 @@ class WordSelection(Env):
         info = {}
 
         # Update the mental state / internal representation / belief
-        if self._omc_finish_fixation:
-            # Get belief
-            self._get_belief()
+        self._get_belief()
 
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or finish_search:
@@ -359,9 +350,9 @@ class WordSelection(Env):
             true_last_word_idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             print(
                   f"The current layout is: {self._cells_mjidxs[0]}\n"
-                  f"Last step's action a is: {action_gaze}, "
+                  f"Last step's action a is: {action_gaze}, {self._action_name}"
                   f"The current steps is: {self._steps}, "
-                  f"Finish search is: {finish_search}, the terminate flag is: {self._omc_finish_fixation}, "
+                  f"Finish search is: {finish_search}, "
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
                   # f"The likelihood is: {self._likelihood_prob_dist},\n"
                   # f"The s' belief is: {self._belief}\n"
@@ -441,7 +432,8 @@ class WordSelection(Env):
     def _update_prior(self):
         """Update the prior probability distribution of the attention corrupted by the memory decays"""
         # Update the elapsed time in second
-        self._delta_t = self._init_delta_t + self._steps / self.action_sample_freq
+        # self._delta_t = self._init_delta_t + self._steps / self.action_sample_freq
+        self._delta_t += self._dwell_time
         # Update the sigma position memory
         self._sigma_position_memory = self._init_sigma_position_memory / (1 + self._delta_t ** (-self._rho))
 
@@ -569,6 +561,4 @@ class WordSelection(Env):
             filepath=video_path,
             fps=int(self._omc_env.action_sample_freq),
             rgb_images=rgb_images,
-            width=rgb_images[0].shape[1],
-            height=rgb_images[0].shape[0],
         )
