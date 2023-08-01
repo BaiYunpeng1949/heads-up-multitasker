@@ -318,6 +318,10 @@ class WordSelection(Env):
         # Update the mental state / internal representation / belief
         self._get_belief()
 
+        # Apply the time penalty
+        time_penalty = -0.05
+        reward += time_penalty
+
         # If all materials are read, give a big bonus reward
         if self._steps >= self.ep_len or finish_search:
             # Termination of the episode

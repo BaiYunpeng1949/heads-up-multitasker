@@ -521,7 +521,3 @@ class OcularMotorControl(Env):
 
         # Update the number of remaining unread cells
         self._num_trials += 1
-
-    # TODO add a get_spatial_info function to get the spatial information of the target
-    def _get_spatial_info(self):
-        pass
