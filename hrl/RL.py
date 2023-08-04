@@ -427,10 +427,14 @@ class RL:
 
             for episode in range(1, self._num_episodes + 1):
                 omc_params['target_mjidx'] += 1
+                # use these when testing the ocular motor control
+                # obs = self._env.reset(load_model_params=omc_params)
+                # imgs.append(self._env.render()[0])
+                # imgs_eye.append(self._env.render()[1])
 
-                obs = self._env.reset(load_model_params=omc_params)     # TODO the problem seems to lie in the parameterised reset function
-                imgs.append(self._env.render()[0])
-                imgs_eye.append(self._env.render()[1])
+                # Use this when testing the middle level task
+                obs = self._env.reset()
+
                 done = False
                 score = 0
                 info = {}
@@ -438,10 +442,10 @@ class RL:
                 while not done:
                     action, _states = self._model.predict(obs, deterministic=True)
                     obs, reward, done, info = self._env.step(action)
-                    imgs.append(self._env.render()[0])
-                    imgs_eye.append(self._env.render()[1])
+                    # imgs.append(self._env.render()[0])
+                    # imgs_eye.append(self._env.render()[1])
                     score += reward
-                # imgs.append(self._env.omc_images)
+                imgs.append(self._env.omc_images)
 
                 print(
                     f'Episode:{episode}     Score:{score} \n'
@@ -577,7 +581,7 @@ class RL:
         ]
 
         # Create or open CSV file with the column headers
-        csv_directory = "envs/mobile_reading/results/"
+        csv_directory = "envs/supervisory_control/results/"
         if not os.path.exists(csv_directory):
             os.makedirs(csv_directory)
         csv_save_path = os.path.join(csv_directory, "selection_results.csv")

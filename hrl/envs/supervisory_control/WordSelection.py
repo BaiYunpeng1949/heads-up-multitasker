@@ -182,11 +182,11 @@ class WordSelection(Env):
         if self._config['rl']['mode'] == 'test':
             # Normal testings
             if params is None:
-                self._init_delta_t = 4
-                self._init_sigma_position_memory = 2
-                self._weight_memory_decay = 0.75
+                self._init_delta_t = 2
+                self._init_sigma_position_memory = 0.5
+                self._weight_memory_decay = 0.8
                 self._layout = self._L0
-                self._spatial_dist_coeff = 2.5
+                self._spatial_dist_coeff = 4
                 self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
             # Testing - grid search
             else:
@@ -196,6 +196,7 @@ class WordSelection(Env):
                 self._layout = params['layout']
                 self._spatial_dist_coeff = params['spatial_dist_coeff']
                 self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
+                print(f"Grid Search Testing with params: {params}\n")
 
         # Initialize the scene after deciding the layout
         if self._layout == self._L100:
@@ -306,6 +307,7 @@ class WordSelection(Env):
                 action, _states = self._omc_model.predict(obs, deterministic=True)
                 obs, reward, done, info = self._omc_env.step(action)
                 self.omc_images.append(self._omc_env.render()[0])
+            print(f"Using the established OMC model\n")
         else:
             raise ValueError(f"The mode is not correct! It is: {self._config['rl']['mode']}")
 
@@ -354,7 +356,7 @@ class WordSelection(Env):
             true_last_word_idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             print(
                   f"The current layout is: {self._cells_mjidxs[0]}\n"
-                  f"Last step's action a is: {action_gaze}, {self._action_name}"
+                  f"Last step's action a is: {action_gaze}, {self._action_name}  "
                   f"The current steps is: {self._steps}, "
                   f"Finish search is: {finish_search}, "
                   # f"The prior probability distribution is: {self._prior_prob_dist},\n"
@@ -466,10 +468,10 @@ class WordSelection(Env):
             idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             self._true_last_word_memory_decay_list.append(memory_decay_prob_dist[idx])
 
-            print(f"The memory decay weight is: {weight_decay}, the sigma likelihood is: {self._sigma_likelihood}\n"
-                  f"The memory decay is: {memory_decay_prob_dist}, the target's is: {memory_decay_prob_dist[idx]}\n"
-                  f"The updated prior probability distribution is: {self._prior_prob_dist}, "
-                  f"the target's is: {self._prior_prob_dist[idx]}\n")
+            # print(f"The memory decay weight is: {weight_decay}, the sigma likelihood is: {self._sigma_likelihood}\n"
+            #       f"The memory decay is: {memory_decay_prob_dist}, the target's is: {memory_decay_prob_dist[idx]}\n"
+            #       f"The updated prior probability distribution is: {self._prior_prob_dist}, "
+            #       f"the target's is: {self._prior_prob_dist[idx]}\n")
 
     def _get_likelihood(self):
         """
