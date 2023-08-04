@@ -41,11 +41,10 @@
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
 
-        <camera name="env" pos="0.35 -0.35 0.15" euler="1.4 0.5 0.12"/>
-
         <body name="agent" pos="0 0 0">
             <geom name="ribcage" type="mesh" mesh="ribcage" pos="0 0 -0.15" euler="1.57 1.57 0" rgba="0.99 0.99 0.99 0.5"/>
-            <joint name="agent-joint-y" class="agent-forward-locomotion" axis="0 1 0" range="-10 10"/>
+            <camera name="env" pos="0.35 -0.35 0.15" euler="1.4 0.5 0.12"/>
+            <joint name="agent-joint-y" class="agent-forward-locomotion" axis="0 1 0" range="0 200"/>
             <joint name="agent-joint-x" class="agent-lane-change-locomotion" axis="1 0 0" range="-1 1"/>
 
             <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
@@ -121,7 +120,7 @@
         <position name="eye-y-motor" joint="eye-joint-y" class="eye" ctrlrange="-0.7854 0.7854"/>
         <position name="head-x-motor" joint="head-joint-x" class="head-rotations" ctrlrange="-0.07 0.07"/>
         <position name="head-z-motor" joint="head-joint-z" class="head-rotations" ctrlrange="-0.15 0.15"/>
-        <position name="agent-y-motor" joint="agent-joint-y" class="agent-forward-locomotion" ctrlrange="0 15"/>
+        <position name="agent-y-motor" joint="agent-joint-y" class="agent-forward-locomotion" ctrlrange="0 200"/>
         <position name="agent-x-motor" joint="agent-joint-x" class="agent-lane-change-locomotion" ctrlrange="-1 1"/>
     </actuator>
 
