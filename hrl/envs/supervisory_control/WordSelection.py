@@ -11,8 +11,8 @@ from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter
 from stable_baselines3 import PPO
 
-from huc.utils.rendering import Camera, Context
-from huc.utils.write_video import write_video
+from hrl.utils.rendering import Camera, Context
+from hrl.utils.write_video import write_video
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 
 
@@ -119,9 +119,7 @@ class WordSelection(Env):
         self._num_stateful_info = 14
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
-        # Define the action space
-        # 1st: decision on attention distribution;
-        # 2nd and 3rd: eyeball rotations;
+        # Define the action space - decision on attention distribution;
         self._action_gaze_idx = 0
         self._action_eye_rotate_x_idx = 1
         self._action_eye_rotate_y_idx = 2
@@ -150,7 +148,7 @@ class WordSelection(Env):
         self._omc_params = None
         self.omc_images = None
 
-    def reset(self, params=None):
+    def reset(self, grid_search_params=None, load_model_params=None):
 
         # Reset MuJoCo sim
         mujoco.mj_resetData(self._model, self._data)
@@ -162,6 +160,8 @@ class WordSelection(Env):
 
         # Reset the variables and counters
         self._steps = 0
+
+        # TODO add hrl load model mode
 
         # Initialize the stochastic memory model related parameters
         self._init_delta_t = np.random.uniform(*self._init_delta_t_range)
@@ -181,7 +181,7 @@ class WordSelection(Env):
         # Configure the stochastic hyperparameters in test mode
         if self._config['rl']['mode'] == 'test':
             # Normal testings
-            if params is None:
+            if grid_search_params is None:
                 self._init_delta_t = 2
                 self._init_sigma_position_memory = 0.5
                 self._weight_memory_decay = 0.8
@@ -190,13 +190,13 @@ class WordSelection(Env):
                 self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
             # Testing - grid search
             else:
-                self._init_delta_t = params['init_delta_t']
-                self._init_sigma_position_memory = params['init_sigma_position_memory']
-                self._weight_memory_decay = params['weight_memory_decay']
-                self._layout = params['layout']
-                self._spatial_dist_coeff = params['spatial_dist_coeff']
+                self._init_delta_t = grid_search_params['init_delta_t']
+                self._init_sigma_position_memory = grid_search_params['init_sigma_position_memory']
+                self._weight_memory_decay = grid_search_params['weight_memory_decay']
+                self._layout = grid_search_params['layout']
+                self._spatial_dist_coeff = grid_search_params['spatial_dist_coeff']
                 self._sigma_likelihood = self._fovea_size * self._spatial_dist_coeff
-                print(f"Grid Search Testing with params: {params}\n")
+                print(f"Grid Search Testing with params: {grid_search_params}\n")
 
         # Initialize the scene after deciding the layout
         if self._layout == self._L100:
