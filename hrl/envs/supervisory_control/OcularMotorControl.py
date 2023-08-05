@@ -450,7 +450,7 @@ class OcularMotorControl(Env):
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Compute the stateful information observation - normalize to [-1, 1]
-        # remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
+        # remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1 # TODO enable this later
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         # remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._cells_mjidxs[0],

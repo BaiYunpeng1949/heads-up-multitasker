@@ -159,7 +159,7 @@ class LocomotionControl(Env):
 
         # Get termination condition
         terminate = False
-        if self._steps >= self.ep_len:
+        if self._steps >= self.ep_len:      # TODO add a termination condition - enough steps on the assigned lane
             terminate = True
         return self._get_obs(), reward, terminate, {}
 
