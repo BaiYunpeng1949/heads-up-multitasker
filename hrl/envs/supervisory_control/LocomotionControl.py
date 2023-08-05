@@ -161,8 +161,8 @@ class LocomotionControl(Env):
         else:
             self._agent_on_lane_timesteps = 0
 
-        # Get step-wise reward - time penalty
-        reward = -0.1
+        # Get the step-wise reward
+        reward = 0 if self._agent_lane == self._instructed_lane else -0.1
 
         # Get termination condition
         terminate = False
