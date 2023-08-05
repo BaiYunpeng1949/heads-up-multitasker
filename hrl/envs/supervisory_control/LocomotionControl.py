@@ -63,6 +63,9 @@ class LocomotionControl(Env):
         # Initialize lane switch related parameters
         self._instructed_lane = None
         self._agent_lane = None
+        self._dwell_time = 1   # 1 second
+        self._dwell_timesteps = int(self._dwell_time * self.action_sample_freq)
+        self._agent_on_lane_timesteps = None
 
         # Initialise RL framework related thresholds and counters
         self._steps = None
@@ -72,7 +75,7 @@ class LocomotionControl(Env):
         # Define the observation space
         self._num_stk_frm = 1
         self._qpos_frames = None
-        self._num_stateful_info = 5
+        self._num_stateful_info = 4
         self.observation_space = Dict({
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1 + 1,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
@@ -96,6 +99,7 @@ class LocomotionControl(Env):
 
         # Reset the variables, flags, and counters
         self._steps = 0
+        self._agent_on_lane_timesteps = 0
 
         # Reset the training/testing/using mode: whether in HRL
         if load_model_params is None:
@@ -151,16 +155,23 @@ class LocomotionControl(Env):
         else:
             self._agent_lane = -1
 
-        # Get rewards and next state
-        if self._instructed_lane == self._agent_lane:
-            reward = 0.1
+        # Update agent's lane dwell timesteps
+        if self._agent_lane == self._instructed_lane:
+            self._agent_on_lane_timesteps += 1
         else:
-            reward = -0.1
+            self._agent_on_lane_timesteps = 0
+
+        # Get step-wise reward - time penalty
+        reward = -0.1
 
         # Get termination condition
         terminate = False
-        if self._steps >= self.ep_len:      # TODO add a termination condition - enough steps on the assigned lane
+        if self._steps >= self.ep_len or self._agent_on_lane_timesteps >= self._dwell_timesteps:
             terminate = True
+
+            # Estimate the reward for choosing the correct lane
+            if self._agent_on_lane_timesteps >= self._dwell_timesteps:
+                reward += 5
         return self._get_obs(), reward, terminate, {}
 
     @staticmethod
@@ -187,9 +198,12 @@ class LocomotionControl(Env):
 
         # Compute the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
+        remaining_dwell_timesteps_norm = (self._dwell_timesteps - self._agent_on_lane_timesteps) / self._dwell_timesteps * 2 - 1
+        agent_lane_norm = self._agent_lane
+        instructed_lane_norm = self._instructed_lane
 
         stateful_info = np.array(
-            [remaining_ep_len_norm]
+            [remaining_ep_len_norm, remaining_dwell_timesteps_norm, agent_lane_norm, instructed_lane_norm]
         )
 
         # Observation space check

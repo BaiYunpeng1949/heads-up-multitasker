@@ -28,6 +28,7 @@ from huc.utils.write_video import write_video
 
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 from hrl.envs.supervisory_control.WordSelection import WordSelection
+from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
 
 _MODES = {
     'train': 'train',
@@ -213,7 +214,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = WordSelection()
+        self._env = LocomotionControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -235,7 +236,7 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
-            # Configure the model - Initialise model that is run with multiple threads
+            # Configure the model - HRL - Ocular motor control
             # policy_kwargs = dict(
             #     features_extractor_class=CustomCombinedExtractor,
             #     features_extractor_kwargs=dict(vision_features_dim=128,
@@ -247,17 +248,29 @@ class RL:
             #     normalize_images=False
             # )
 
+            # Configure the model - HRL - Locomotion Control
             policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
+                features_extractor_class=NoVisionCombinedExtractor,
+                features_extractor_kwargs=dict(proprioception_features_dim=32,
+                                               stateful_information_features_dim=64),
                 activation_fn=th.nn.LeakyReLU,
-                net_arch=[256, 256],
+                net_arch=[64, 64],
                 log_std_init=-1.0,
                 normalize_images=False
             )
 
+            # Configure the model - HRL - POMDP Reading - Word Selection
+            # policy_kwargs = dict(
+            #     features_extractor_class=StatefulInformationExtractor,
+            #     features_extractor_kwargs=dict(features_dim=128),
+            #     activation_fn=th.nn.LeakyReLU,
+            #     net_arch=[256, 256],
+            #     log_std_init=-1.0,
+            #     normalize_images=False
+            # )
+
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -381,8 +394,12 @@ class RL:
             imgs_eye = []
             for episode in range(1, self._num_episodes + 1):
                 obs = self._env.reset()
-                # imgs.append(self._env.render()[0])
-                # imgs_eye.append(self._env.render()[1])
+                if not isinstance(self._env, WordSelection):
+                    if isinstance(self._env, LocomotionControl):
+                        imgs.append(self._env.render())
+                    else:
+                        imgs.append(self._env.render()[0])
+                        # imgs_eye.append(self._env.render()[1])
                 done = False
                 score = 0
                 info = None
@@ -395,10 +412,16 @@ class RL:
                     else:
                         action = 0
                     obs, reward, done, info = self._env.step(action)
-                    # imgs.append(self._env.render()[0])
-                    # imgs_eye.append(self._env.render()[1])
+                    if not isinstance(self._env, WordSelection):
+                        if isinstance(self._env, LocomotionControl):
+                            imgs.append(self._env.render())
+                        else:
+                            imgs.append(self._env.render()[0])
+                            # imgs_eye.append(self._env.render()[1])
                     score += reward
-                imgs.append(self._env.omc_images)
+
+                if isinstance(self._env, WordSelection):
+                    imgs.append(self._env.omc_images)
 
                 print(
                     f'Episode:{episode}     Score:{score} \n'
@@ -428,12 +451,15 @@ class RL:
             for episode in range(1, self._num_episodes + 1):
                 omc_params['target_mjidx'] += 1
                 # use these when testing the ocular motor control
-                # obs = self._env.reset(load_model_params=omc_params)
-                # imgs.append(self._env.render()[0])
-                # imgs_eye.append(self._env.render()[1])
-
-                # Use this when testing the middle level task
-                obs = self._env.reset()
+                if not isinstance(self._env, WordSelection):
+                    obs = self._env.reset(load_model_params=omc_params)
+                    if isinstance(self._env, LocomotionControl):
+                        imgs.append(self._env.render())
+                    else:
+                        imgs.append(self._env.render()[0])
+                        # imgs_eye.append(self._env.render()[1])
+                else:
+                    obs = self._env.reset()
 
                 done = False
                 score = 0
@@ -442,10 +468,16 @@ class RL:
                 while not done:
                     action, _states = self._model.predict(obs, deterministic=True)
                     obs, reward, done, info = self._env.step(action)
-                    # imgs.append(self._env.render()[0])
-                    # imgs_eye.append(self._env.render()[1])
+                    if not isinstance(self._env, WordSelection):
+                        if isinstance(self._env, LocomotionControl):
+                            imgs.append(self._env.render())
+                        else:
+                            imgs.append(self._env.render()[0])
+                            # imgs_eye.append(self._env.render()[1])
                     score += reward
-                imgs.append(self._env.omc_images)
+
+                if isinstance(self._env, WordSelection):
+                    imgs.append(self._env.omc_images)
 
                 print(
                     f'Episode:{episode}     Score:{score} \n'
