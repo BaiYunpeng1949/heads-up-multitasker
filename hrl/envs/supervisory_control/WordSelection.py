@@ -73,13 +73,13 @@ class WordSelection(Env):
         # Initialize the memory model that can be used to update the prior probability distribution (activation level from ACT-R)
         # Initial sigma position memory
         # Ref: Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning
-        self._init_sigma_position_memory_range = [0.5, 10]
+        self._init_sigma_position_memory_range = [0.5, 5]
         self._init_sigma_position_memory = None
         # The initial time interval of attention switch
         # 2s - time spent on the environmental task;
         # 4s - according to empirical results, most word selection time is finished within 2s; 2+2=4
         # Ref: Not all spacings are created equally
-        self._init_delta_t_range = [1, 5]
+        self._init_delta_t_range = [2, 4]
         self._init_delta_t = None
         self._delta_t = None
         # The decaying factor Bi formular is a simplified version of the learning component from ACT-R
@@ -94,7 +94,7 @@ class WordSelection(Env):
         # We assume agent samples the words that are nearer to the true last word
         self._fovea_degrees = 2
         self._fovea_size = None
-        self._spatial_dist_coeff_range = [2, 10]
+        self._spatial_dist_coeff_range = [1, 5]
         self._spatial_dist_coeff = None
         self._sigma_likelihood = None
 
@@ -103,7 +103,7 @@ class WordSelection(Env):
         self._weight_memory_decay = None
 
         # Initialize the dwell time
-        self._dwell_time = 0.5  # The time to dwell on a target
+        self._dwell_time = 0.2  # The time to dwell on a target
 
         # Initialize the log related parameters
         self._true_last_word_belief_list = None
@@ -321,7 +321,8 @@ class WordSelection(Env):
         self._get_belief()
 
         # Apply the time penalty
-        time_penalty = -0.05
+        mt_step_wise = self._dwell_time * self.action_sample_freq
+        time_penalty = -0.1 * mt_step_wise
         reward += time_penalty
 
         # If all materials are read, give a big bonus reward
@@ -332,8 +333,8 @@ class WordSelection(Env):
             # Reward estimation - final milestone rewards
             # Reward estimate - reward shaping based on the word selection (gaze) accuracy
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-            reward_shaping_selection_accuracy = 10 * (np.exp(-0.1 * euclidean_distance) - 1)
-            reward += reward_shaping_selection_accuracy
+            selection_accuracy = 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+            reward += selection_accuracy
 
             # Info updating
             info['steps'] = self._steps
@@ -426,7 +427,10 @@ class WordSelection(Env):
         gaze_prob_distribution /= np.sum(gaze_prob_distribution)
 
         # Initialize the gaze position
-        self._gaze_mjidx = np.random.choice(self._cells_mjidxs, p=gaze_prob_distribution)
+        while True:
+            self._gaze_mjidx = np.random.choice(self._cells_mjidxs, p=gaze_prob_distribution)
+            if self._gaze_mjidx != self._true_last_word_mjidx:
+                break
 
     def _get_prior(self):
         """

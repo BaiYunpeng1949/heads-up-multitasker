@@ -214,7 +214,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = LocomotionControl()
+        self._env = WordSelection()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -249,28 +249,28 @@ class RL:
             # )
 
             # Configure the model - HRL - Locomotion Control
-            policy_kwargs = dict(
-                features_extractor_class=NoVisionCombinedExtractor,
-                features_extractor_kwargs=dict(proprioception_features_dim=32,
-                                               stateful_information_features_dim=64),
-                activation_fn=th.nn.LeakyReLU,
-                net_arch=[64, 64],
-                log_std_init=-1.0,
-                normalize_images=False
-            )
-
-            # Configure the model - HRL - POMDP Reading - Word Selection
             # policy_kwargs = dict(
-            #     features_extractor_class=StatefulInformationExtractor,
-            #     features_extractor_kwargs=dict(features_dim=128),
+            #     features_extractor_class=NoVisionCombinedExtractor,
+            #     features_extractor_kwargs=dict(proprioception_features_dim=32,
+            #                                    stateful_information_features_dim=64),
             #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
+            #     net_arch=[64, 64],
             #     log_std_init=-1.0,
             #     normalize_images=False
             # )
 
+            # Configure the model - HRL - POMDP Reading - Word Selection
+            policy_kwargs = dict(
+                features_extractor_class=StatefulInformationExtractor,
+                features_extractor_kwargs=dict(features_dim=128),
+                activation_fn=th.nn.LeakyReLU,
+                net_arch=[256, 256],
+                log_std_init=-1.0,
+                normalize_images=False
+            )
+
             self._model = PPO(
-                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
