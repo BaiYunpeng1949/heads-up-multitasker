@@ -132,21 +132,22 @@ class WordSelection(Env):
         self.action_space = Box(low=-1, high=1, shape=(1,))
 
         # Initialize the pre-trained RL model
-        # Load the MuJoCo model for the ocular motor control task (omc) - we create 1 env for each training env
-        self._omc_env = OcularMotorControl()
+        if self._config['rl']['mode'] == 'test':
+            # Load the MuJoCo model for the ocular motor control task (omc) - we create 1 env for each training env
+            self._omc_env = OcularMotorControl()
 
-        # Load the pre-trained low level task model - Ocular motor control model
-        self._checkpoints_dir_name = "0730_hrl_ocular_motor_control_100m"
-        self._loaded_model_name = "rl_model_50000000_steps"
-        self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models',
-                                               self._checkpoints_dir_name, self._loaded_model_name)
-        # omc stands for ocular motor control
-        self._omc_model = PPO.load(self._loaded_model_path, self._omc_env)
+            # Load the pre-trained low level task model - Ocular motor control model
+            self._checkpoints_dir_name = "0730_hrl_ocular_motor_control_100m"
+            self._loaded_model_name = "rl_model_50000000_steps"
+            self._loaded_model_path = os.path.join(root_dir, 'training', 'saved_models',
+                                                   self._checkpoints_dir_name, self._loaded_model_name)
+            # omc stands for ocular motor control
+            self._omc_model = PPO.load(self._loaded_model_path, self._omc_env)
 
-        # Initialize the variables for the ocular motor control task
-        self._omc_tuples = None
-        self._omc_params = None
-        self.omc_images = None
+            # Initialize the variables for the ocular motor control task
+            self._omc_tuples = None
+            self._omc_params = None
+            self.omc_images = None
 
     def reset(self, grid_search_params=None, load_model_params=None):
 
@@ -226,29 +227,30 @@ class WordSelection(Env):
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
 
-        # Reset the ocular motor control agent
-        self._omc_params = {
-            'cells_mjidxs': self._cells_mjidxs.copy(),
-            'perturbation_amp_tuning_factor': 0,
-            'perturbation_amp_noise_scale': 0,
-            'dwell_time': self._dwell_time,
-            # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
-            # 'eye_y_rotation': 0,
-            'target_mjidx': self._gaze_mjidx,
-            'layout': self._layout,
-        }
+        if self._config['rl']['mode'] == 'test':
+            # Reset the ocular motor control agent
+            self._omc_params = {
+                'cells_mjidxs': self._cells_mjidxs.copy(),
+                'perturbation_amp_tuning_factor': 0,
+                'perturbation_amp_noise_scale': 0,
+                'dwell_time': self._dwell_time,
+                # 'eye_x_rotation': 0,    # Store the last step's qos values, for smooth eyeball fixation transitions across cellss
+                # 'eye_y_rotation': 0,
+                'target_mjidx': self._gaze_mjidx,
+                'layout': self._layout,
+            }
 
-        # Reset the pre-trained omc agent
-        self._omc_tuples = {
-            'obs': self._omc_env.reset(load_model_params=self._omc_params),
-            'done': False,
-            'score': 0,
-            'info': {},
-        }
+            # Reset the pre-trained omc agent
+            self._omc_tuples = {
+                'obs': self._omc_env.reset(load_model_params=self._omc_params),
+                'done': False,
+                'score': 0,
+                'info': {},
+            }
 
-        if self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
-            self.omc_images = []
-            self.omc_images.append(self._omc_env.render()[0])
+            if self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+                self.omc_images = []
+                self.omc_images.append(self._omc_env.render()[0])
 
         return self._get_obs()
 
@@ -292,15 +294,14 @@ class WordSelection(Env):
             raise ValueError(f"The action is not correct! It is: {action_gaze}")
 
         # Start a new fixation (a macro action)
-        # Update the ocular motor control agent parameters
-        self._omc_params['target_mjidx'] = self._gaze_mjidx
-
         # Update the gaze position by moving the eyeball in the scene
         # In the training mode we don't do anything
         if self._config['rl']['mode'] == 'train' or self._config['rl']['mode'] == 'continual_train':
             pass
         # In the testing mode we move the eyeball in the scene using the pre-trained model
         elif self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+            # Update the ocular motor control agent parameters
+            self._omc_params['target_mjidx'] = self._gaze_mjidx
             obs = self._omc_env.reset(load_model_params=self._omc_params)
             done = False
             while not done:
