@@ -124,8 +124,21 @@ class LocomotionControl(Env):
             self._agent_lane = load_model_params["agent_lane"]
             self._instructed_lane = load_model_params["instructed_lane"]
 
+        # Reset the agent's initial position with the given initial lane
+        if self._agent_lane == 0:
+            self._data.qpos[self._agent_joint_x_mjidx] = self._left_lane_threshold
+            self._data.ctrl[self._agent_x_motor_mjidx] = self._left_lane_threshold
+        elif self._agent_lane == 1:
+            self._data.qpos[self._agent_joint_x_mjidx] = self._right_lane_threshold
+            self._data.ctrl[self._agent_x_motor_mjidx] = self._right_lane_threshold
+        else:
+            raise ValueError(f"The agent's initial lane is not valid! Should be either 0 or 1. Now get {self._agent_lane}")
+
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
+
+        if self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+            print(f"the agent is on lane {self._agent_lane}, and the instructed lane is {self._instructed_lane}\n")
 
         return self._get_obs()
 
@@ -172,6 +185,17 @@ class LocomotionControl(Env):
             # Estimate the reward for choosing the correct lane
             if self._agent_on_lane_timesteps >= self._dwell_timesteps:
                 reward += 5
+
+        # Print logs in the testing and debugging mode
+        if self._in_hrl == False:
+            if self._config['rl']['mode'] == 'test' or self._config['rl']['mode'] == 'debug':
+                print("Agent's lane: ", self._agent_lane)
+                print("Instructed lane: ", self._instructed_lane)
+                print("Agent on lane timesteps: ", self._agent_on_lane_timesteps)
+                print("Steps: ", self._steps)
+                print("Reward: ", reward)
+                print("")
+
         return self._get_obs(), reward, terminate, {}
 
     @staticmethod

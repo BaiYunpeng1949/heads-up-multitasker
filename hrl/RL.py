@@ -452,10 +452,11 @@ class RL:
                 omc_params['target_mjidx'] += 1
                 # use these when testing the ocular motor control
                 if not isinstance(self._env, WordSelection):
-                    obs = self._env.reset(load_model_params=omc_params)
                     if isinstance(self._env, LocomotionControl):
+                        obs = self._env.reset()
                         imgs.append(self._env.render())
                     else:
+                        obs = self._env.reset(load_model_params=omc_params)
                         imgs.append(self._env.render()[0])
                         # imgs_eye.append(self._env.render()[1])
                 else:
@@ -694,7 +695,7 @@ class RL:
             if self._config_rl['test']['grid_search_selection']['enable'] and self._mode == _MODES['test']:
                 self._test()
             else:
-                print(f"The video is being generated.")
+                print(f"HRL testing. The video is being generated.")
                 # Generate the results from the pre-trained model.
                 rgb_images, rgb_eye_images = self._test()
                 # Write a video. First get the rgb images, then identify the path.

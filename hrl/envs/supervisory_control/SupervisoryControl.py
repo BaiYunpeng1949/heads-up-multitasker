@@ -143,7 +143,7 @@ class SupervisoryControl(Env):
         self._steps += 1
 
         # State s'
-        finished_reading = False
+        finish_reading = False
         # Continue with the previous task
         if self._prev_attention == self._attention:
             pass
