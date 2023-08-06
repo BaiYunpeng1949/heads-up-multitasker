@@ -24,11 +24,12 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from huc.utils.write_video import write_video
+from hrl.utils.write_video import write_video
 
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 from hrl.envs.supervisory_control.WordSelection import WordSelection
 from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
+from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl
 
 _MODES = {
     'train': 'train',
@@ -214,7 +215,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = WordSelection()
+        self._env = SupervisoryControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -259,7 +260,7 @@ class RL:
             #     normalize_images=False
             # )
 
-            # Configure the model - HRL - POMDP Reading - Word Selection
+            # Configure the model - HRL - Supervisory Control, Word Selection
             policy_kwargs = dict(
                 features_extractor_class=StatefulInformationExtractor,
                 features_extractor_kwargs=dict(features_dim=128),
@@ -649,7 +650,7 @@ class RL:
                             errors = []
 
                             for episode in range(1, num_episodes + 1):
-                                obs = self._env.reset(params=params)
+                                obs = self._env.reset(grid_search_params=params)
                                 done = False
                                 score = 0
                                 info = None
