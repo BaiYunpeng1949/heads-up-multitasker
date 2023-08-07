@@ -369,7 +369,7 @@ class OcularMotorControl(Env):
             self._num_trials += 1
         else:
             reward = 0.1 * (np.exp(
-                -10 * self._angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
+                -10 * self._get_angle_from_target(site_name="rangefinder-site", target_idx=self._sampled_target_mjidx)) - 1)
 
         # Get termination condition
         terminate = False
@@ -392,7 +392,7 @@ class OcularMotorControl(Env):
         v2_u = unit_vector(v2)
         return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
-    def _angle_from_target(self, site_name, target_idx):
+    def _get_angle_from_target(self, site_name, target_idx):
         """
         Return the angle between the vector pointing from the site to the target and the vector pointing from the site to the front
         ranges from 0 to pi.

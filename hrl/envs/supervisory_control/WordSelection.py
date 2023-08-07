@@ -222,7 +222,7 @@ class WordSelection(Env):
         self._posterior_prob_dist = np.ones(len(self._cells_mjidxs)) / len(self._cells_mjidxs)
 
         # Update the internal representation - belief
-        self._get_belief()
+        self._update_belief()
 
         # Set up the whole scene by confirming the initializations
         mujoco.mj_forward(self._model, self._data)
@@ -319,7 +319,7 @@ class WordSelection(Env):
         info = {}
 
         # Update the mental state / internal representation / belief
-        self._get_belief()
+        self._update_belief()
 
         # Apply the time penalty
         mt_step_wise = self._dwell_time * self.action_sample_freq
@@ -433,15 +433,16 @@ class WordSelection(Env):
             if self._gaze_mjidx != self._true_last_word_mjidx:
                 break
 
-    def _get_prior(self):
+    def _update_prior(self):
         """
          Get the prior probability distribution of the attention - the probability of attending to each word
          Last step's posterior is this step's prior
         """
         self._prior_prob_dist = self._posterior_prob_dist.copy()
 
-    def _update_prior(self):
-        """Update the prior probability distribution of the attention corrupted by the memory decays"""
+        """
+        Update the prior probability distribution of the attention corrupted by the memory decays
+        """
         # Update the elapsed time in second
         # self._delta_t = self._init_delta_t + self._steps / self.action_sample_freq
         self._delta_t += self._dwell_time
@@ -478,7 +479,7 @@ class WordSelection(Env):
             #       f"The updated prior probability distribution is: {self._prior_prob_dist}, "
             #       f"the target's is: {self._prior_prob_dist[idx]}\n")
 
-    def _get_likelihood(self):
+    def _update_likelihood(self):
         """
         Calculate the likelihood function: assumption
         agents' strategy is to sample the word close to the target last word, and its probability is associated with
@@ -511,7 +512,7 @@ class WordSelection(Env):
         self._likelihood_prob_dist /= np.sum(self._likelihood_prob_dist)
         self.detect_invalid_array(self._likelihood_prob_dist, "likelihood_prob_dist")
 
-    def _get_posterior(self):
+    def _update_posterior(self):
         """Get the posterior probability distribution of the attention according to the Bayes' rules"""
         # Get the posterior probability distribution = prior * likelihood
         self._posterior_prob_dist = self._prior_prob_dist.copy() * self._likelihood_prob_dist.copy()
@@ -521,12 +522,11 @@ class WordSelection(Env):
         self._posterior_prob_dist /= np.sum(self._posterior_prob_dist)
         self.detect_invalid_array(self._posterior_prob_dist, "posterior_prob_dist")
 
-    def _get_belief(self):
+    def _update_belief(self):
         """Get the belief of the agent's attention distribution"""
-        self._get_prior()
         self._update_prior()
-        self._get_likelihood()
-        self._get_posterior()
+        self._update_likelihood()
+        self._update_posterior()
         self._belief = self._posterior_prob_dist.copy()
 
         # Log the belief in the test mode
