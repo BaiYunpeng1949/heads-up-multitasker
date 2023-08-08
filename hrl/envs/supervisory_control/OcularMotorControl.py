@@ -32,7 +32,7 @@ class OcularMotorControl(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model - Remember to change the xml accordingly
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-3layouts-small-font-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
