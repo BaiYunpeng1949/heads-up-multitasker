@@ -499,10 +499,4 @@ class SupervisoryControl(Env):
             self._reading_task_weight * (reward_reading_making_progress + reward_word_selection_time_cost + reward_word_selection_error_cost) + \
             self._walking_task_weight * reward_walk_on_correct_lane + reward_attention_switch_time_cost
 
-        # TODO debug
-        print(f"self._reading_task_weight: {self._reading_task_weight}, reward_reading_making_progress: {reward_reading_making_progress}, \n"
-              f"reward_word_selection_time_cost: {reward_word_selection_time_cost}, reward_word_selection_error_cost: {reward_word_selection_error_cost}\n"
-              f"self._walking_task_weight: {self._walking_task_weight}, reward_walk_on_correct_lane: {reward_walk_on_correct_lane}, "
-              f"reward_attention_switch_time_cost: {reward_attention_switch_time_cost}\n")
-
         return reward
