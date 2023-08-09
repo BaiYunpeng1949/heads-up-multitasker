@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: debug    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 100000000
