@@ -14,7 +14,7 @@ from stable_baselines3 import PPO
 from hrl.utils.rendering import Camera, Context
 from hrl.utils.write_video import write_video
 from hrl.envs.supervisory_control.WordSelection import WordSelection
-from hrl.envs.supervisory_control.ReadSign import ReadSign
+from hrl.envs.supervisory_control.ReadBackground import ReadBackground
 
 
 class SupervisoryControl(Env):
@@ -149,7 +149,7 @@ class SupervisoryControl(Env):
         if self._config['rl']['mode'] == 'test':
             # Initialize the RL middle level task environments
             self._read_sg_env = WordSelection()
-            self._read_bg_env = ReadSign()
+            self._read_bg_env = ReadBackground()
 
             # Load the pre-trained RL middle level task models - reading on smart glasses
             read_sg_checkpoints_dir_name = ""
@@ -159,7 +159,7 @@ class SupervisoryControl(Env):
             self._read_sg_model = PPO.load(read_sg_model_path)
             self._read_sg_tuples = None
             self._read_sg_params = None
-            self.read_sg_imgaes = None
+            self.read_sg_images = None
 
             # Load the pre-trained RL middle level task models - reading on the background/environment
             read_bg_checkpoints_dir_name = ""

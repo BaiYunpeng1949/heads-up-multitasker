@@ -14,7 +14,6 @@ from gym import spaces
 import torch as th
 from torch import nn
 
-import itertools
 import pandas as pd
 
 from stable_baselines3 import PPO
@@ -27,9 +26,10 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from hrl.utils.write_video import write_video
 
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
-from hrl.envs.supervisory_control.WordSelection import WordSelection
 from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
+from hrl.envs.supervisory_control.WordSelection import WordSelection
 from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl
+from hrl.envs.supervisory_control.ReadBackground import ReadBackground
 
 _MODES = {
     'train': 'train',
@@ -238,40 +238,52 @@ class RL:
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
             # Configure the model - HRL - Ocular motor control
-            # policy_kwargs = dict(
-            #     features_extractor_class=CustomCombinedExtractor,
-            #     features_extractor_kwargs=dict(vision_features_dim=128,
-            #                                    proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=64),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
+            if isinstance(self._env, OcularMotorControl):
+                policy_kwargs = dict(
+                    features_extractor_class=CustomCombinedExtractor,
+                    features_extractor_kwargs=dict(vision_features_dim=128,
+                                                   proprioception_features_dim=32,
+                                                   stateful_information_features_dim=64),
+                    activation_fn=th.nn.LeakyReLU,
+                    net_arch=[256, 256],
+                    log_std_init=-1.0,
+                    normalize_images=False
+                )
+                policy = "MultiInputPolicy"
             # Configure the model - HRL - Locomotion Control
-            # policy_kwargs = dict(
-            #     features_extractor_class=NoVisionCombinedExtractor,
-            #     features_extractor_kwargs=dict(proprioception_features_dim=32,
-            #                                    stateful_information_features_dim=64),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[64, 64],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
-
-            # Configure the model - HRL - Supervisory Control, Word Selection
-            policy_kwargs = dict(
-                features_extractor_class=StatefulInformationExtractor,
-                features_extractor_kwargs=dict(features_dim=128),
-                activation_fn=th.nn.LeakyReLU,
-                net_arch=[256, 256],
-                log_std_init=-1.0,
-                normalize_images=False
-            )
+            elif isinstance(self._env, LocomotionControl):
+                policy_kwargs = dict(
+                    features_extractor_class=NoVisionCombinedExtractor,
+                    features_extractor_kwargs=dict(proprioception_features_dim=32,
+                                                   stateful_information_features_dim=64),
+                    activation_fn=th.nn.LeakyReLU,
+                    net_arch=[64, 64],
+                    log_std_init=-1.0,
+                    normalize_images=False
+                )
+                policy = "MultiInputPolicy"
+            # Configure the model - HRL - Word Selection, Read Background, Supervisory Control
+            elif isinstance(self._env, WordSelection) or isinstance(self._env, ReadBackground) or isinstance(self._env, SupervisoryControl):
+                if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl):
+                    features_dim = 128
+                    net_arch = [256, 256]
+                else:
+                    features_dim = 16
+                    net_arch = [64, 64]
+                policy_kwargs = dict(
+                    features_extractor_class=StatefulInformationExtractor,
+                    features_extractor_kwargs=dict(features_dim=features_dim),
+                    activation_fn=th.nn.LeakyReLU,
+                    net_arch=net_arch,
+                    log_std_init=-1.0,
+                    normalize_images=False
+                )
+                policy = "MlpPolicy"
+            else:
+                raise ValueError(f'Invalid environment {self._env}.')
 
             self._model = PPO(
-                policy="MlpPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy=policy,     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
@@ -442,6 +454,7 @@ class RL:
             L0_index_array = np.array([25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])
 
             # # TODO debug test, delete later
+            # TODO record all individual's data in a csv to get the distribution - error bar
             omc_params = {
                 'cells_mjidxs': L0_index_array,
                 'perturbation_amp_tuning_factor': 0,
@@ -617,6 +630,8 @@ class RL:
             'steps',
             'error'
         ]
+
+        # TODO record all individual's data in a csv to get the distribution - error bar
 
         # Create or open CSV file with the column headers
         csv_directory = "envs/supervisory_control/results/"
