@@ -473,6 +473,8 @@ class RL:
                     if isinstance(self._env, LocomotionControl):
                         obs = self._env.reset()
                         imgs.append(self._env.render())
+                    elif isinstance(self._env, SupervisoryControl):
+                        obs = self._env.reset()
                     else:
                         obs = self._env.reset(load_model_params=omc_params)
                         imgs.append(self._env.render()[0])
@@ -490,6 +492,8 @@ class RL:
                     if not isinstance(self._env, WordSelection):
                         if isinstance(self._env, LocomotionControl):
                             imgs.append(self._env.render())
+                        elif isinstance(self._env, SupervisoryControl):
+                            pass
                         else:
                             imgs.append(self._env.render()[0])
                             # imgs_eye.append(self._env.render()[1])

@@ -145,31 +145,31 @@ class SupervisoryControl(Env):
         self.action_space = Box(low=-1, high=1, shape=(1,))
         self._ZERO_THRESHOLD = 0
 
-        # Initialize the pre-trained middle level RL models when testing the supervisory control
-        if self._config['rl']['mode'] == 'test':
-            # Initialize the RL middle level task environments
-            self._read_sg_env = WordSelection()
-            self._read_bg_env = ReadBackground()
-
-            # Load the pre-trained RL middle level task models - reading on smart glasses
-            read_sg_checkpoints_dir_name = ""
-            read_sg_loaded_model_name = ""
-            read_sg_model_path = os.path.join(root_dir, 'training', 'saved_models',
-                                              read_sg_checkpoints_dir_name, read_sg_loaded_model_name)
-            self._read_sg_model = PPO.load(read_sg_model_path)
-            self._read_sg_tuples = None
-            self._read_sg_params = None
-            self.read_sg_images = None
-
-            # Load the pre-trained RL middle level task models - reading on the background/environment
-            read_bg_checkpoints_dir_name = ""
-            read_bg_loaded_model_name = ""
-            read_bg_model_path = os.path.join(root_dir, 'training', 'saved_models',
-                                              read_bg_checkpoints_dir_name, read_bg_loaded_model_name)
-            self._read_bg_model = PPO.load(read_bg_model_path)
-            self._read_bg_tuples = None
-            self._read_bg_params = None
-            self.read_bg_imgaes = None
+        # # Initialize the pre-trained middle level RL models when testing the supervisory control
+        # if self._config['rl']['mode'] == 'test':
+        #     # Initialize the RL middle level task environments
+        #     self._read_sg_env = WordSelection()
+        #     self._read_bg_env = ReadBackground()
+        #
+        #     # Load the pre-trained RL middle level task models - reading on smart glasses
+        #     read_sg_checkpoints_dir_name = ""
+        #     read_sg_loaded_model_name = ""
+        #     read_sg_model_path = os.path.join(root_dir, 'training', 'saved_models',
+        #                                       read_sg_checkpoints_dir_name, read_sg_loaded_model_name)
+        #     self._read_sg_model = PPO.load(read_sg_model_path)
+        #     self._read_sg_tuples = None
+        #     self._read_sg_params = None
+        #     self.read_sg_images = None
+        #
+        #     # Load the pre-trained RL middle level task models - reading on the background/environment
+        #     read_bg_checkpoints_dir_name = ""
+        #     read_bg_loaded_model_name = ""
+        #     read_bg_model_path = os.path.join(root_dir, 'training', 'saved_models',
+        #                                       read_bg_checkpoints_dir_name, read_bg_loaded_model_name)
+        #     self._read_bg_model = PPO.load(read_bg_model_path)
+        #     self._read_bg_tuples = None
+        #     self._read_bg_params = None
+        #     self.read_bg_imgaes = None
 
     def reset(self):
 
@@ -178,7 +178,41 @@ class SupervisoryControl(Env):
         # For the test mode, evaluate with the pre-trained RL middle level task models
         if self._config['rl']['mode'] == 'test':
             # Embed the middle level task models into the supervisory control model
-            pass
+            # TODO trial test first, if everything is running correctly, then use the pre-trained models
+            # Reset the reading task related parameters
+            self._reading_progress_word_wise = 0
+            self._prev_reading_progress_word_wise = 0
+            self._reading_position = self._reading_positions[self._MARGINS]
+            self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
+            self._reading_content_layout_name = self._L100
+            self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
+            self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
+
+            # Reset the walking and background related parameters
+            self._background_event = np.random.choice(list(self._background_events.values()))
+            self._walking_lane = self._background_event
+            self._prev_background_event_step = 0
+            self._observed_background_event = self._background_event
+            self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+            self._prev_background_last_check_step = 0
+            self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+            self._prev_observed_background_event = self._background_last_check_with_different_event_flag
+            self._prev_background_last_check_with_different_event_step = 0
+
+            # Randomly initialize the attention allocation
+            self._attention_switch_to_background = False
+
+            # Randomly initialize the background information update frequency level
+            self._background_event_interval_level = self._LONG
+            self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
+
+            # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
+            # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            #                                               self._reading_task_weight_range[1])
+            self._reading_task_weight = 0.5  # Start from the simple case
+            self._walking_task_weight = 1 - self._reading_task_weight
+
+            self._update_beliefs()
         # For the training mode, only focus on this model, deploy a lot of stochasticity
         else:
             # Reset the reading task related parameters
@@ -251,8 +285,13 @@ class SupervisoryControl(Env):
         if not self._attention_switch_to_background:
             # Testing mode
             if self._config['rl']['mode'] == 'test':
-                pass
-                # TODO Call the pre-trained RL models - Maybe a simple MDP reading model + ocular motor control
+                # TODO Call the pre-trained RL models - Maybe a simple MDP reading model + ocular motor control,
+                #  Modify later
+                self._prev_reading_progress_word_wise = self._reading_progress_word_wise
+                # Continue the reading task, read one more cells/words
+                self._reading_progress_word_wise += 1
+                # Update the reading position
+                self._update_reading_position()
             else:
                 self._prev_reading_progress_word_wise = self._reading_progress_word_wise
                 # Continue the reading task, read one more cells/words
@@ -263,10 +302,23 @@ class SupervisoryControl(Env):
         else:
             # Testing mode
             if self._config['rl']['mode'] == 'test':
-                pass
-                # TODO Call the pre-trained RL models
+                # TODO Call the pre-trained RL models - Modify later
                 #  1.RHS: sign read + ocular motor control + locomotion control
                 #  2.LHS: word selection + ocular motor control
+                # Update the background last check - no matter whether observe a changed event instruction of not
+                self._prev_background_last_check_step = self._steps
+                # Update the observation of the background event
+                self._observed_background_event = self._background_event
+                # If the instruction in the background has changed, the agent will update its state
+                if self._observed_background_event != self._prev_observed_background_event:
+                    self._prev_observed_background_event = self._observed_background_event
+                    self._prev_background_last_check_with_different_event_step = self._steps
+
+                    # The background information has been read, then move to the correct lane
+                    self._walking_lane = self._background_event
+
+                    # Resume reading - word selection
+                    self._update_word_selection_costs()
             # All other non-testing modes
             else:
                 # Update the background last check - no matter whether observe a changed event instruction of not
@@ -298,12 +350,13 @@ class SupervisoryControl(Env):
         if self._steps >= self.ep_len or self._reading_progress_word_wise >= self._total_reading_words:
             terminate = True
 
-        if self._config['rl']['mode'] == 'debug':
-            print(f"The action name is {action_name}, the action value is {action}, \n"
+        if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
+            print(f"The reading content layout name is {self._reading_content_layout_name}, "
+                  f"the background event interval is {self._background_event_interval}\n"
+                  f"The action name is {action_name}, the action value is {action}, \n"
                   f"The step is {self._steps}, \n"
                   f"The reading progress is {self._reading_progress_word_wise}, "
-                  f"the reading content layout name is {self._reading_content_layout_name}, "
-                  f"the background event frequency is {self._background_event_interval}\n"
+                  f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
                   f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event} \n"
                   f"The reward is {reward}, \n")
 
@@ -370,6 +423,8 @@ class SupervisoryControl(Env):
 
     def _update_background_check_flags(self):
         # Check and update the last checks
+        # TODO to generalize the beliefs indicating when should the agent pay attention to the environment,
+        #  maybe use continuous (blurred) probability instead of discrete flags
         if self._steps - self._prev_background_last_check_step >= self._background_last_check_step_wise_threshold:
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
         else:
@@ -406,6 +461,7 @@ class SupervisoryControl(Env):
             reward_reading_making_progress = 1
         else:
             reward_reading_making_progress = -1
+            # TODO increase the penalty, or in the long intervals, the agent will keep checking the environment
 
         if self._attention_switch_to_background:
             reward_attention_switch_time_cost = -1   # Can be proportional to the time cost
