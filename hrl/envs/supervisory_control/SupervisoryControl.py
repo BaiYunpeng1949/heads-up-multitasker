@@ -479,7 +479,7 @@ class SupervisoryControl(Env):
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
             reward_reading_making_progress = 1
         else:
-            reward_reading_making_progress = -1
+            reward_reading_making_progress = 0
 
         if self._attention_switch_to_background:
             reward_attention_switch_time_cost = -1   # Can be proportional to the time cost
