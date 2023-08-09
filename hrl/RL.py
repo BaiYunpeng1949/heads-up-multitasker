@@ -398,9 +398,11 @@ class RL:
                 if not isinstance(self._env, WordSelection):
                     if isinstance(self._env, LocomotionControl):
                         imgs.append(self._env.render())
-                    else:
+                    elif isinstance(self._env, OcularMotorControl):
                         imgs.append(self._env.render()[0])
                         # imgs_eye.append(self._env.render()[1])
+                    else:
+                        pass
                 done = False
                 score = 0
                 info = None
@@ -416,9 +418,11 @@ class RL:
                     if not isinstance(self._env, WordSelection):
                         if isinstance(self._env, LocomotionControl):
                             imgs.append(self._env.render())
-                        else:
+                        elif isinstance(self._env, OcularMotorControl):
                             imgs.append(self._env.render()[0])
                             # imgs_eye.append(self._env.render()[1])
+                        else:
+                            pass
                     score += reward
 
                 if isinstance(self._env, WordSelection):
@@ -697,21 +701,24 @@ class RL:
                 self._test()
             else:
                 print(f"HRL testing. The video is being generated.")
-                # Generate the results from the pre-trained model.
-                rgb_images, rgb_eye_images = self._test()
-                # Write a video. First get the rgb images, then identify the path.
-                # video_folder_path = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
-                video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
-                if os.path.exists(video_folder_path) is False:
-                    os.makedirs(video_folder_path)
-                video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_'
-                video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
+                if isinstance(self._env, SupervisoryControl):
+                    self._test()
+                else:
+                    # Generate the results from the pre-trained model.
+                    rgb_images, rgb_eye_images = self._test()
+                    # Write a video. First get the rgb images, then identify the path.
+                    # video_folder_path = f"C:/Users/91584/Desktop/{self._config_rl['train']['checkpoints_folder_name']}"
+                    video_folder_path = os.path.join('training', 'videos', self._config_rl['train']['checkpoints_folder_name'])
+                    if os.path.exists(video_folder_path) is False:
+                        os.makedirs(video_folder_path)
+                    video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_'
+                    video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
 
-                write_video(
-                    filepath=video_path,
-                    fps=int(self._env.action_sample_freq),
-                    rgb_images=rgb_images,
-                )
+                    write_video(
+                        filepath=video_path,
+                        fps=int(self._env.action_sample_freq),
+                        rgb_images=rgb_images,
+                    )
         else:
             pass
 

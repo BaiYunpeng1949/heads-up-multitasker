@@ -70,7 +70,7 @@ class SupervisoryControl(Env):
         self._reading_task_weight_range = [0.5, 1]
         self._reading_task_weight = None
         self._walking_task_weight = None
-        self._total_reading_words = 300   # The number of cells/words that needed to be read
+        self._total_reading_words = 100   # The number of cells/words that needed to be read
         self._reading_progress_word_wise = None
         self._prev_reading_progress_word_wise = None
         self._MARGINS = 'margins'
@@ -134,7 +134,7 @@ class SupervisoryControl(Env):
 
         # Initialize the RL training related parameters
         self._steps = None
-        self.ep_len = 200
+        self.ep_len = int(2*self._total_reading_words)
         self._epsilon = 1e-100
 
         # Define the observation space
@@ -143,6 +143,7 @@ class SupervisoryControl(Env):
 
         # Define the action space - the attention allocation: reading on smart glasses (0) or reading on the environment (1)
         self.action_space = Box(low=-1, high=1, shape=(1,))
+        self._ZERO_THRESHOLD = 0
 
         # Initialize the pre-trained middle level RL models when testing the supervisory control
         if self._config['rl']['mode'] == 'test':
@@ -209,8 +210,9 @@ class SupervisoryControl(Env):
             # self._bg_event_interval_noise = self._bg_event_interval * self._rho_bg_event_interval_noise     # Not need this now
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
-            self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
-                                                          self._reading_task_weight_range[1])
+            # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            #                                               self._reading_task_weight_range[1])
+            self._reading_task_weight = 0.5     # Start from the simple case
             self._walking_task_weight = 1 - self._reading_task_weight
 
             self._update_beliefs()
@@ -231,11 +233,12 @@ class SupervisoryControl(Env):
     def step(self, action):
 
         # Action a - decision-making on every time step
-        action = np.normalize(action, -1, 1, -1, 1)
-        if action <= 0:
+        if action[0] <= self._ZERO_THRESHOLD:
             self._attention_switch_to_background = False
+            action_name = 'continue_reading'
         else:
             self._attention_switch_to_background = True
+            action_name = 'switch_to_background'
 
         # State s'
         self._steps += 1
@@ -294,6 +297,15 @@ class SupervisoryControl(Env):
         terminate = False
         if self._steps >= self.ep_len or self._reading_progress_word_wise >= self._total_reading_words:
             terminate = True
+
+        if self._config['rl']['mode'] == 'debug':
+            print(f"The action name is {action_name}, the action value is {action}, \n"
+                  f"The step is {self._steps}, \n"
+                  f"The reading progress is {self._reading_progress_word_wise}, "
+                  f"the reading content layout name is {self._reading_content_layout_name}, "
+                  f"the background event frequency is {self._background_event_interval}\n"
+                  f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event} \n"
+                  f"The reward is {reward}, \n")
 
         return self._get_obs(), reward, terminate, {}
 
@@ -393,12 +405,12 @@ class SupervisoryControl(Env):
         if self._reading_progress_word_wise > self._prev_reading_progress_word_wise:
             reward_reading_making_progress = 1
         else:
-            reward_reading_making_progress = 0
+            reward_reading_making_progress = -1
 
         if self._attention_switch_to_background:
-            reward_attention_switch_time_cost = -0.05   # Can be proportional to the time cost
-            reward_word_selection_time_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_time_cost, -1, 1, 0.1, 0.25)
-            reward_word_selection_error_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_error_cost, -1, 1, 0.1, 0.25)
+            reward_attention_switch_time_cost = -1   # Can be proportional to the time cost
+            reward_word_selection_time_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_time_cost, -1, 1, 0.5, 1)
+            reward_word_selection_error_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_error_cost, -1, 1, 0.5, 1)
         else:
             reward_attention_switch_time_cost = 0
             reward_word_selection_time_cost = 0
