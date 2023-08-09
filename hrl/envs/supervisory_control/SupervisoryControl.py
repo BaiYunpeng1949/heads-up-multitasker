@@ -71,8 +71,8 @@ class SupervisoryControl(Env):
         self._reading_task_weight = None
         self._walking_task_weight = None
         self._total_reading_words = 100   # The number of cells/words that needed to be read
-        self._reading_progress_word_wise = None
-        self._prev_reading_progress_word_wise = None
+        self._word_wise_reading_progress = None
+        self._prev_word_wise_reading_progress = None
         self._MARGINS = 'margins'
         self._MIDDLE = 'middle'
         self._reading_positions = {
@@ -104,6 +104,7 @@ class SupervisoryControl(Env):
         self._background_last_check_step_wise_threshold = 10
         self._background_last_check_flag = None
         self._prev_background_last_check_step = None
+        self._background_last_check_duration = None
 
         self._background_last_check_with_different_event_flags = {
             self._RECENT: -1,
@@ -114,18 +115,21 @@ class SupervisoryControl(Env):
         self._observed_background_event = None
         self._prev_observed_background_event = None
         self._prev_background_last_check_with_different_event_step = None
+        self._background_last_check_with_different_event_duration = None
 
         # Initialize the walking task environment related parameters
         self._attention_switch_to_background = None
         # Step-wise background information update frequency levels
         self._SHORT = 'short'
+        self._MIDDLE = 'middle'
         self._LONG = 'long'
         self._background_event_intervals = {
             self._SHORT: 10,
-            self._LONG: 20,
+            self._MIDDLE: 20,
+            self._LONG: 30,
         }
         self._background_event_interval_level = None
-        self._rho_bg_event_interval_noise = 0.25
+        self._rho_bg_event_interval_noise = 0.25    # TODO if without the noise it can learn well, then apply noises to disturb the agent's actions
         self._background_event_interval = None
         self._bg_event_interval_noise = None
 
@@ -180,8 +184,8 @@ class SupervisoryControl(Env):
             # Embed the middle level task models into the supervisory control model
             # TODO trial test first, if everything is running correctly, then use the pre-trained models
             # Reset the reading task related parameters
-            self._reading_progress_word_wise = 0
-            self._prev_reading_progress_word_wise = 0
+            self._word_wise_reading_progress = 0
+            self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
             self._reading_content_layout_name = self._L100
@@ -195,9 +199,12 @@ class SupervisoryControl(Env):
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
             self._prev_background_last_check_step = 0
+            self._background_last_check_duration = 0
+
             self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
             self._prev_observed_background_event = self._background_last_check_with_different_event_flag
             self._prev_background_last_check_with_different_event_step = 0
+            self._background_last_check_with_different_event_duration = 0
 
             # Randomly initialize the attention allocation
             self._attention_switch_to_background = False
@@ -216,8 +223,8 @@ class SupervisoryControl(Env):
         # For the training mode, only focus on this model, deploy a lot of stochasticity
         else:
             # Reset the reading task related parameters
-            self._reading_progress_word_wise = 0
-            self._prev_reading_progress_word_wise = 0
+            self._word_wise_reading_progress = 0
+            self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
             self._reading_content_layout_name = np.random.choice(list(self._reading_content_layouts.keys()))
@@ -230,8 +237,10 @@ class SupervisoryControl(Env):
             self._prev_background_event_step = 0
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+            self._background_last_check_duration = 0
             self._prev_background_last_check_step = 0
             self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+            self._background_last_check_with_different_event_duration = 0
             self._prev_observed_background_event = self._background_last_check_with_different_event_flag
             self._prev_background_last_check_with_different_event_step = 0
 
@@ -287,15 +296,15 @@ class SupervisoryControl(Env):
             if self._config['rl']['mode'] == 'test':
                 # TODO Call the pre-trained RL models - Maybe a simple MDP reading model + ocular motor control,
                 #  Modify later
-                self._prev_reading_progress_word_wise = self._reading_progress_word_wise
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
                 # Continue the reading task, read one more cells/words
-                self._reading_progress_word_wise += 1
+                self._word_wise_reading_progress += 1
                 # Update the reading position
                 self._update_reading_position()
             else:
-                self._prev_reading_progress_word_wise = self._reading_progress_word_wise
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
                 # Continue the reading task, read one more cells/words
-                self._reading_progress_word_wise += 1
+                self._word_wise_reading_progress += 1
                 # Update the reading position
                 self._update_reading_position()
         # Switch attention to the environment, interrupt the reading task
@@ -305,6 +314,8 @@ class SupervisoryControl(Env):
                 # TODO Call the pre-trained RL models - Modify later
                 #  1.RHS: sign read + ocular motor control + locomotion control
                 #  2.LHS: word selection + ocular motor control
+                # Update the previous reading progress
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
                 # Update the background last check - no matter whether observe a changed event instruction of not
                 self._prev_background_last_check_step = self._steps
                 # Update the observation of the background event
@@ -321,6 +332,8 @@ class SupervisoryControl(Env):
                     self._update_word_selection_costs()
             # All other non-testing modes
             else:
+                # Update the previous reading progress
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
                 # Update the background last check - no matter whether observe a changed event instruction of not
                 self._prev_background_last_check_step = self._steps
                 # Update the observation of the background event
@@ -347,7 +360,7 @@ class SupervisoryControl(Env):
 
         # Termination
         terminate = False
-        if self._steps >= self.ep_len or self._reading_progress_word_wise >= self._total_reading_words:
+        if self._steps >= self.ep_len or self._word_wise_reading_progress >= self._total_reading_words:
             terminate = True
 
         if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
@@ -355,7 +368,7 @@ class SupervisoryControl(Env):
                   f"the background event interval is {self._background_event_interval}\n"
                   f"The action name is {action_name}, the action value is {action}, \n"
                   f"The step is {self._steps}, \n"
-                  f"The reading progress is {self._reading_progress_word_wise}, "
+                  f"The reading progress is {self._word_wise_reading_progress}, "
                   f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
                   f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event} \n"
                   f"The reward is {reward}, \n")
@@ -370,11 +383,13 @@ class SupervisoryControl(Env):
     def _get_obs(self):
         # Get the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
-        event_update_freq_norm = -1 if self._background_event_interval_level == self._SHORT else 1
+        # Explicitly tell the agent the selected background event update intervals
+        event_update_interval_norm = self.normalise(self._background_event_interval, 0, self.ep_len, -1, 1)
+        # event_update_interval_norm = -1 if self._background_event_interval_level==self._SHORT else 1
         # Get the belief observation - normalize to [-1, 1]
         belief = self._beliefs.copy()
 
-        stateful_info = np.array([remaining_ep_len_norm, event_update_freq_norm, *belief])
+        stateful_info = np.array([remaining_ep_len_norm, event_update_interval_norm, *belief])
 
         # Observation space check
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -398,7 +413,7 @@ class SupervisoryControl(Env):
 
     def _update_reading_position(self):
         # Get the remains in a page
-        page_remain = self._reading_progress_word_wise % self._reading_content_per_page['num_words']
+        page_remain = self._word_wise_reading_progress % self._reading_content_per_page['num_words']
         # If the remains is 0, means the agent has finished reading a page, then the reading position is at the margin
         if page_remain == 0:
             reading_position_key = self._MARGINS
@@ -436,9 +451,12 @@ class SupervisoryControl(Env):
         else:
             self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
 
+        self._background_last_check_duration = self._steps - self._prev_background_last_check_step
+        self._background_last_check_with_different_event_duration = self._steps - self._prev_background_last_check_with_different_event_step
+
     def _update_beliefs(self):
         # Update the LHS's reading related beliefs, containing the reading progress, reading position, estimated costs of switching attention
-        reading_progress_norm = self.normalise(self._reading_progress_word_wise, 0, self._total_reading_words, -1, 1)
+        reading_progress_norm = self.normalise(self._word_wise_reading_progress, 0, self._total_reading_words, -1, 1)
         reading_position_norm = self._reading_position
         reading_content_layout_norm = self._reading_content_layouts[self._reading_content_layout_name]
         word_selection_time_cost_norm = self._word_selection_time_cost * self._reading_position_cost_factor
@@ -447,21 +465,21 @@ class SupervisoryControl(Env):
                                    word_selection_time_cost_norm, word_selection_error_cost_norm]
 
         # Update the RHS's environmental awareness/Walking related beliefs
-        background_last_check_norm = self._background_last_check_flag
-        background_last_check_with_different_event_norm = self._background_last_check_with_different_event_flag
+        background_last_check_duration_norm = self.normalise(self._background_last_check_duration, 0, self.ep_len, -1, 1)
+        background_last_check_with_different_event_duration_norm = self.normalise(self._background_last_check_with_different_event_duration, 0, self.ep_len, -1, 1)
         walking_lane_norm = self._walking_lane
-        walking_related_beliefs = [background_last_check_norm, background_last_check_with_different_event_norm, walking_lane_norm]
+        walking_related_beliefs = [background_last_check_duration_norm,
+                                   background_last_check_with_different_event_duration_norm, walking_lane_norm]
 
         # Update the beliefs
         self._beliefs = reading_related_beliefs + walking_related_beliefs
 
     def _get_reward(self, reward=0):
         # Customized reward function, coefficients are to be tuned/modified
-        if self._reading_progress_word_wise > self._prev_reading_progress_word_wise:
+        if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
             reward_reading_making_progress = 1
         else:
             reward_reading_making_progress = -1
-            # TODO increase the penalty, or in the long intervals, the agent will keep checking the environment
 
         if self._attention_switch_to_background:
             reward_attention_switch_time_cost = -1   # Can be proportional to the time cost
@@ -479,7 +497,12 @@ class SupervisoryControl(Env):
 
         reward += \
             self._reading_task_weight * (reward_reading_making_progress + reward_word_selection_time_cost + reward_word_selection_error_cost) + \
-            self._walking_task_weight * reward_walk_on_correct_lane + \
-            reward_attention_switch_time_cost
+            self._walking_task_weight * reward_walk_on_correct_lane + reward_attention_switch_time_cost
+
+        # TODO debug
+        print(f"self._reading_task_weight: {self._reading_task_weight}, reward_reading_making_progress: {reward_reading_making_progress}, \n"
+              f"reward_word_selection_time_cost: {reward_word_selection_time_cost}, reward_word_selection_error_cost: {reward_word_selection_error_cost}\n"
+              f"self._walking_task_weight: {self._walking_task_weight}, reward_walk_on_correct_lane: {reward_walk_on_correct_lane}, "
+              f"reward_attention_switch_time_cost: {reward_attention_switch_time_cost}\n")
 
         return reward
