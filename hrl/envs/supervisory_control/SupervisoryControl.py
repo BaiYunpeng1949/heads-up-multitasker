@@ -188,7 +188,7 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L100
+            self._reading_content_layout_name = self._L0
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
@@ -210,7 +210,7 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
 
             # Randomly initialize the background information update frequency level
-            self._background_event_interval_level = self._LONG
+            self._background_event_interval_level = self._SHORT
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
@@ -412,7 +412,7 @@ class SupervisoryControl(Env):
             self._prev_background_event_step = self._steps
 
     def _update_reading_position(self):
-        # Get the remains in a page
+        # Get the remains in a page     FIXME some bugs here, mar mid mid mid mar
         page_remain = self._word_wise_reading_progress % self._reading_content_per_page['num_words']
         # If the remains is 0, means the agent has finished reading a page, then the reading position is at the margin
         if page_remain == 0:
@@ -475,6 +475,7 @@ class SupervisoryControl(Env):
         self._beliefs = reading_related_beliefs + walking_related_beliefs
 
     def _get_reward(self, reward=0):
+        # TODO get the reward penalty of switching attention smaller than walking on an incorrect lane
         # Customized reward function, coefficients are to be tuned/modified
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
             reward_reading_making_progress = 1
