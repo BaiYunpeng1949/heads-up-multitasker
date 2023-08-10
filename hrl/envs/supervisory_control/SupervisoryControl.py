@@ -192,7 +192,7 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L0
+            self._reading_content_layout_name = self._L100
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
@@ -529,7 +529,7 @@ class SupervisoryControl(Env):
 
         # Customized reward function, coefficients are to be tuned/modified
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
-            reward_reading_making_progress = 2
+            reward_reading_making_progress = 4
         else:
             reward_reading_making_progress = 0
 
