@@ -94,6 +94,7 @@ class SupervisoryControl(Env):
         self._prev_background_event_step = None
 
         self._walking_lane = None
+        self._steps_on_incorrect_lane = None
 
         self._RECENT = 'recent'
         self._DISTANT = 'distant'
@@ -188,13 +189,14 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L0
+            self._reading_content_layout_name = self._L50
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
             # Reset the walking and background related parameters
             self._background_event = np.random.choice(list(self._background_events.values()))
             self._walking_lane = self._background_event
+            self._steps_on_incorrect_lane = 0
             self._prev_background_event_step = 0
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
@@ -234,6 +236,7 @@ class SupervisoryControl(Env):
             # Reset the walking and background related parameters
             self._background_event = np.random.choice(list(self._background_events.values()))
             self._walking_lane = self._background_event
+            self._steps_on_incorrect_lane = 0
             self._prev_background_event_step = 0
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
@@ -348,6 +351,9 @@ class SupervisoryControl(Env):
         # Update the step relevant flags
         self._update_background_check_flags()
 
+        # Update the steps on the incorrect lane
+        self._steps_on_incorrect_lane += 1 if self._walking_lane != self._background_event else 0
+
         # Update beliefs
         self._update_beliefs()
 
@@ -366,7 +372,8 @@ class SupervisoryControl(Env):
                   f"The step is {self._steps}, \n"
                   f"The reading progress is {self._word_wise_reading_progress}, "
                   f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
-                  f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event} \n"
+                  f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event}, "
+                  f"the total steps of walking incorrectly: {self._steps_on_incorrect_lane}\n"
                   f"The reward is {reward}, \n")
 
         return self._get_obs(), reward, terminate, {}
@@ -475,6 +482,9 @@ class SupervisoryControl(Env):
             reward_reading_making_progress = 1
         else:
             reward_reading_making_progress = 0
+            # FIXME this is not a good reward function, otherwise will keep walking since he has no punishment for not reading,
+            #  change it to an increasing punishment too, for a short time of making no progress that is okay,
+            #  but for a long time of making no progress, it should be punished heavily
 
         # Make sure that the attention switch cost and reading resumption cost are not too high; otherwise,
         #   they will overshadow the other rewards and deter the agent from ever switching attention.
@@ -498,6 +508,11 @@ class SupervisoryControl(Env):
         reward += \
             self._reading_task_weight * (reward_reading_making_progress + reward_word_selection_time_cost + reward_word_selection_error_cost) + \
             self._walking_task_weight * reward_walk_on_correct_lane + reward_attention_switch_time_cost
+
+        # TODO modify the reward function:
+        #  1. reading: get information, reward, otherwise, no reward - 0
+        #  2. walking: walking on the correct lane, nothing - 0, walking on the wrong lane, punishment - 1
+        #  3. attention switch: costs. But need to be scaled up.
 
         if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
             print(f"The reward components are:\n"
