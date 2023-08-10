@@ -144,6 +144,7 @@ class SupervisoryControl(Env):
         self._steps = None
         self.ep_len = int(2*self._total_reading_words)
         self._epsilon = 1e-100
+        self._info = None
 
         # Define the observation space
         self._num_stateful_info = 12
@@ -191,7 +192,7 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L100
+            self._reading_content_layout_name = self._L0
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
@@ -216,7 +217,7 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
 
             # Randomly initialize the background information update frequency level
-            self._background_event_interval_level = self._LONG
+            self._background_event_interval_level = self._SHORT
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
@@ -226,6 +227,18 @@ class SupervisoryControl(Env):
             self._walking_task_weight = 1 - self._reading_task_weight
 
             self._update_beliefs()
+
+            self._info = {
+                'num_attention_switches': 0,
+                'attention_switch_timesteps': [],
+                'total_timesteps': 0,
+                'num_steps_on_incorrect_lane': 0,
+                'num_attention_switches_on_margins': 0,
+                'num_attention_switches_on_middle': 0,
+                'reading_speed': 0,
+                'layout': self._reading_content_layout_name,
+                'event interval': self._background_event_interval_level,
+            }
         # For the training mode, only focus on this model, deploy a lot of stochasticity
         else:
             # Reset the reading task related parameters
@@ -270,13 +283,15 @@ class SupervisoryControl(Env):
 
             self._update_beliefs()
 
-            # Initialize the reading task belief and walking task belief,
-            #  the belief describes the possibility of sampling a state, here, the state is
-            # The reading task belief contains information including the cost of switching the task estimation -
-            #   it describes how easily it is to pick up the word correctly after the attention is switched back to words,
-            #   the higher the belief value, the easier it is to pick up the word
-            # The walking task belief contains information including the possibility of the lane instruction has changed,
-            #   the higher the belief value, the higher the possibility of the lane instruction has changed
+            self._info = {
+                'num_attention_switches': 0,
+                'attention_switch_timesteps': [],
+                'total_timesteps': 0,
+                'num_steps_on_incorrect_lane': 0,
+                'num_attention_switches_on_margins': 0,
+                'num_attention_switches_on_middle': 0,
+                'reading_speed': 0,
+            }
 
         return self._get_obs()
 
@@ -292,6 +307,13 @@ class SupervisoryControl(Env):
         else:
             self._attention_switch_to_background = True
             action_name = 'switch_to_background'
+            # Log the data
+            self._info['attention_switch_timesteps'].append(self._steps)
+            self._info['num_attention_switches'] += 1
+            if self._reading_position == self._reading_positions[self._MARGINS]:
+                self._info['num_attention_switches_on_margins'] += 1
+            else:
+                self._info['num_attention_switches_on_middle'] += 1
 
         # State s'
         self._steps += 1
@@ -364,7 +386,7 @@ class SupervisoryControl(Env):
         self._update_background_check_flags()
 
         # Update the steps on the incorrect lane
-        self._total_steps_on_incorrect_lane += 1 if self._walking_lane != self._background_event else 0
+        self._info['num_steps_on_incorrect_lane'] += 1 if self._walking_lane != self._background_event else 0
 
         # Update the steps on the current lane
         self._steps_on_current_lane += 1
@@ -379,6 +401,8 @@ class SupervisoryControl(Env):
         terminate = False
         if self._steps >= self.ep_len or self._word_wise_reading_progress >= self._total_reading_words:
             terminate = True
+            self._info['reading_speed'] = np.round(self._word_wise_reading_progress / self._steps, 4)
+            self._info['total_timesteps'] = self._steps
 
         if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
             print(f"The reading content layout name is {self._reading_content_layout_name}, "
@@ -391,7 +415,9 @@ class SupervisoryControl(Env):
                   f"the total steps of walking incorrectly: {self._total_steps_on_incorrect_lane}\n"
                   f"The reward is {reward}, \n")
 
-        return self._get_obs(), reward, terminate, {}
+        return self._get_obs(), reward, terminate, self._info
+
+    # TODO Prepare to collect data for drawing the trajectory of the attention switches
 
     @staticmethod
     def normalise(x, x_min, x_max, a, b):
@@ -534,6 +560,8 @@ class SupervisoryControl(Env):
                 reward_word_selection_error_cost
         )
         reward += reward_time_cost + reward_reading + reward_walking + reward_attention_switch
+
+        # TODO to further differentiate different layouts, scale up the weight and range of the word selection costs
 
         if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
             print(f"The reward components are:\n"
