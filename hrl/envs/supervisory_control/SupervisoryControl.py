@@ -477,42 +477,45 @@ class SupervisoryControl(Env):
 
     def _get_reward(self, reward=0):
 
+        # Define the tunable attention switch factor
+        attention_switch_coefficient = 0.5
+
+        # Time cost for being there
+        reward_time_cost = -0.1
+
         # Customized reward function, coefficients are to be tuned/modified
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
-            reward_reading_making_progress = 1
+            reward_reading_making_progress = 2
         else:
             reward_reading_making_progress = 0
-            # FIXME this is not a good reward function, otherwise will keep walking since he has no punishment for not reading,
-            #  change it to an increasing punishment too, for a short time of making no progress that is okay,
-            #  but for a long time of making no progress, it should be punished heavily
 
         # Make sure that the attention switch cost and reading resumption cost are not too high; otherwise,
         #   they will overshadow the other rewards and deter the agent from ever switching attention.
         if self._attention_switch_to_background:
-            reward_attention_switch_time_cost = -0.25   # Can be proportional to the time cost
+            reward_attention_switch_cost = -0.25   # Can be proportional to the time cost
             reward_word_selection_time_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_time_cost, -1, 1, 0.1, 0.25)
             reward_word_selection_error_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_error_cost, -1, 1, 0.1, 0.25)
         else:
-            reward_attention_switch_time_cost = 0
+            reward_attention_switch_cost = 0
             reward_word_selection_time_cost = 0
             reward_word_selection_error_cost = 0
 
         if self._walking_lane == self._background_event:
-            reward_walk_on_correct_lane = 1
+            reward_walk_on_correct_lane = 0
         else:
             # Capture the nuances of multitasking behavior.
             #   An agent who hasn't checked the environment for a very long time might receive a bigger penalty if they are in the wrong lane.
             time_elapsed = self._background_last_check_duration
-            reward_walk_on_correct_lane = -1 + 5 * (np.exp(-0.04 * time_elapsed) - 1)
+            reward_walk_on_correct_lane = 0.5 * (-1 + 5 * (np.exp(-0.04 * time_elapsed) - 1))
 
-        reward += \
-            self._reading_task_weight * (reward_reading_making_progress + reward_word_selection_time_cost + reward_word_selection_error_cost) + \
-            self._walking_task_weight * reward_walk_on_correct_lane + reward_attention_switch_time_cost
-
-        # TODO modify the reward function:
-        #  1. reading: get information, reward, otherwise, no reward - 0
-        #  2. walking: walking on the correct lane, nothing - 0, walking on the wrong lane, punishment - 1
-        #  3. attention switch: costs. But need to be scaled up.
+        reward_reading = self._reading_task_weight * reward_reading_making_progress
+        reward_walking = self._walking_task_weight * reward_walk_on_correct_lane
+        reward_attention_switch = attention_switch_coefficient * (
+                reward_attention_switch_cost +
+                reward_word_selection_time_cost +
+                reward_word_selection_error_cost
+        )
+        reward += reward_time_cost + reward_reading + reward_walking + reward_attention_switch
 
         if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
             print(f"The reward components are:\n"
@@ -520,7 +523,7 @@ class SupervisoryControl(Env):
                   f"reward_word_selection_time_cost: {reward_word_selection_time_cost}\n"
                   f"reward_word_selection_error_cost: {reward_word_selection_error_cost}\n"
                   f"reward_walk_on_correct_lane: {reward_walk_on_correct_lane}\n"
-                  f"reward_attention_switch_time_cost: {reward_attention_switch_time_cost}\n"
+                  f"reward_attention_switch_cost: {reward_attention_switch_cost}, reward_time_cost: {reward_time_cost}\n"
                   f"reward: {reward}\n")
 
         return reward
