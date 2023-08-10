@@ -94,7 +94,9 @@ class SupervisoryControl(Env):
         self._prev_background_event_step = None
 
         self._walking_lane = None
-        self._steps_on_incorrect_lane = None
+        self._prev_walking_lane = None
+        self._steps_on_current_lane = None
+        self._total_steps_on_incorrect_lane = None
 
         self._RECENT = 'recent'
         self._DISTANT = 'distant'
@@ -189,14 +191,16 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L50
+            self._reading_content_layout_name = self._L100
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
             # Reset the walking and background related parameters
             self._background_event = np.random.choice(list(self._background_events.values()))
             self._walking_lane = self._background_event
-            self._steps_on_incorrect_lane = 0
+            self._prev_walking_lane = self._walking_lane
+            self._steps_on_current_lane = 0
+            self._total_steps_on_incorrect_lane = 0
             self._prev_background_event_step = 0
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
@@ -212,7 +216,7 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
 
             # Randomly initialize the background information update frequency level
-            self._background_event_interval_level = self._SHORT
+            self._background_event_interval_level = self._LONG
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
@@ -236,7 +240,9 @@ class SupervisoryControl(Env):
             # Reset the walking and background related parameters
             self._background_event = np.random.choice(list(self._background_events.values()))
             self._walking_lane = self._background_event
-            self._steps_on_incorrect_lane = 0
+            self._prev_walking_lane = self._walking_lane
+            self._total_steps_on_incorrect_lane = 0
+            self._steps_on_current_lane = 0
             self._prev_background_event_step = 0
             self._observed_background_event = self._background_event
             self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
@@ -326,6 +332,9 @@ class SupervisoryControl(Env):
 
                     # The background information has been read, then move to the correct lane
                     self._walking_lane = self._background_event
+                    if self._prev_walking_lane != self._walking_lane:
+                        self._steps_on_current_lane = 0
+                        self._prev_walking_lane = self._walking_lane
 
                     # Resume reading - word selection
                     self._update_word_selection_costs()
@@ -344,6 +353,9 @@ class SupervisoryControl(Env):
 
                     # The background information has been read, then move to the correct lane
                     self._walking_lane = self._background_event
+                    if self._prev_walking_lane != self._walking_lane:
+                        self._steps_on_current_lane = 0
+                        self._prev_walking_lane = self._walking_lane
 
                     # Resume reading - word selection
                     self._update_word_selection_costs()
@@ -352,7 +364,10 @@ class SupervisoryControl(Env):
         self._update_background_check_flags()
 
         # Update the steps on the incorrect lane
-        self._steps_on_incorrect_lane += 1 if self._walking_lane != self._background_event else 0
+        self._total_steps_on_incorrect_lane += 1 if self._walking_lane != self._background_event else 0
+
+        # Update the steps on the current lane
+        self._steps_on_current_lane += 1
 
         # Update beliefs
         self._update_beliefs()
@@ -373,7 +388,7 @@ class SupervisoryControl(Env):
                   f"The reading progress is {self._word_wise_reading_progress}, "
                   f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
                   f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event}, "
-                  f"the total steps of walking incorrectly: {self._steps_on_incorrect_lane}\n"
+                  f"the total steps of walking incorrectly: {self._total_steps_on_incorrect_lane}\n"
                   f"The reward is {reward}, \n")
 
         return self._get_obs(), reward, terminate, {}
@@ -469,6 +484,9 @@ class SupervisoryControl(Env):
         background_last_check_duration_norm = self.normalise(self._background_last_check_duration, 0, self.ep_len, -1, 1)
         background_last_check_with_different_event_duration_norm = self.normalise(self._background_last_check_with_different_event_duration, 0, self.ep_len, -1, 1)
         walking_lane_norm = self._walking_lane
+        # TODO add the steps on the current lane in later, maybe it can speed up the training,
+        #  since with this, the agent just need to map between the steps on the current lane and the event update interval
+        steps_on_current_lane_norm = self.normalise(self._steps_on_current_lane, 0, self.ep_len, -1, 1)
         walking_related_beliefs = [background_last_check_duration_norm,
                                    background_last_check_with_different_event_duration_norm, walking_lane_norm]
 
