@@ -217,7 +217,7 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
 
             # Randomly initialize the background information update frequency level
-            self._background_event_interval_level = self._SHORT
+            self._background_event_interval_level = self._LONG
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
