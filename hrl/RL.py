@@ -513,9 +513,9 @@ class RL:
                     imgs.append(self._env.omc_images)
                 elif isinstance(self._env, SupervisoryControl):
                     ep_info['num_attention_switches'] += info['num_attention_switches']
-                    ep_info['num_steps_on_incorrect_lane'] += info['num_steps_on_incorrect_lane']
                     ep_info['num_attention_switches_on_margins'] += info['num_attention_switches_on_margins']
                     ep_info['num_attention_switches_on_middle'] += info['num_attention_switches_on_middle']
+                    ep_info['num_steps_on_incorrect_lane'] += info['num_steps_on_incorrect_lane']
                     ep_info['reading_speed'] += info['reading_speed']
                     ep_info['layout'] = info['layout']
                     ep_info['event interval'] = info['event interval']
@@ -528,9 +528,9 @@ class RL:
             if isinstance(self._env, SupervisoryControl):
                 print(f"The number of episodes is {self._num_episodes}, the current condition is: {ep_info['layout']} and {ep_info['event interval']}\n"
                       f"The average number of attention switches is {ep_info['num_attention_switches'] / self._num_episodes}\n"
-                      f"The average number of steps on incorrect lane is {ep_info['num_steps_on_incorrect_lane'] / self._num_episodes}\n"
-                      f"The average number of attention switches on margins is {ep_info['num_attention_switches_on_margins'] / self._num_episodes}\n"
+                      f"The average number of attention switches on margins is {ep_info['num_attention_switches_on_margins'] / self._num_episodes}\n"       
                       f"The average number of attention switches on middle is {ep_info['num_attention_switches_on_middle'] / self._num_episodes}\n"
+                      f"The average number of steps on incorrect lane is {ep_info['num_steps_on_incorrect_lane'] / self._num_episodes}\n"
                       f"The average reading speed is {ep_info['reading_speed'] / self._num_episodes}\n")
 
             return imgs, imgs_eye

@@ -192,7 +192,7 @@ class SupervisoryControl(Env):
             self._prev_word_wise_reading_progress = 0
             self._reading_position = self._reading_positions[self._MARGINS]
             self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
-            self._reading_content_layout_name = self._L100
+            self._reading_content_layout_name = self._L50
             self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
             self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
 
@@ -217,7 +217,7 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
 
             # Randomly initialize the background information update frequency level
-            self._background_event_interval_level = self._LONG
+            self._background_event_interval_level = self._MIDDLE
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
@@ -525,8 +525,9 @@ class SupervisoryControl(Env):
         reward_time_cost = -0.1
 
         # Customized reward function, coefficients are to be tuned/modified
+        reading_coefficient = 2
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
-            reward_reading_making_progress = 2
+            reward_reading_making_progress = reading_coefficient * 1
         else:
             reward_reading_making_progress = 0
 
@@ -544,14 +545,14 @@ class SupervisoryControl(Env):
             reward_word_selection_error_cost = 0
 
         # Define the reward related to walking, firstly define the tunable walking task factor
-        walk_factor = 5
+        walk_coefficient = 5
         if self._walking_lane == self._background_event:
             reward_walk_on_correct_lane = 0
         else:
             # Capture the nuances of multitasking behavior.
             #   An agent who hasn't checked the environment for a very long time might receive a bigger penalty if they are in the wrong lane.
             time_elapsed = self._background_last_check_duration
-            reward_walk_on_correct_lane = walk_factor * (-1 + 5 * (np.exp(-0.04 * time_elapsed) - 1))
+            reward_walk_on_correct_lane = walk_coefficient * (-1 + 5 * (np.exp(-0.04 * time_elapsed) - 1))
 
         reward_reading = self._reading_task_weight * reward_reading_making_progress
         reward_walking = self._walking_task_weight * reward_walk_on_correct_lane
