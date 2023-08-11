@@ -534,7 +534,7 @@ class SupervisoryControl(Env):
         # Make sure that the attention switch cost and reading resumption cost are not too high; otherwise,
         #   they will overshadow the other rewards and deter the agent from ever switching attention.
         # Define the tunable attention switch factor
-        attention_switch_coefficient = 1
+        attention_switch_coefficient = 0.01
         if self._attention_switch_to_background:
             reward_attention_switch_cost = -0.25   # Can be proportional to the time cost
             reward_word_selection_time_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_time_cost, -1, 1, 0.1, 0.25)
@@ -545,7 +545,7 @@ class SupervisoryControl(Env):
             reward_word_selection_error_cost = 0
 
         # Define the reward related to walking, firstly define the tunable walking task factor
-        walk_coefficient = 1
+        walk_coefficient = 20
         if self._walking_lane == self._background_event:
             reward_walk_on_correct_lane = 0
         else:
