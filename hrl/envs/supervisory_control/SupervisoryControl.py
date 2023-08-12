@@ -153,6 +153,7 @@ class SupervisoryControl(Env):
         # Define the action space - the attention allocation: reading on smart glasses (0) or reading on the environment (1)
         self.action_space = Box(low=-1, high=1, shape=(1,))
         self._ZERO_THRESHOLD = 0
+        self._action_uncertainty = 0.333
 
         # # Initialize the pre-trained middle level RL models when testing the supervisory control
         # if self._config['rl']['mode'] == 'test':
@@ -306,15 +307,21 @@ class SupervisoryControl(Env):
             self._attention_switch_to_background = False
             action_name = 'continue_reading'
         else:
-            self._attention_switch_to_background = True
-            action_name = 'switch_to_background'
-            # Log the data
-            self._info['attention_switch_timesteps'].append(self._steps)
-            self._info['num_attention_switches'] += 1
-            if self._reading_position == self._reading_positions[self._MARGINS]:
-                self._info['num_attention_switches_on_margins'] += 1
+            # Add uncertainty to agent's decision-making / action
+            switch_attention = np.random.choice([True, False], p=[1-self._action_uncertainty, self._action_uncertainty])
+            if switch_attention:
+                self._attention_switch_to_background = True
+                action_name = 'switch_to_background'
+                # Log the data
+                self._info['attention_switch_timesteps'].append(self._steps)
+                self._info['num_attention_switches'] += 1
+                if self._reading_position == self._reading_positions[self._MARGINS]:
+                    self._info['num_attention_switches_on_margins'] += 1
+                else:
+                    self._info['num_attention_switches_on_middle'] += 1
             else:
-                self._info['num_attention_switches_on_middle'] += 1
+                self._attention_switch_to_background = False
+                action_name = 'continue_reading'
 
         # State s'
         self._steps += 1
