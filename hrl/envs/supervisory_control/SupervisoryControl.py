@@ -131,9 +131,9 @@ class SupervisoryControl(Env):
             self._MIDDLE: 20,
             self._LONG: 30,
         }
+        self._background_event_uncertainty = 0.382
+        self._background_event_update_steps_list = None
         self._background_event_interval_level = None
-        # TODO if without the noise it can learn well, then apply noises to disturb the agent's actions
-        self._rho_bg_event_interval_noise = 0.25
         self._background_event_interval = None
         self._bg_event_interval_noise = None
 
@@ -183,6 +183,8 @@ class SupervisoryControl(Env):
     def reset(self, grid_search_params=None):
 
         self._steps = 0
+
+        self._background_event_update_steps_list = []
 
         # For the test mode, evaluate with the pre-trained RL middle level task models
         if self._config['rl']['mode'] == 'test':
@@ -272,7 +274,6 @@ class SupervisoryControl(Env):
             # Randomly initialize the background information update frequency level
             self._background_event_interval_level = np.random.choice(list(self._background_event_intervals.keys()))
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
-            # self._bg_event_interval_noise = self._bg_event_interval * self._rho_bg_event_interval_noise     # Not need this now
 
             # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
             # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
@@ -413,6 +414,7 @@ class SupervisoryControl(Env):
                   f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
                   f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event}, "
                   f"the total steps of walking incorrectly: {self._total_steps_on_incorrect_lane}\n"
+                  f"The update background event list is {self._background_event_update_steps_list}, \n"
                   f"The reward is {reward}, \n")
 
         return self._get_obs(), reward, terminate, self._info
@@ -451,13 +453,20 @@ class SupervisoryControl(Env):
         # Update the background event updates, we assume when the background events are updated,
         #   if the agent switch its attention on it, the agent can observe it immediately
         if self._steps - self._prev_background_event_step >= self._background_event_interval:
-            prev_background_event = self._background_event
-            # From the current background event, sample a new background event
-            while True:
-                self._background_event = np.random.choice(list(self._background_events.values()))
-                if self._background_event != prev_background_event:
-                    break
-            self._prev_background_event_step = self._steps
+            # Add uncertainty to the background event updates
+            change_event = np.random.choice([True, False],
+                                            p=[1 - self._background_event_uncertainty, self._background_event_uncertainty])
+            if change_event:
+                # Update the background event update steps list
+                self._background_event_update_steps_list.append(self._steps)
+                # Update the previous background event
+                prev_background_event = self._background_event
+                # From the current background event, sample a new background event
+                while True:
+                    self._background_event = np.random.choice(list(self._background_events.values()))
+                    if self._background_event != prev_background_event:
+                        break
+                self._prev_background_event_step = self._steps
 
     def _update_reading_position(self):
         # If the remains is not 0, then determine its position from a sentence's perspective
