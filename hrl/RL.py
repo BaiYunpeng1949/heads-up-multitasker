@@ -1,20 +1,15 @@
 import os
-
 import yaml
-import cv2
 import csv
-import cv2
-from tqdm import tqdm
 import numpy as np
+import pandas as pd
+from datetime import datetime
 from typing import Callable
 
 import gym
 from gym import spaces
-
 import torch as th
 from torch import nn
-
-import pandas as pd
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
@@ -390,6 +385,8 @@ class RL:
         """
         grid_search_perturbation = self._config_rl['test']['grid_search_perturbation']['enable']
         grid_search_selection = self._config_rl['test']['grid_search_selection']['enable']
+        grid_search_supervisory_control = self._config_rl['test']['grid_search_supervisory_control']['enable']
+
         if self._mode == _MODES['debug']:
             print('\nThe MuJoCo env and tasks baseline: ')
         elif self._mode == _MODES['test']:
@@ -398,8 +395,11 @@ class RL:
                 self._grid_search_perturbation()
             if grid_search_selection:
                 self._grid_search_selection()
+            if grid_search_supervisory_control:
+                self._grid_search_supervisory_control()
 
-        if (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
+        if ((grid_search_perturbation or grid_search_selection or grid_search_supervisory_control)
+                and self._mode == _MODES['test']):
             pass
 
         if self._mode == _MODES['debug']:
@@ -446,15 +446,14 @@ class RL:
                 )
             return imgs, imgs_eye
 
-        if not (grid_search_perturbation or grid_search_selection) and self._mode == _MODES['test']:
+        if (not (grid_search_perturbation or grid_search_selection or grid_search_supervisory_control) and
+                self._mode == _MODES['test']):
             imgs = []
             imgs_eye = []
             L100_index_array = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
             L50_index_array = np.array([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
             L0_index_array = np.array([25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])
 
-            # # TODO debug test, delete later
-            # TODO record all individual's data in a csv to get the distribution - error bar
             omc_params = {
                 'cells_mjidxs': L0_index_array,
                 'perturbation_amp_tuning_factor': 0,
@@ -731,6 +730,112 @@ class RL:
             f"\n--------------------------------------------------------------------------------------------"
             f"\nThe grid search results are stored in {csv_save_path}")
 
+    def _grid_search_supervisory_control(self):
+        agent_name = self._config_rl['test']['grid_search_supervisory_control']['agent_name']
+        layouts = self._config_rl['test']['grid_search_supervisory_control']['layouts']
+        event_update_levels = self._config_rl['test']['grid_search_supervisory_control']['event_update_levels']
+        num_episodes = self._config_rl['test']['grid_search_supervisory_control']['num_episodes']
+
+        df_columns = [
+            'agent_name',
+            'layout',
+            'event_update_level',
+            'num_attention_switches',
+            'num_attention_switches_margins',
+            'num_attention_switches_middle',
+            'inform_loss',
+            'reading_speed',
+            'total_steps',
+            'attention_switches_time_steps_list',
+        ]
+
+        # Create or open CSV file with the column headers
+        csv_directory = "envs/supervisory_control/results/"
+        # Get the current time and format it as a string
+        current_time_str = datetime.now().strftime('%m-%d_%H-%M')
+        # Create or open a directory with the current time as its name
+        csv_directory = os.path.join(csv_directory, current_time_str)
+        if not os.path.exists(csv_directory):
+            os.makedirs(csv_directory)
+        csv_save_path = os.path.join(csv_directory, agent_name + "_supervisory_control_results.csv")
+
+        if not os.path.isfile(csv_save_path):
+            with open(csv_save_path, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(df_columns)
+
+        for i in range(len(event_update_levels)):
+            event_update_level = event_update_levels[i]
+            for j in range(len(layouts)):
+                layout = layouts[j]
+
+                params = {
+                    'event_update_level': event_update_level,
+                    'layout': layout,
+                }
+
+                num_attention_switches_list = []
+                num_attention_switches_margins_list = []
+                num_attention_switches_middle_list = []
+                inform_loss_list = []
+                reading_speed_list = []
+                total_steps_list = []
+                attention_switches_time_steps_list_list = []
+
+                for episode in range(1, num_episodes + 1):
+                    obs = self._env.reset(grid_search_params=params)
+                    done = False
+                    score = 0
+                    info = None
+
+                    while not done:
+                        action, _states = self._model.predict(obs, deterministic=True)
+                        obs, reward, done, info = self._env.step(action)
+                        score += reward
+
+                    num_attention_switches_list.append(info['num_attention_switches'])
+                    num_attention_switches_margins_list.append(info['num_attention_switches_on_margins'])
+                    num_attention_switches_middle_list.append(info['num_attention_switches_on_middle'])
+                    inform_loss_list.append(info['num_steps_on_incorrect_lane'])
+                    reading_speed_list.append(info['reading_speed'])
+                    total_steps_list.append(info['total_timesteps'])
+                    attention_switches_time_steps_list_list.append(info['attention_switch_timesteps'])
+
+                    # Save to CSV after each episode is finished
+                    with open(csv_save_path, 'a') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([
+                            agent_name,
+                            layout,
+                            event_update_level,
+                            info['num_attention_switches'],
+                            info['num_attention_switches_on_margins'],
+                            info['num_attention_switches_on_middle'],
+                            info['num_steps_on_incorrect_lane'],
+                            info['reading_speed'],
+                            info['total_timesteps'],
+                            info['attention_switch_timesteps'],
+                        ])
+
+                # # Save to CSV after each cluster of episodes is finished
+                # with open(csv_save_path, 'a') as f:
+                #     writer = csv.writer(f)
+                #     writer.writerow([
+                #         agent_name,
+                #         layout,
+                #         event_update_level,
+                #         num_attention_switches_list,
+                #         num_attention_switches_margins_list,
+                #         num_attention_switches_middle_list,
+                #         inform_loss_list,
+                #         reading_speed_list,
+                #         total_steps_list,
+                #         attention_switches_time_steps_list_list,
+                #     ])
+        print(
+            f"\n--------------------------------------------------------------------------------------------"
+            f"\nThe supervisory control grid search results are stored in {csv_save_path}")
+
     def run(self):
         """
         This method helps run the RL pipeline.
@@ -742,7 +847,8 @@ class RL:
         elif self._mode == _MODES['continual_train']:
             self._continual_train()
         elif self._mode == _MODES['test'] or self._mode == _MODES['debug']:
-            if self._config_rl['test']['grid_search_selection']['enable'] and self._mode == _MODES['test']:
+            if (self._config_rl['test']['grid_search_selection']['enable'] or self._config_rl['test']['grid_search_supervisory_control']['enable']
+                    and self._mode == _MODES['test']):
                 self._test()
             else:
                 print(f"HRL testing. The video is being generated.")

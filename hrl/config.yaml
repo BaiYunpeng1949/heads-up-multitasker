@@ -5,7 +5,7 @@ rl:
 
   train:
     total_timesteps: 100000000
-    checkpoints_folder_name: 0811_hrl_supervisory_control_100m_3
+    checkpoints_folder_name: 0810_hrl_supervisory_control_100m_2
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # Don't change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -22,7 +22,7 @@ rl:
 
   test:
     num_episodes: 100
-    loaded_model_name: 'rl_model_25000000_steps'
+    loaded_model_name: 'rl_model_30000000_steps'
     continual_logs_name: 'PPO_201'
     grid_search_perturbation:
       enable: False
@@ -37,3 +37,9 @@ rl:
       spatial_dist_coeff: [[2, 10], 0.5]
       layouts: ['L0', 'L50', 'L100']
       num_episodes: 50
+    grid_search_supervisory_control:
+      enable: True
+      agent_name: 'agent_a'   # 'agent a' or 'agent b' or 'agent c'
+      layouts: ['L0', 'L50', 'L100']
+      event_update_levels: ['short', 'middle', 'long']
+      num_episodes: 100
