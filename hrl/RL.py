@@ -660,8 +660,6 @@ class RL:
             'error'
         ]
 
-        # TODO record all individual's data in a csv to get the distribution - error bar
-
         # Create or open CSV file with the column headers
         csv_directory = "envs/supervisory_control/results/"
         if not os.path.exists(csv_directory):

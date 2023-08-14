@@ -522,7 +522,7 @@ class RL:
         # error_list = []
         # csv_directory = "envs/mobile_reading/results/"
 
-        df_columns = [
+        aggregate_df_columns = [
             'init_delta_t',
             'init_sigma_position_memory',
             'weight_memory_decay',
@@ -532,7 +532,18 @@ class RL:
             'error'
         ]
 
-        # Create or open CSV file with the column headers
+        individual_df_columns = [
+            'init_delta_t',
+            'init_sigma_position_memory',
+            'weight_memory_decay',
+            'spatial_dist_coeff',
+            'layout',
+            'steps',
+            'error',
+            'gaze_positions_list',
+        ]
+
+        # Create or open CSV file with the column headers - Data collection of the aggregated results across all episodes/individuals
         csv_directory = "envs/mobile_reading/results/"
         if not os.path.exists(csv_directory):
             os.makedirs(csv_directory)
@@ -541,20 +552,24 @@ class RL:
         if not os.path.isfile(csv_save_path):
             with open(csv_save_path, 'w') as f:
                 writer = csv.writer(f)
-                writer.writerow(df_columns)
+                writer.writerow(aggregate_df_columns)
+
+        # Create or open CSV file with the column headers - Data collection of the results for each episode/individual
+        individual_csv_save_path = os.path.join(csv_directory, "selection_individual_data.csv")
+        individual_df_columns = individual_df_columns.copy()
+        individual_df_columns.insert(5, 'episode_num')
+
+        if not os.path.isfile(individual_csv_save_path):
+            with open(individual_csv_save_path, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(individual_df_columns)
 
         for init_delta_t in np.arange(*init_delta_t_range, init_delta_t_stride):
             for init_sigma_position_memory in np.arange(*init_sigma_position_memory_range, init_sigma_position_memory_stride):
                 for weight_memory_decay in np.arange(*weight_memory_decay_range, weight_memory_decay_stride):
                     for spatial_dist_coeff in np.arange(*spatial_dist_coeff_range, spatial_dist_coeff_stride):
                         for i in range(len(layouts)):
-
-                            # init_delta_t_list.append(init_delta_t)
-                            # init_sigma_position_memory_list.append(init_sigma_position_memory)
-                            # weight_memory_decay_list.append(weight_memory_decay)
-                            # spatial_dist_coeff_list.append(spatial_dist_coeff)
                             layout = layouts[i]
-                            # layout_list.append(layout)
 
                             params = {
                                 'init_delta_t': init_delta_t,
@@ -577,6 +592,21 @@ class RL:
                                     action, _states = self._model.predict(obs, deterministic=True)
                                     obs, reward, done, info = self._env.step(action)
                                     score += reward
+
+                                # Save individual episode data to its respective CSV
+                                with open(individual_csv_save_path, 'a') as f:
+                                    writer = csv.writer(f)
+                                    writer.writerow([
+                                        init_delta_t,
+                                        init_sigma_position_memory,
+                                        weight_memory_decay,
+                                        spatial_dist_coeff,
+                                        layout,
+                                        episode,  # Added episode number
+                                        info['steps'],
+                                        info['error'],
+                                        info['gaze_positions_list'],
+                                    ])
 
                                 steps.append(info['steps'])
                                 errors.append(info['error'])
