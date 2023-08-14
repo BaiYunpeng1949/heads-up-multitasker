@@ -41,7 +41,7 @@ class POMDPSelect(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mdp-resume-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "pomdp-resume-read-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -296,6 +296,8 @@ class POMDPSelect(Env):
                     self._gaze_mjidx += 1
             else:
                 raise ValueError(f"The action is not correct! It is: {action_gaze}")
+            # Update the gaze position list
+            self._gaze_positions_list.append(self._gaze_mjidx)
 
         # Update the eye movement - TODO later get it from the low level ocular motor control policy
         xpos = self._data.geom(self._gaze_mjidx).xpos
@@ -306,7 +308,6 @@ class POMDPSelect(Env):
         # Advance the simulation
         mujoco.mj_step(self._model, self._data, self._frame_skip)
         self._steps += 1
-        self._gaze_positions_list.append(self._gaze_mjidx)
 
         # State t+1
         reward = 0
