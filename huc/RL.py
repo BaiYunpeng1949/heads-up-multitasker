@@ -540,6 +540,9 @@ class RL:
             'layout',
             'steps',
             'error',
+            'true_last_word_mjidx',
+            'gaze_positions_list',
+            'true_last_word_memory_list',
             'gaze_positions_list',
         ]
 
@@ -605,6 +608,9 @@ class RL:
                                         episode,  # Added episode number
                                         info['steps'],
                                         info['error'],
+                                        info['true_last_word_mjidx'],
+                                        info['gaze_positions_list'],
+                                        info['true_last_word_memory_list'],
                                         info['gaze_positions_list'],
                                     ])
 

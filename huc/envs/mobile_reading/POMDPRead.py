@@ -31,7 +31,10 @@ from huc.utils.rendering import Camera, Context
 class POMDPSelect(Env):
 
     def __init__(self):
-        """ Model select the last read word from the memory and read it again. Using Bayesian inference """
+        """
+        Model select the last read word from the memory and read it again. Using Bayesian inference
+        This is specially for figure drawing.
+        """
         # Get directory of this file
         directory = os.path.dirname(os.path.realpath(__file__))
 
@@ -82,8 +85,6 @@ class POMDPSelect(Env):
         self._true_last_word_mjidx = None
         # Initialize the gaze mjidx
         self._gaze_mjidx = None
-        # Initialize the gaze positions list
-        self._gaze_positions_list = None
 
         # Initialize the prior probability distribution
         self._prior_prob_dist = None
@@ -139,6 +140,11 @@ class POMDPSelect(Env):
         self._on_target_steps = None
         self.ep_len = 100
 
+        # Initialize some loggers
+        self._true_last_word_memory_list = None
+        self._gaze_word_belief_list = None
+        self._gaze_positions_list = None
+
         # Define the observation space
         width, height = 80, 80
         self._num_stk_frm = 1
@@ -178,7 +184,11 @@ class POMDPSelect(Env):
         # Reset the variables and counters
         self._steps = 0
         self._on_target_steps = 0
+
+        # Reset loggers
         self._gaze_positions_list = []
+        self._gaze_word_belief_list = []
+        self._true_last_word_memory_list = []
 
         # Reset all cells to transparent
         for mjidx in self._ils100_cells_mjidxs:
@@ -299,7 +309,7 @@ class POMDPSelect(Env):
             # Update the gaze position list
             self._gaze_positions_list.append(self._gaze_mjidx)
 
-        # Update the eye movement - TODO later get it from the low level ocular motor control policy
+        # Update the eye movement
         xpos = self._data.geom(self._gaze_mjidx).xpos
         x, y, z = xpos[0], xpos[1], xpos[2]
         self._data.ctrl[self._eye_x_motor_mjidx] = np.arctan(z / y)
@@ -342,19 +352,10 @@ class POMDPSelect(Env):
 
             info['steps'] = self._steps
             info['error'] = euclidean_distance
+            info['true_last_word_mjidx'] = self._true_last_word_mjidx
             info['gaze_positions_list'] = self._gaze_positions_list
-
-        # # TODO debug comment later when training
-        # print(
-        #       f"The action is: {action_gaze}, the steps is: {self._steps},\n"
-        #       f"Finish search is: {finish_search}, the on target step is: {self._on_target_steps}, \n"
-        #       f"The prior probability distribution is: {self._prior_prob_dist},\n"
-        #       f"The likelihood is: {self._likelihood_prob_dist},\n"
-        #       f"The belief is: {self._belief}\n"
-        #
-        #       f"the reward is: {reward}, the gaze position is: {self._gaze_mjidx}, "
-        #       f"the true last word is: {self._true_last_word_mjidx}\n"
-        # )
+            info['true_last_word_memory_list'] = self._true_last_word_memory_list
+            info['gaze_positions_list'] = self._gaze_positions_list
 
         return self._get_obs(), reward, terminate, info
 
@@ -435,6 +436,10 @@ class POMDPSelect(Env):
         # Normalise the prior probability distribution
         self._prior_prob_dist /= np.sum(self._prior_prob_dist)
 
+        # Update the memory decay logger
+        idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
+        self._true_last_word_memory_list.append(memory_decay_prob_dist[idx])
+
     def _get_likelihood(self):
         """
         Calculate the likelihood function: assumption
@@ -470,6 +475,10 @@ class POMDPSelect(Env):
         self._posterior_prob_dist = self._prior_prob_dist.copy() * self._likelihood_prob_dist.copy()
         # Normalization
         self._posterior_prob_dist /= np.sum(self._posterior_prob_dist)
+
+        # Update the memory decay logger
+        idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
+        self._gaze_word_belief_list.append(self._posterior_prob_dist[idx])
 
     def _get_belief(self):
         """Get the belief of the agent's attention distribution"""
