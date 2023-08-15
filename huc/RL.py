@@ -609,7 +609,7 @@ class RL:
                                 #         info['steps'],
                                 #         info['error'],
                                 #         info['true_last_word_mjidx'],
-                                #         info['gaze_positions_list'],
+                                #         info['gaze_word_belief_list'],
                                 #         info['true_last_word_memory_list'],
                                 #         info['gaze_positions_list'],
                                 #     ])

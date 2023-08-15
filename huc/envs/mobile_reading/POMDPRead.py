@@ -353,7 +353,7 @@ class POMDPSelect(Env):
             info['steps'] = self._steps
             info['error'] = euclidean_distance
             info['true_last_word_mjidx'] = self._true_last_word_mjidx
-            info['gaze_positions_list'] = self._gaze_positions_list
+            info['gaze_word_belief_list'] = self._gaze_word_belief_list
             info['true_last_word_memory_list'] = self._true_last_word_memory_list
             info['gaze_positions_list'] = self._gaze_positions_list
 
