@@ -307,7 +307,8 @@ class POMDPSelect(Env):
             else:
                 raise ValueError(f"The action is not correct! It is: {action_gaze}")
             # Update the gaze position list
-            self._gaze_positions_list.append(self._gaze_mjidx)
+            if not finish_search:
+                self._gaze_positions_list.append(self._gaze_mjidx)
 
         # Update the eye movement
         xpos = self._data.geom(self._gaze_mjidx).xpos
@@ -437,8 +438,9 @@ class POMDPSelect(Env):
         self._prior_prob_dist /= np.sum(self._prior_prob_dist)
 
         # Update the memory decay logger
-        idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
-        self._true_last_word_memory_list.append(memory_decay_prob_dist[idx])
+        if self._on_target_steps >= self._dwell_steps:
+            idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
+            self._true_last_word_memory_list.append(memory_decay_prob_dist[idx])
 
     def _get_likelihood(self):
         """
@@ -477,8 +479,9 @@ class POMDPSelect(Env):
         self._posterior_prob_dist /= np.sum(self._posterior_prob_dist)
 
         # Update the memory decay logger
-        idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
-        self._gaze_word_belief_list.append(self._posterior_prob_dist[idx])
+        if self._on_target_steps >= self._dwell_steps:
+            idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
+            self._gaze_word_belief_list.append(self._posterior_prob_dist[idx])
 
     def _get_belief(self):
         """Get the belief of the agent's attention distribution"""
