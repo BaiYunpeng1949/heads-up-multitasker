@@ -144,6 +144,7 @@ class POMDPSelect(Env):
         self._true_last_word_memory_list = None
         self._gaze_word_belief_list = None
         self._gaze_positions_list = None
+        self._all_words_belief_list = None
 
         # Define the observation space
         width, height = 80, 80
@@ -189,6 +190,7 @@ class POMDPSelect(Env):
         self._gaze_positions_list = []
         self._gaze_word_belief_list = []
         self._true_last_word_memory_list = []
+        self._all_words_belief_list = []
 
         # Reset all cells to transparent
         for mjidx in self._ils100_cells_mjidxs:
@@ -357,6 +359,7 @@ class POMDPSelect(Env):
             info['gaze_word_belief_list'] = self._gaze_word_belief_list
             info['true_last_word_memory_list'] = self._true_last_word_memory_list
             info['gaze_positions_list'] = self._gaze_positions_list
+            info['all_words_belief_list'] = self._all_words_belief_list
 
         return self._get_obs(), reward, terminate, info
 
@@ -478,10 +481,12 @@ class POMDPSelect(Env):
         # Normalization
         self._posterior_prob_dist /= np.sum(self._posterior_prob_dist)
 
-        # Update the memory decay logger
+        # Update the gaze belief logger
         if self._on_target_steps >= self._dwell_steps:
             idx = np.where(self._cells_mjidxs == self._gaze_mjidx)[0][0]
             self._gaze_word_belief_list.append(self._posterior_prob_dist[idx])
+            # Update the all words belief logger
+            self._all_words_belief_list.append(self._posterior_prob_dist.copy())
 
     def _get_belief(self):
         """Get the belief of the agent's attention distribution"""

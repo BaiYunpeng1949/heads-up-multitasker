@@ -512,16 +512,6 @@ class RL:
         layouts = self._config_rl['test']['grid_search_selection']['layouts']
         num_episodes = self._config_rl['test']['grid_search_selection']['num_episodes']
 
-        # Initialize the lists for storing parameters
-        init_delta_t_list = []
-        init_sigma_position_memory_list = []
-        weight_memory_decay_list = []
-        spatial_dist_coeff_list = []
-        layout_list = []
-        # steps_list = []
-        # error_list = []
-        # csv_directory = "envs/mobile_reading/results/"
-
         aggregate_df_columns = [
             'init_delta_t',
             'init_sigma_position_memory',
@@ -544,6 +534,7 @@ class RL:
             'gaze_positions_list',
             'true_last_word_memory_list',
             'gaze_positions_list',
+            'all_words_belief_list',
         ]
 
         # Create or open CSV file with the column headers - Data collection of the aggregated results across all episodes/individuals
@@ -596,23 +587,24 @@ class RL:
                                     obs, reward, done, info = self._env.step(action)
                                     score += reward
 
-                                # # Save individual episode data to its respective CSV   Uncomment when necessary
-                                # with open(individual_csv_save_path, 'a') as f:
-                                #     writer = csv.writer(f)
-                                #     writer.writerow([
-                                #         init_delta_t,
-                                #         init_sigma_position_memory,
-                                #         weight_memory_decay,
-                                #         spatial_dist_coeff,
-                                #         layout,
-                                #         episode,  # Added episode number
-                                #         info['steps'],
-                                #         info['error'],
-                                #         info['true_last_word_mjidx'],
-                                #         info['gaze_word_belief_list'],
-                                #         info['true_last_word_memory_list'],
-                                #         info['gaze_positions_list'],
-                                #     ])
+                                # Save individual episode data to its respective CSV   Uncomment when necessary
+                                with open(individual_csv_save_path, 'a') as f:
+                                    writer = csv.writer(f)
+                                    writer.writerow([
+                                        init_delta_t,
+                                        init_sigma_position_memory,
+                                        weight_memory_decay,
+                                        spatial_dist_coeff,
+                                        layout,
+                                        episode,  # Added episode number
+                                        info['steps'],
+                                        info['error'],
+                                        info['true_last_word_mjidx'],
+                                        info['gaze_word_belief_list'],
+                                        info['true_last_word_memory_list'],
+                                        info['gaze_positions_list'],
+                                        info['all_words_belief_list'],
+                                    ])
 
                                 steps.append(info['steps'])
                                 errors.append(info['error'])
@@ -632,24 +624,6 @@ class RL:
                                     avg_steps,
                                     avg_errors
                                 ])
-
-        # # Write parameters and results to a dataframe
-        # df = pd.DataFrame({
-        #     'init_delta_t': init_delta_t_list,
-        #     'init_sigma_position_memory': init_sigma_position_memory_list,
-        #     'weight_memory_decay': weight_memory_decay_list,
-        #     'spatial_dist_coeff': spatial_dist_coeff_list,
-        #     'layout': layout_list,
-        #     'steps': steps_list,
-        #     'error': error_list,
-        # })
-        #
-        # # Save the plot as an image file (e.g., PNG, JPEG, PDF)
-        # directory = csv_directory
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        # csv_save_path = os.path.join(directory, "selection_results.csv")
-        # df.to_csv(csv_save_path, index=False)
         print(
             f"\n--------------------------------------------------------------------------------------------"
             f"\nThe grid search results are stored in {csv_save_path}")
