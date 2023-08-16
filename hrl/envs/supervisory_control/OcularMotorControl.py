@@ -32,7 +32,7 @@ class OcularMotorControl(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model - Remember to change the xml accordingly
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-3layouts-small-font-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "12cells-3layouts-large-font-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -135,7 +135,7 @@ class OcularMotorControl(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 5
+        self._num_stateful_info = 6
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -450,7 +450,7 @@ class OcularMotorControl(Env):
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
 
         # Compute the stateful information observation - normalize to [-1, 1]
-        # remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1 # TODO enable this later
+        remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         # remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
         sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._cells_mjidxs[0],
@@ -468,7 +468,8 @@ class OcularMotorControl(Env):
 
         stateful_info = np.array(
             [remaining_dwell_steps_norm, layout_norm,
-             # remaining_ep_len_norm, remaining_trials_norm,
+             remaining_ep_len_norm,
+             # remaining_trials_norm,
              sampled_target_mjidx_norm, fixation_norm, previous_fixation_norm]
         )
 
