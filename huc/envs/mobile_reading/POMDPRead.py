@@ -350,8 +350,15 @@ class POMDPSelect(Env):
         if self._steps >= self.ep_len or finish_search:
             terminate = True
 
+            # Uncomment later when testing TODO
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
-            reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+            # reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
+
+            # TODO try the sparse and binary reward
+            if self._gaze_mjidx == self._true_last_word_mjidx:
+                reward += 10
+            else:
+                reward += -10
 
             info['steps'] = self._steps
             info['error'] = euclidean_distance
