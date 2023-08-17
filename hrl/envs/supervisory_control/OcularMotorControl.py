@@ -135,7 +135,7 @@ class OcularMotorControl(Env):
         self._num_stk_frm = 1
         self._vision_frames = None
         self._qpos_frames = None
-        self._num_stateful_info = 6
+        self._num_stateful_info = 5
         unwanted_qpos_ctrl = ['locomotion']
         self.observation_space = Dict({
             "vision": Box(low=-1, high=1, shape=(self._num_stk_frm, width, height)),
@@ -470,7 +470,8 @@ class OcularMotorControl(Env):
             [remaining_dwell_steps_norm, layout_norm,
              remaining_ep_len_norm,
              # remaining_trials_norm,
-             sampled_target_mjidx_norm, fixation_norm, previous_fixation_norm]
+             # sampled_target_mjidx_norm,
+             fixation_norm, previous_fixation_norm]
         )
 
         # Observation space check
