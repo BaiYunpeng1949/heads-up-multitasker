@@ -104,13 +104,13 @@ class POMDPSelect(Env):
         # 2s - time spent on the environmental task;
         # 4s - according to empirical results, most word selection time is finished within 2s; 2+2=4
         # Ref: Not all spacings are created equally
-        self._init_delta_t_range = [2, 4]
+        self._init_delta_t_range = [0.1, 1]
         self._init_delta_t = None
         self._delta_t = None
         # The decaying factor Bi formular is a simplified version of the learning component from ACT-R
         # Ref: Modeling Touch-based Menu Selection Performance of Blind Users via Reinforcement Learning
         # Ref: Adapting User Interfaces with Model-based Reinforcement Learning
-        self._rho = 0.5
+        self._decay_factor = -0.5
         self._sigma_position_memory = None
 
         # Initialize the likelihood related uncertainty
@@ -350,11 +350,10 @@ class POMDPSelect(Env):
         if self._steps >= self.ep_len or finish_search:
             terminate = True
 
-            # Uncomment later when testing TODO
+            # Uncomment later when testing
             euclidean_distance = self.euclidean_distance(self._gaze_mjidx, self._true_last_word_mjidx)
             # reward += 10 * (np.exp(-0.1 * euclidean_distance) - 1)
 
-            # TODO try the sparse and binary reward
             if self._gaze_mjidx == self._true_last_word_mjidx:
                 reward += 10
             else:
@@ -430,7 +429,8 @@ class POMDPSelect(Env):
         # Update the elapsed time in second
         self._delta_t = self._init_delta_t + self._steps / self._action_sample_freq
         # Update the sigma position memory
-        self._sigma_position_memory = self._init_sigma_position_memory / (1 + self._delta_t ** (-self._rho))
+        self._sigma_position_memory = (self._init_sigma_position_memory /
+                                       (1 + self._delta_t ** self._decay_factor))
 
         # Corrupt the memory by adding uncertainty into the distribution -->
         # lower activation level B(mi), bigger sigma, then broader distribution
@@ -451,6 +451,20 @@ class POMDPSelect(Env):
         if self._on_target_steps >= self._dwell_steps:
             idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             self._true_last_word_memory_list.append(memory_decay_prob_dist[idx])
+
+        # Log the memory decay in the test mode
+        if (self._config['rl']['mode'] == 'test' and self._config['rl']['test']['grid_search_selection']['enable'] == False) or self._config['rl']['mode'] == 'debug':
+            idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
+
+            print(
+                f"The initial delta t is: {self._init_delta_t}, the delta t is: {self._delta_t}, \n"
+                f"The initial sigma position memory is: {self._init_sigma_position_memory}, \n"
+                # f"The memory decay weight is: {weight_decay}, the sigma likelihood is: {self._sigma_likelihood}\n"
+                # f"The memory decay is: {memory_decay_prob_dist}, "
+                f"the target's memory decay is: {memory_decay_prob_dist[idx]}\n"
+                # f"The updated prior probability distribution is: {self._prior_prob_dist}, "
+                f"the target's prob is: {self._prior_prob_dist[idx]}\n"
+            )
 
     def _get_likelihood(self):
         """
@@ -967,8 +981,8 @@ class _POMDPSelect(Env):
         self.detect_invalid_array(self._prior_prob_dist, "prior_prob_dist")
 
         # Log the memory decay in the test mode
-        if self._config['rl']['mode'] == 'test' and \
-                self._config['rl']['test']['grid_search_selection']['enable'] == False:
+        if (self._config['rl']['mode'] == 'test' and
+                self._config['rl']['test']['grid_search_selection']['enable'] == False):
             idx = np.where(self._cells_mjidxs == self._true_last_word_mjidx)[0][0]
             self._true_last_word_memory_decay_list.append(memory_decay_prob_dist[idx])
 
