@@ -641,14 +641,6 @@ class RL:
         num_episodes = self._config_rl['test']['grid_search_selection']['num_episodes']
 
         # Initialize the lists for storing parameters
-        init_delta_t_list = []
-        init_sigma_position_memory_list = []
-        weight_memory_decay_list = []
-        spatial_dist_coeff_list = []
-        layout_list = []
-        # steps_list = []
-        # error_list = []
-        # csv_directory = "envs/mobile_reading/results/"
 
         df_columns = [
             'init_delta_t',
@@ -676,13 +668,7 @@ class RL:
                 for weight_memory_decay in np.arange(*weight_memory_decay_range, weight_memory_decay_stride):
                     for spatial_dist_coeff in np.arange(*spatial_dist_coeff_range, spatial_dist_coeff_stride):
                         for i in range(len(layouts)):
-
-                            # init_delta_t_list.append(init_delta_t)
-                            # init_sigma_position_memory_list.append(init_sigma_position_memory)
-                            # weight_memory_decay_list.append(weight_memory_decay)
-                            # spatial_dist_coeff_list.append(spatial_dist_coeff)
                             layout = layouts[i]
-                            # layout_list.append(layout)
 
                             params = {
                                 'init_delta_t': init_delta_t,

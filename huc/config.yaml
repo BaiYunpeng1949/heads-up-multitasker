@@ -1,7 +1,7 @@
 simulator_name: 'huc'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 100000000
@@ -23,7 +23,7 @@ rl:
   test:
     num_episodes: 3
     layout_name: ''    # Choose from 'interline-spacing-100', 'bottom-center', 'middle-right'
-    loaded_model_name: 'rl_model_30000000_steps'
+    loaded_model_name: 'rl_model_100000000_steps'
     continual_logs_name: 'PPO_201'
     grid_search_perturbation:
       enable: False
@@ -31,10 +31,10 @@ rl:
       amp_tuning_factor: [[0, 1], 0.01]
       perturbation_amp_noise_scale: [[0, 0.015], 0.001]
     grid_search_selection:
-      enable: False
-      init_delta_t: [[2, 4], 0.5]
-      init_sigma_position_memory: [[0.5, 5], 0.5]
+      enable: True
+      init_delta_t: [[0.5, 5], 0.5]
+      init_sigma_position_memory: [[0.1, 1], 0.1]
       weight_memory_decay: [[0.5, 1], 0.05]
       spatial_dist_coeff: [[2, 5], 0.5]
       layouts: ['L0', 'L50', 'L100']
-      num_episodes: 50
+      num_episodes: 100

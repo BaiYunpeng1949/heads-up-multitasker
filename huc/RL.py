@@ -587,24 +587,24 @@ class RL:
                                     obs, reward, done, info = self._env.step(action)
                                     score += reward
 
-                                # Save individual episode data to its respective CSV   Uncomment when necessary
-                                with open(individual_csv_save_path, 'a') as f:
-                                    writer = csv.writer(f)
-                                    writer.writerow([
-                                        init_delta_t,
-                                        init_sigma_position_memory,
-                                        weight_memory_decay,
-                                        spatial_dist_coeff,
-                                        layout,
-                                        episode,  # Added episode number
-                                        info['steps'],
-                                        info['error'],
-                                        info['true_last_word_mjidx'],
-                                        info['gaze_word_belief_list'],
-                                        info['true_last_word_memory_list'],
-                                        info['gaze_positions_list'],
-                                        info['all_words_belief_list'],
-                                    ])
+                                # # Save individual episode data to its respective CSV   Uncomment when necessary
+                                # with open(individual_csv_save_path, 'a') as f:
+                                #     writer = csv.writer(f)
+                                #     writer.writerow([
+                                #         init_delta_t,
+                                #         init_sigma_position_memory,
+                                #         weight_memory_decay,
+                                #         spatial_dist_coeff,
+                                #         layout,
+                                #         episode,  # Added episode number
+                                #         info['steps'],
+                                #         info['error'],
+                                #         info['true_last_word_mjidx'],
+                                #         info['gaze_word_belief_list'],
+                                #         info['true_last_word_memory_list'],
+                                #         info['gaze_positions_list'],
+                                #         info['all_words_belief_list'],
+                                #     ])
 
                                 steps.append(info['steps'])
                                 errors.append(info['error'])
