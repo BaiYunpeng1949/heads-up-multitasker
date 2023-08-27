@@ -32,9 +32,9 @@ rl:
       perturbation_amp_noise_scale: [[0, 0.015], 0.001]
     grid_search_selection:
       enable: True
-      init_delta_t: [[0.5, 5], 0.5]
-      init_sigma_position_memory: [[0.1, 1], 0.1]
+      init_delta_t: [[0.1, 1], 0.1]
+      init_sigma_position_memory: [[0.5, 5], 0.5]
       weight_memory_decay: [[0.5, 1], 0.05]
-      spatial_dist_coeff: [[2, 5], 0.5]
+      spatial_dist_coeff: [[1, 5], 0.5]
       layouts: ['L0', 'L50', 'L100']
       num_episodes: 100
