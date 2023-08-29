@@ -21,6 +21,8 @@ class ReadBackground(Env):
 
     def __init__(self):
         """
+        TODO ADD the walking speed alter - stop walking when reading the sign,
+            thus needs to connect this to the supervisory control and also modify the locomotion control
         Model when the attention is allocated off the smart glasses, i.e., the reading is interrupted,
             the agent has to determine the correct sign as soon as possible to read to obtain the environmental event information,
             then instruct the locomotion control (change the lane or keep walking on the same lane).
