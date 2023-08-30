@@ -14,7 +14,7 @@ from stable_baselines3 import PPO
 from hrl.utils.rendering import Camera, Context
 from hrl.utils.write_video import write_video
 from hrl.envs.supervisory_control.WordSelection import WordSelection
-from hrl.envs.supervisory_control.ReadBackground import ReadBackground
+from hrl.envs.supervisory_control.ScanEnvironment import ScanEnvironment
 
 
 class SupervisoryControl(Env):

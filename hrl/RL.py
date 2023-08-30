@@ -24,7 +24,7 @@ from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
 from hrl.envs.supervisory_control.WordSelection import WordSelection
 from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl
-from hrl.envs.supervisory_control.ReadBackground import ReadBackground
+from hrl.envs.supervisory_control.ScanEnvironment import ScanEnvironment
 
 _MODES = {
     'train': 'train',
@@ -210,7 +210,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = OcularMotorControl()
+        self._env = ScanEnvironment()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -258,7 +258,7 @@ class RL:
                 )
                 policy = "MultiInputPolicy"
             # Configure the model - HRL - Word Selection, Read Background, Supervisory Control
-            elif isinstance(self._env, WordSelection) or isinstance(self._env, ReadBackground) or isinstance(self._env, SupervisoryControl):
+            elif isinstance(self._env, WordSelection) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControl):
                 if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl):
                     features_dim = 128
                     net_arch = [256, 256]
@@ -836,7 +836,7 @@ class RL:
                 self._test()
             else:
                 print(f"HRL testing. The video is being generated.")
-                if isinstance(self._env, SupervisoryControl):
+                if isinstance(self._env, SupervisoryControl) or isinstance(self._env, ScanEnvironment):
                     self._test()
                 else:
                     # Generate the results from the pre-trained model.
