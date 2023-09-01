@@ -124,7 +124,7 @@ class POMDPSelect(Env):
         self._sigma_likelihood = None
 
         # Initialize the memory decay weight
-        self._weight_memory_decay_range = [0.5, 0.75]       # Make this to 0.5 ~ 1
+        self._weight_memory_decay_range = [0.5, 1]       # Make this to 0.5 ~ 1
         self._weight_memory_decay = None
 
         # Define the display related parameters
