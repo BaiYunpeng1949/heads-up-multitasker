@@ -443,7 +443,10 @@ class POMDPSelect(Env):
         # Update the prior probability distribution with the weighted memory decay
         weight_decay = self._weight_memory_decay
         weight_prior = 1 - weight_decay
-        self._prior_prob_dist = weight_decay * memory_decay_prob_dist + weight_prior * self._prior_prob_dist
+
+        # TODO the ablation study - disable the memory decay part to try and see.
+        # self._prior_prob_dist = weight_decay * memory_decay_prob_dist + weight_prior * self._prior_prob_dist
+
         # Normalise the prior probability distribution
         self._prior_prob_dist /= np.sum(self._prior_prob_dist)
 
