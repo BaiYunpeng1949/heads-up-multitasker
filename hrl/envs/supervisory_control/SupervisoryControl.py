@@ -517,6 +517,8 @@ class SupervisoryControl(Env):
         reading_progress_norm = self.normalise(self._word_wise_reading_progress, 0, self._total_reading_words, -1, 1)
         reading_position_norm = self._reading_position
         reading_content_layout_norm = self._reading_content_layouts[self._reading_content_layout_name]
+
+        # TODO not sure if we should include this in here, maybe should just appear in the reward function
         word_selection_time_cost_norm = self._word_selection_time_cost * self._reading_position_cost_factor
         word_selection_error_cost_norm = self._word_selection_error_cost * self._reading_position_cost_factor
         reading_related_beliefs = [reading_progress_norm, reading_position_norm, reading_content_layout_norm,
