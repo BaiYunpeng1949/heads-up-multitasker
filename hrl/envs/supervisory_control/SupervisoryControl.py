@@ -67,9 +67,9 @@ class SupervisoryControl(Env):
         # self._word_selection_error_cost_noise = 0.25      # Not needed now
 
         # Initialize the reading and walking tasks related parameters
-        self._reading_task_weight_range = [0.5, 1]
-        self._reading_task_weight = None
-        self._walking_task_weight = None
+        # self._reading_task_weight_range = [0.5, 1]
+        # self._reading_task_weight = None
+        # self._walking_task_weight = None
         self._total_reading_words = 100   # The number of cells/words that needed to be read
         self._word_wise_reading_progress = None
         self._prev_word_wise_reading_progress = None
@@ -147,7 +147,7 @@ class SupervisoryControl(Env):
         self._info = None
 
         # Define the observation space
-        self._num_stateful_info = 12
+        self._num_stateful_info = 8
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - the attention allocation: reading on smart glasses (0) or reading on the environment (1)
@@ -223,11 +223,11 @@ class SupervisoryControl(Env):
             self._background_event_interval_level = self._LONG if grid_search_params is None else grid_search_params['event_update_level']
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
-            # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
-            # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
-            #                                               self._reading_task_weight_range[1])
-            self._reading_task_weight = 0.5  # Start from the simple case
-            self._walking_task_weight = 1 - self._reading_task_weight
+            # # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
+            # # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            # #                                               self._reading_task_weight_range[1])
+            # self._reading_task_weight = 0.5  # Start from the simple case
+            # self._walking_task_weight = 1 - self._reading_task_weight
 
             self._update_beliefs()
 
@@ -276,12 +276,12 @@ class SupervisoryControl(Env):
             self._background_event_interval_level = np.random.choice(list(self._background_event_intervals.keys()))
             self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
 
-            # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
-            # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
-            #                                               self._reading_task_weight_range[1])
-            # Start from the simple case - TODO make it dynamic later when static model works out
-            self._reading_task_weight = 0.5
-            self._walking_task_weight = 1 - self._reading_task_weight
+            # # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
+            # # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            # #                                               self._reading_task_weight_range[1])
+            # # Start from the simple case - TODO make it dynamic later when static model works out
+            # self._reading_task_weight = 0.5
+            # self._walking_task_weight = 1 - self._reading_task_weight
 
             self._update_beliefs()
 
@@ -438,14 +438,14 @@ class SupervisoryControl(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         # Explicitly tell the agent the selected background event update intervals
         event_update_interval_norm = self.normalise(self._background_event_interval, 0, self.ep_len, -1, 1)
-        # Get reading and walking task's weight
-        reading_task_weight_norm = self._reading_task_weight
-        walking_task_weight_norm = self._walking_task_weight
+        # # Get reading and walking task's weight
+        # reading_task_weight_norm = self._reading_task_weight
+        # walking_task_weight_norm = self._walking_task_weight
         # Get the belief observation - normalize to [-1, 1]
         belief = self._beliefs.copy()
 
         stateful_info = np.array([remaining_ep_len_norm, event_update_interval_norm,
-                                  reading_task_weight_norm, walking_task_weight_norm,
+                                  # reading_task_weight_norm, walking_task_weight_norm,
                                   *belief])
 
         # Observation space check
@@ -519,10 +519,11 @@ class SupervisoryControl(Env):
         reading_content_layout_norm = self._reading_content_layouts[self._reading_content_layout_name]
 
         # TODO not sure if we should include this in here, maybe should just appear in the reward function
-        word_selection_time_cost_norm = self._word_selection_time_cost * self._reading_position_cost_factor
-        word_selection_error_cost_norm = self._word_selection_error_cost * self._reading_position_cost_factor
+        # word_selection_time_cost_norm = self._word_selection_time_cost * self._reading_position_cost_factor
+        # word_selection_error_cost_norm = self._word_selection_error_cost * self._reading_position_cost_factor
         reading_related_beliefs = [reading_progress_norm, reading_position_norm, reading_content_layout_norm,
-                                   word_selection_time_cost_norm, word_selection_error_cost_norm]
+                                   # word_selection_time_cost_norm, word_selection_error_cost_norm
+                                   ]
 
         # Update the RHS's environmental awareness/Walking related beliefs
         background_last_check_duration_norm = self.normalise(self._background_last_check_duration, 0, self.ep_len, -1, 1)
@@ -543,7 +544,7 @@ class SupervisoryControl(Env):
         reward_time_cost = -0.1
 
         # Customized reward function, coefficients are to be tuned/modified
-        reading_coefficient = 2
+        reading_coefficient = 1
         if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
             reward_reading_making_progress = reading_coefficient * 1
         else:
@@ -570,10 +571,13 @@ class SupervisoryControl(Env):
             # Capture the nuances of multitasking behavior.
             #   An agent who hasn't checked the environment for a very long time might receive a bigger penalty if they are in the wrong lane.
             time_elapsed = self._background_last_check_duration
-            reward_walk_on_correct_lane = walk_coefficient * (-1 + 5 * (np.exp(-0.04 * time_elapsed) - 1))
+            reward_walk_on_correct_lane = walk_coefficient * (-0.5 + 2.5 * (np.exp(-0.04 * time_elapsed) - 1))
 
-        reward_reading = self._reading_task_weight * reward_reading_making_progress
-        reward_walking = self._walking_task_weight * reward_walk_on_correct_lane
+        # reward_reading = self._reading_task_weight * reward_reading_making_progress
+        # reward_walking = self._walking_task_weight * reward_walk_on_correct_lane
+
+        reward_reading = reward_reading_making_progress
+        reward_walking = reward_walk_on_correct_lane
         reward_attention_switch = attention_switch_coefficient * (
                 reward_attention_switch_cost +
                 reward_word_selection_time_cost +
