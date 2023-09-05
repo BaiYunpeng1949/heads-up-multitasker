@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 100000000
@@ -22,7 +22,7 @@ rl:
 
   test:
     num_episodes: 10
-    loaded_model_name: 'rl_model_100000000_steps'   # TODO redo the study since I did not use the correct model, use this one.
+    loaded_model_name: 'rl_model_70000000_steps'
     continual_logs_name: 'PPO_24'
 
     grid_search_perturbation:
@@ -40,7 +40,7 @@ rl:
       num_episodes: 50
     grid_search_supervisory_control:
       enable: True
-      agent_name: 'Olaf'   # Shakespeare, Norman, and Olaf
+      agent_name: 'Shakespeare'   # Shakespeare, Norman, and Olaf
       layouts: ['L0', 'L50', 'L100']
       event_update_levels: ['short', 'middle', 'long']
       num_episodes: 100
