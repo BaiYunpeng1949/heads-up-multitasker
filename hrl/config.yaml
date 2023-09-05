@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 100000000
@@ -39,8 +39,8 @@ rl:
       layouts: ['L0', 'L50', 'L100']
       num_episodes: 50
     grid_search_supervisory_control:
-      enable: False
-      agent_name: 'agent_c'   # 'agent a' or 'agent b' or 'agent c'
+      enable: True
+      agent_name: 'Olaf'   # Shakespeare, Norman, and Olaf
       layouts: ['L0', 'L50', 'L100']
       event_update_levels: ['short', 'middle', 'long']
       num_episodes: 100
