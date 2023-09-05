@@ -5,7 +5,7 @@ rl:
 
   train:
     total_timesteps: 100000000
-    checkpoints_folder_name: 0905_hrl_spv_100m_without_obs_costs_Shakespeare
+    checkpoints_folder_name: 0904_hrl_spv_100m_without_obs_costs
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # Don't change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -22,7 +22,7 @@ rl:
 
   test:
     num_episodes: 10
-    loaded_model_name: 'rl_model_70000000_steps'
+    loaded_model_name: 'rl_model_100000000_steps'
     continual_logs_name: 'PPO_24'
 
     grid_search_perturbation:
@@ -40,7 +40,7 @@ rl:
       num_episodes: 50
     grid_search_supervisory_control:
       enable: True
-      agent_name: 'Shakespeare'   # Shakespeare, Norman, and Olaf
+      agent_name: 'Olaf'   # Shakespeare, Norman, and Olaf
       layouts: ['L0', 'L50', 'L100']
       event_update_levels: ['short', 'middle', 'long']
       num_episodes: 100
