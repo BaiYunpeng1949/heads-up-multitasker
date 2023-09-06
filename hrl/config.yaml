@@ -43,4 +43,4 @@ rl:
       agent_name: 'Norman'   # Shakespeare, Norman, and Olaf
       layouts: ['L0', 'L50', 'L100']
       event_update_levels: ['short', 'middle', 'long']
-      num_episodes: 100
+      num_episodes: 500
