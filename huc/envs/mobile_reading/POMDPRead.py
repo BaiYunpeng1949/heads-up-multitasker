@@ -44,7 +44,7 @@ class POMDPSelect(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "pomdp-resume-read-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "pomdp-resume-read-6layouts-v3.xml"))     # Default: pomdp-resume-read-v1.xml
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -62,23 +62,35 @@ class POMDPSelect(Env):
         self._eye_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "eye-y-motor")
         self._eye_y_motor_translation_range = self._model.actuator_ctrlrange[self._eye_y_motor_mjidx]
 
+        self._sgp_ils125_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+                                                        "smart-glass-pane-interline-spacing-125")
         self._sgp_ils100_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                         "smart-glass-pane-interline-spacing-100")
+        self._sgp_ils75_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+                                                       "smart-glass-pane-interline-spacing-75")
         self._sgp_ils50_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                        "smart-glass-pane-interline-spacing-50")
+        self._sgp_ils25_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
+                                                       "smart-glass-pane-interline-spacing-25")
         self._sgp_ils0_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
                                                       "smart-glass-pane-interline-spacing-0")
         # Get geom mjidxs (geoms that belong to "smart-glass-pane-interline-spacing-100")
+        self._ils125_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils125_body_mjidx)[0]
         self._ils100_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils100_body_mjidx)[0]
+        self._ils75_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils75_body_mjidx)[0]
         self._ils50_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils50_body_mjidx)[0]
+        self._ils25_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils25_body_mjidx)[0]
         self._ils0_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils0_body_mjidx)[0]
 
         # Initialize the MuJoCo layout related parameters
+        self._L125 = "L125"
         self._L100 = "L100"
+        self._L75 = "L75"
         self._L50 = "L50"
+        self._L25 = "L25"
         self._L0 = "L0"
         self._FOUR = 4  # The number of cells in a row
-        self._layouts = [self._L100, self._L50, self._L0]
+        self._layouts = [self._L125, self._L100, self._L75, self._L50, self._L25, self._L0]
         self._cells_mjidxs = None
 
         # Initialize the true last word mjidx
@@ -193,9 +205,15 @@ class POMDPSelect(Env):
         self._all_words_belief_list = []
 
         # Reset all cells to transparent
+        for mjidx in self._ils125_cells_mjidxs:
+            self._model.geom(mjidx).rgba[3] = 0
         for mjidx in self._ils100_cells_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
+        for mjidx in self._ils75_cells_mjidxs:
+            self._model.geom(mjidx).rgba[3] = 0
         for mjidx in self._ils50_cells_mjidxs:
+            self._model.geom(mjidx).rgba[3] = 0
+        for mjidx in self._ils25_cells_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
         for mjidx in self._ils0_cells_mjidxs:
             self._model.geom(mjidx).rgba[3] = 0
@@ -222,10 +240,16 @@ class POMDPSelect(Env):
                 layout_name = params['layout']
 
         # Initialize the scene after deciding the layout
-        if layout_name == self._L100:
+        if layout_name == self._L125:
+            self._cells_mjidxs = self._ils125_cells_mjidxs
+        elif layout_name == self._L100:
             self._cells_mjidxs = self._ils100_cells_mjidxs
+        elif layout_name == self._L75:
+            self._cells_mjidxs = self._ils75_cells_mjidxs
         elif layout_name == self._L50:
             self._cells_mjidxs = self._ils50_cells_mjidxs
+        elif layout_name == self._L25:
+            self._cells_mjidxs = self._ils25_cells_mjidxs
         elif layout_name == self._L0:
             self._cells_mjidxs = self._ils0_cells_mjidxs
         else:
@@ -579,7 +603,7 @@ class POMDPSelect(Env):
 #         self._L100 = "L100"
 #         self._L50 = "L50"
 #         self._L0 = "L0"
-#         self._EIGHT = 8  # The number of cells in a row TODO Check it with different layouts
+#         self._EIGHT = 8  # The number of cells in a row
 #         self._layouts = [self._L100, self._L50, self._L0]
 #         self._cells_mjidxs = None
 #
@@ -623,7 +647,7 @@ class POMDPSelect(Env):
 #         self._fovea_size = None
 #         self._spatial_dist_coeff_gaze_init_range = [3, 5]
 #         self._spatial_dist_coeff_gaze_init = None
-#         # TODO maybe also relate this to the forgetting rate. More time passes, more uncertainty about the rough area as well.
+
 #         self._spatial_dist_coeff_range = [5, 10]
 #         self._spatial_dist_coeff = None
 #         self._sigma_gaze_init_likelihood = None
@@ -814,7 +838,7 @@ class POMDPSelect(Env):
 #             else:
 #                 raise ValueError(f"The action is not correct! It is: {action_gaze}")
 #
-#         # Update the eye movement - TODO later get it from the low level ocular motor control policy
+#         # Update the eye movement
 #         xpos = self._data.geom(self._gaze_mjidx).xpos
 #         x, y, z = xpos[0], xpos[1], xpos[2]
 #         self._data.ctrl[self._eye_x_motor_mjidx] = np.arctan(z / y)
