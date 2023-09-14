@@ -210,7 +210,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = OcularMotorControl()
+        self._env = LocomotionControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(

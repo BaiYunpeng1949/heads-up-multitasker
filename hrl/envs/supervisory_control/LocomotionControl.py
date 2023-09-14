@@ -75,7 +75,7 @@ class LocomotionControl(Env):
         # Define the observation space
         self._num_stk_frm = 1
         self._qpos_frames = None
-        self._num_stateful_info = 4
+        self._num_stateful_info = 3
         self.observation_space = Dict({
             "proprioception": Box(low=-1, high=1, shape=(self._num_stk_frm * 1 + 1,)),
             "stateful information": Box(low=-1, high=1, shape=(self._num_stateful_info,)),
@@ -184,7 +184,7 @@ class LocomotionControl(Env):
 
             # Estimate the reward for choosing the correct lane
             if self._agent_on_lane_timesteps >= self._dwell_timesteps:
-                reward += 5
+                reward += 10
 
         # Print logs in the testing and debugging mode
         if self._in_hrl == False:
@@ -227,7 +227,10 @@ class LocomotionControl(Env):
         instructed_lane_norm = self._instructed_lane
 
         stateful_info = np.array(
-            [remaining_ep_len_norm, remaining_dwell_timesteps_norm, agent_lane_norm, instructed_lane_norm]
+            [remaining_ep_len_norm,
+             remaining_dwell_timesteps_norm,
+             # agent_lane_norm,
+             instructed_lane_norm]
         )
 
         # Observation space check
