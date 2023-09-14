@@ -448,6 +448,8 @@ class OcularMotorControl(Env):
         wanted_ctrl = np.delete(wanted_ctrl, self._agent_y_motor_mjidx)
         ctrl = wanted_ctrl.reshape((1, -1))
         proprioception = np.concatenate([qpos.flatten(), ctrl.flatten()], axis=0)
+        # TODO try to disable the proprioception channel - TEST 0914
+        proprioception = np.zeros_like(proprioception)
 
         # Compute the stateful information observation - normalize to [-1, 1]
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
