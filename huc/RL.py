@@ -215,7 +215,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = Study3Demo()   # WalkRead()     # MDPEyeRead()      # SignWalk(), Read()
+        self._env = WalkRead()   # WalkRead()     # MDPEyeRead()      # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
