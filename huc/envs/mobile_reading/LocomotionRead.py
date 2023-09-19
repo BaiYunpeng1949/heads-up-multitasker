@@ -845,7 +845,7 @@ class WalkRead(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "mobile-read-v5.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "video-figure-study2-v1.xml"))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -947,7 +947,7 @@ class WalkRead(Env):
         self._steps = None
         self._on_target_steps = None
         self._num_trials = None  # Cells are already been read
-        self._max_trials = 5  # Maximum number of cells to read - more trials in one episode will boost the convergence
+        self._max_trials = 10  # Maximum number of cells to read - more trials in one episode will boost the convergence
         if self._config["rl"]["mode"] == "test":
             self._max_trials = len(self._ils100_cells_mjidxs)
         self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self._action_sample_freq * 5)
@@ -1088,7 +1088,8 @@ class WalkRead(Env):
 
         # Initialize perturbation parameters for training
         self._perturbation_amp_tuning_factor = np.random.uniform(*self._perturbation_amp_tuning_range)
-        self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+        # self._dwell_steps = int(np.random.uniform(*self._dwell_time_range) * self._action_sample_freq)
+        self._dwell_steps = int(0.4 * self._action_sample_freq)
 
         # Initialize eyeball rotation angles
         init_eye_x_rotation = np.random.uniform(*self._eye_x_motor_translation_range)
