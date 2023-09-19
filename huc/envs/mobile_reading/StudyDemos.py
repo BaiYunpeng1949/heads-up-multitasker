@@ -13,7 +13,7 @@ from scipy.ndimage import gaussian_filter
 from huc.utils.rendering import Camera, Context
 
 
-class Study3Demo(Env):
+class StudiesDemo(Env):
 
     def __init__(self):
         """ Model walking on a simulated street and reading on smart glasses """
@@ -25,8 +25,20 @@ class Study3Demo(Env):
         with open(os.path.join(root_dir, "config.yaml")) as f:
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
+        # Define the agent's actions - index to attend to - cater to all three studies
+        # Study 2
+        self._index_sequence = [5, 6, 7, 8, 9, 10, 11]
+        xml_file_name = "video-figure-study2-v1.xml"
+        sgp_body_name = "smart-glass-pane-interline-spacing-100"
+
+        # Study 3
+        # self._index_sequence = [8, 9, 2, 6, 5, 9, 10, 11]        # Study 3: A successful case
+        # self._index_sequence = [8, 9, 2, 6, 5, 6, 7, 8]    # Study 3: A failure case
+        # xml_file_name = "video-figure-study3-v1.xml"
+        # sgp_body_name = "smart-glass-pane-interline-spacing-0"
+
         # Load the MuJoCo model
-        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, "video-figure-study3-v1.xml"))
+        self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, xml_file_name))
         self._data = mujoco.MjData(self._model)
         mujoco.mj_forward(self._model, self._data)
 
@@ -60,27 +72,23 @@ class Study3Demo(Env):
         self._agent_y_motor_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "agent-y-motor")
         self._agent_y_translation_range = self._model.actuator_ctrlrange[self._agent_y_motor_mjidx]
 
-        self._sgp_ils0_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY,
-                                                      "smart-glass-pane-interline-spacing-0")
+        self._sgp_body_mjidx = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, sgp_body_name)
         # Get targets (geoms that belong to "smart-glass-pane-interline-spacing-100")
-        self._ils0_cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_ils0_body_mjidx)[0]
+        self._cells_mjidxs = np.where(self._model.geom_bodyid == self._sgp_body_mjidx)[0]
 
         # Get all cells max and min coordinates
         self._cells_x_index = 0
         self._cells_z_index = 2
         self._ils100_x_min = np.min(
-            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils0_cells_mjidxs])
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._cells_mjidxs])
         self._ils100_x_max = np.max(
-            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils0_cells_mjidxs])
+            [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._cells_mjidxs])
         self._ils100_z_min = np.min(
-            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils0_cells_mjidxs])
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._cells_mjidxs])
         self._ils100_z_max = np.max(
-            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._ils0_cells_mjidxs])
+            [self._data.geom(mjidx).xpos[self._cells_z_index] for mjidx in self._cells_mjidxs])
 
         self._sampled_target_mjidx = None
-
-        # Initialize the index sequence
-        self._index_sequence = None
 
         # Define the target idx probability distribution
         self._VISUALIZE_RGBA = [1, 1, 0, 1]
@@ -136,9 +144,8 @@ class Study3Demo(Env):
         self._steps = None
         self._on_target_steps = None
         self._num_trials = None  # Cells are already been read
-        # Define the agent's actions - index to attend to
-        # self._index_sequence = [8, 9, 2, 6, 5, 9, 10, 11]        # A successful case
-        self._index_sequence = [8, 9, 2, 6, 5, 6, 7, 8]    # A failure case
+
+        # Define the maximum episode length
         self._max_trials = len(self._index_sequence)
         self.ep_len = int(self._max_trials * self._dwell_time_range[1] * self._action_sample_freq * 5)
 
@@ -221,8 +228,8 @@ class Study3Demo(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
         remaining_dwell_steps_norm = (self._dwell_steps - self._on_target_steps) / self._dwell_steps * 2 - 1
         remaining_trials_norm = (self._max_trials - self._num_trials) / self._max_trials * 2 - 1
-        sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._ils0_cells_mjidxs[0],
-                                                   self._ils0_cells_mjidxs[-1], -1, 1)
+        sampled_target_mjidx_norm = self.normalise(self._sampled_target_mjidx, self._cells_mjidxs[0],
+                                                   self._cells_mjidxs[-1], -1, 1)
 
         # self._ils100_x_min = np.min(
         #     [self._data.geom(mjidx).xpos[self._cells_x_index] for mjidx in self._ils100_cells_mjidxs])
@@ -439,7 +446,7 @@ class Study3Demo(Env):
         dist, geomid = self._get_focus(site_name="rangefinder-site")
 
         # Reset the scene first
-        for mj_idx in self._ils0_cells_mjidxs:
+        for mj_idx in self._cells_mjidxs:
             self._model.geom(mj_idx).rgba = self._DFLT_RGBA
         # Apply the transition function - update the scene regarding the actions
         if geomid == self._sampled_target_mjidx:
@@ -467,7 +474,7 @@ class Study3Demo(Env):
             info = {
                 'end_steps': self._steps,
                 'save_folder': None,
-                'num_cells': len(self._ils0_cells_mjidxs),
+                'num_cells': len(self._cells_mjidxs),
                 'action_sample_freq': self._action_sample_freq
             }
 
