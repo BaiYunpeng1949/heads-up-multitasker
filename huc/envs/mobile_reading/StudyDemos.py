@@ -26,16 +26,28 @@ class StudiesDemo(Env):
             self._config = yaml.load(f, Loader=yaml.FullLoader)
 
         # Define the agent's actions - index to attend to - cater to all three studies
-        # Study 2
-        self._index_sequence = [5, 6, 7, 8, 9, 10, 11]
-        xml_file_name = "video-figure-study2-v1.xml"
+        # Study 1 - cells start from 30
+        # self._index_sequence = [30, 31, 32, 33, 4, 33, 34, 35, 36, 7, 36, 37, 38]     # Shakespeare
+        # self._index_sequence = [30, 31, 3, 31, 32, 5, 32, 33, 7, 33, 34, 9, 34, 35, 36]    # Olaf
+        # translation_speed = 2
+        self._index_sequence = [30, 31, 4, 31, 32, 8, 32, 33, 12, 33, 34, 16, 34, 35, 36]  # Fast
+        translation_speed = 4
+        xml_file_name = "video-figure-study1-v1.xml"
         sgp_body_name = "smart-glass-pane-interline-spacing-100"
+        self._perturbation = False
+
+        # Study 2
+        # self._index_sequence = [5, 6, 7, 8, 9, 10, 11]
+        # xml_file_name = "video-figure-study2-v1.xml"
+        # sgp_body_name = "smart-glass-pane-interline-spacing-100"
+        # self._perturbation = True
 
         # Study 3
         # self._index_sequence = [8, 9, 2, 6, 5, 9, 10, 11]        # Study 3: A successful case
         # self._index_sequence = [8, 9, 2, 6, 5, 6, 7, 8]    # Study 3: A failure case
         # xml_file_name = "video-figure-study3-v1.xml"
         # sgp_body_name = "smart-glass-pane-interline-spacing-0"
+        # self._perturbation = True
 
         # Load the MuJoCo model
         self._model = mujoco.MjModel.from_xml_path(os.path.join(directory, xml_file_name))
@@ -98,7 +110,7 @@ class StudiesDemo(Env):
         self._dwell_time_range = [0.2, 1]  # 200-500 ms
 
         # Initialize the locomotion/translation parameters
-        translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
+        # translation_speed = 2     # 2m/s for normal walking - 15 m/s will give you a fast view for demonstration
         self._step_wise_translation_speed = translation_speed / self._action_sample_freq
 
         # Initialize the perturbation parameters
@@ -393,8 +405,10 @@ class StudiesDemo(Env):
         pitch += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=pitch.shape)
         yaw += np.random.normal(loc=0, scale=perturbation_amp_noise_scale, size=yaw.shape)
 
-        self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
-        self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
+        # Control the perturbations: only open for study 2 and 3.
+        if self._perturbation:
+            self._data.ctrl[self._head_x_motor_mjidx] = np.clip(pitch, *self._model.actuator_ctrlrange[self._head_x_motor_mjidx])
+            self._data.ctrl[self._head_z_motor_mjidx] = np.clip(yaw, *self._model.actuator_ctrlrange[self._head_z_motor_mjidx])
 
         # # Disable the action determined by the agent for the debug mode
         # # Action at t
