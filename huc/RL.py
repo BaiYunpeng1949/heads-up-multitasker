@@ -215,7 +215,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = StudiesDemo()   # WalkRead()     # MDPEyeRead()      # SignWalk(), Read()
+        self._env = POMDPSelect()   #StudiesDemo()   # WalkRead()    # MDPEyeRead()      # SignWalk(), Read()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -237,29 +237,32 @@ class RL:
             # RL training related variable: total time-steps.
             self._total_timesteps = self._config_rl['train']['total_timesteps']
 
-            # Configure the model - Initialise model that is run with multiple threads
-            policy_kwargs = dict(
-                features_extractor_class=CustomCombinedExtractor,
-                features_extractor_kwargs=dict(vision_features_dim=128,
-                                               proprioception_features_dim=32,
-                                               stateful_information_features_dim=64),
-                activation_fn=th.nn.LeakyReLU,
-                net_arch=[256, 256],
-                log_std_init=-1.0,
-                normalize_images=False
-            )
-
-            # policy_kwargs = dict(
-            #     features_extractor_class=StatefulInformationExtractor,
-            #     features_extractor_kwargs=dict(features_dim=128),
-            #     activation_fn=th.nn.LeakyReLU,
-            #     net_arch=[256, 256],
-            #     log_std_init=-1.0,
-            #     normalize_images=False
-            # )
+            if isinstance(self._env, POMDPSelect):
+                policy_kwargs = dict(
+                    features_extractor_class=StatefulInformationExtractor,
+                    features_extractor_kwargs=dict(features_dim=128),
+                    activation_fn=th.nn.LeakyReLU,
+                    net_arch=[256, 256],
+                    log_std_init=-1.0,
+                    normalize_images=False
+                )
+                policy = 'MlpPolicy'
+            else:
+                # Configure the model - Initialise model that is run with multiple threads
+                policy_kwargs = dict(
+                    features_extractor_class=CustomCombinedExtractor,
+                    features_extractor_kwargs=dict(vision_features_dim=128,
+                                                   proprioception_features_dim=32,
+                                                   stateful_information_features_dim=64),
+                    activation_fn=th.nn.LeakyReLU,
+                    net_arch=[256, 256],
+                    log_std_init=-1.0,
+                    normalize_images=False
+                )
+                policy = 'MultiInputPolicy'
 
             self._model = PPO(
-                policy="MultiInputPolicy",     # CnnPolicy, MlpPolicy, MultiInputPolicy
+                policy=policy,     # CnnPolicy, MlpPolicy, MultiInputPolicy
                 env=self._parallel_envs,
                 verbose=1,
                 policy_kwargs=policy_kwargs,
