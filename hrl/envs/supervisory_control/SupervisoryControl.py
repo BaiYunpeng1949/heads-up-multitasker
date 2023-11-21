@@ -597,3 +597,534 @@ class SupervisoryControl(Env):
                   f"reward: {reward}\n")
 
         return reward
+
+
+class SupervisoryControlWalkControl(Env):
+
+    def __init__(self):
+        """
+        Model the supervisory control of attention allocation in the context of walking and reading on OHMDs.
+        Study: Study 4. The class name contains WalkControl is because this supervisor's locomotion control
+            is walking speed control, instead of unrealistic lane-change, but the walking speed control.
+        Objective:
+            1. a unified Study that evaluates all components of the model.
+            2. a unified Study that has human data for evaluation.
+            3. a realistic scenario - endorsed by the published literature.
+        """
+        # Get directory of this file
+        directory = os.path.dirname(os.path.realpath(__file__))
+
+        # Read the configurations from the YAML file.
+        root_dir = os.path.dirname(os.path.dirname(directory))
+        with open(os.path.join(root_dir, "config.yaml")) as f:
+            self._config = yaml.load(f, Loader=yaml.FullLoader)
+
+        # Initialize the environment
+        # Walking related states
+        self._walking_path_perimeter = 30   # The perimeter of the path is 30 meters in the experiment, ref: Not All Spacings are Created Equal
+        self._walking_position = None   # The unit is also meter
+        self._preferred_walking_speed = 1.5     # The average walking speed is set to 1.5 m/s, ref: ChatGPT4. We do not have data replication on this metrics, so empirically set an average value.
+        self._percentage_of_preferred_walking_speed = None      # TODO discrete or continuous? Do I need to separately get one 'stop' state here? Or 4/5 discrete levels?
+        self._total_walking_rounds = 2     # The number of rounds of walking in the experiment is set to 2, ref: Not All Spacings are Created Equal
+        self._current_walking_rounds = None
+        # TODO: design the function between the readability <--> head perturbation <--> walking speed,
+        #  reference: Effects of walking velocity on vertical head and body movements during locomotion,
+        #  https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=9dfdcd7be78e40413a884fef601f04271e779e08
+        #  (might need to retrain the oculomotor control model to get more dynamic conditions and corresponding data)
+
+        # Attention related states
+        self._attention = None
+        self._NA = 'nothing in the environment'
+        self._OHMD = 'text words on the OHMD'
+        self._SIGN = 'sign in the environment'
+        self._attention_positions = {
+            self._SIGN: 1,
+            self._OHMD: 0,
+            self._NA: -1,
+        }
+
+        # Reading related states
+        self._text_length = 360     # The number of words in the text is set with an average value 360, ref: Not All Spacings are Created Equal
+        self._reading_progress = None   # The ratio of the words that have been read in the text, ranges from 0 to 1
+
+        # TODO: something to consider when framing the POMDP: now the agent does not care about cost specified in the layouts,
+        #   but on whether it can see signs in the environment (on the wall).
+
+        # TODO or we just run the study for long time, and get agent's performance, interms of:
+        #   1. the distribution --> later we can sample performance from.
+        #   2. the mean value --> more computationally efficient.
+        # TODO: then read-in data from the asset, the format should be: across all free-parameters, what are the performance (normalize to a range).
+
+        # Initialize the reading and walking tasks related parameters
+        # self._reading_task_weight_range = [0.5, 1]
+        # self._reading_task_weight = None
+        # self._walking_task_weight = None
+        self._total_reading_words = 100   # The number of cells/words that needed to be read (TODO not one to one mapping)
+        # TODO might have an additional value for the reading ability: 1, and the reading ratio (can be sampled from the simulation data instead of running simulations).
+
+        # TODO add an empirical/heuristic function between the walking speed and the perturbation/directly the reading speed decrease --> the ratio mentioned above
+
+        # TODO: Re-construct these states
+
+        # TODO: remove this, we do not differentiate the walking speed as an independent variable anymore.
+
+        # Initialize the belief of the current state - TODO maybe we do not have the belief here, only observations.
+        self._beliefs = None
+
+        # TODO: add necessary variables for the task itself: walk, signs, etc.
+
+        # Initialize the RL training related parameters
+        self._steps = None
+        self.ep_len = int(2*self._text_length)
+        self._epsilon = 1e-100
+        self._info = None
+
+        # Define the observation space
+        self._num_stateful_info = 8
+        self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
+
+        # Define the action space - the attention allocation: reading on smart glasses (0) or reading on the environment (1)
+        self.action_space = Box(low=-1, high=1, shape=(1,))
+
+        # # Initialize the pre-trained middle level RL models when testing the supervisory control
+        # if self._config['rl']['mode'] == 'test':
+        #     # Initialize the RL middle level task environments
+        #     self._read_sg_env = WordSelection()
+        #     self._read_bg_env = ReadBackground()
+        #
+        #     # Load the pre-trained RL middle level task models - reading on smart glasses
+        #     read_sg_checkpoints_dir_name = ""
+        #     read_sg_loaded_model_name = ""
+        #     read_sg_model_path = os.path.join(root_dir, 'training', 'saved_models',
+        #                                       read_sg_checkpoints_dir_name, read_sg_loaded_model_name)
+        #     self._read_sg_model = PPO.load(read_sg_model_path)
+        #     self._read_sg_tuples = None
+        #     self._read_sg_params = None
+        #     self.read_sg_images = None
+        #
+        #     # Load the pre-trained RL middle level task models - reading on the background/environment
+        #     read_bg_checkpoints_dir_name = ""
+        #     read_bg_loaded_model_name = ""
+        #     read_bg_model_path = os.path.join(root_dir, 'training', 'saved_models',
+        #                                       read_bg_checkpoints_dir_name, read_bg_loaded_model_name)
+        #     self._read_bg_model = PPO.load(read_bg_model_path)
+        #     self._read_bg_tuples = None
+        #     self._read_bg_params = None
+        #     self.read_bg_imgaes = None
+
+    def reset(self, grid_search_params=None):
+
+        self._steps = 0
+
+        self._background_event_update_steps_list = []
+
+        # For the test mode, evaluate with the pre-trained RL middle level task models
+        if self._config['rl']['mode'] == 'test':
+            # Embed the middle level task models into the supervisory control model
+            # Reset the reading task related parameters
+            self._word_wise_reading_progress = 0
+            self._prev_word_wise_reading_progress = 0
+            self._reading_position = self._reading_positions[self._MARGINS]
+            self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
+            self._reading_content_layout_name = self._L100 if grid_search_params is None else grid_search_params['layout']
+            self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
+            self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
+
+            # Reset the walking and background related parameters
+            self._background_event = np.random.choice(list(self._background_events.values()))
+            self._walking_lane = self._background_event
+            self._prev_walking_lane = self._walking_lane
+            self._steps_on_current_lane = 0
+            self._total_steps_on_incorrect_lane = 0
+            self._prev_background_event_step = 0
+            self._observed_background_event = self._background_event
+            self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+            self._prev_background_last_check_step = 0
+            self._background_last_check_duration = 0
+
+            self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+            self._prev_observed_background_event = self._background_last_check_with_different_event_flag
+            self._prev_background_last_check_with_different_event_step = 0
+            self._background_last_check_with_different_event_duration = 0
+
+            # Randomly initialize the attention allocation
+            self._attention_switch_to_background = False
+
+            # Randomly initialize the background information update frequency level
+            self._background_event_interval_level = self._LONG if grid_search_params is None else grid_search_params['event_update_level']
+            self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
+
+            # # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
+            # # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            # #                                               self._reading_task_weight_range[1])
+            # self._reading_task_weight = 0.5  # Start from the simple case
+            # self._walking_task_weight = 1 - self._reading_task_weight
+
+            self._update_beliefs()
+
+            self._info = {
+                'num_attention_switches': 0,
+                'attention_switch_timesteps': [],
+                'total_timesteps': 0,
+                'num_steps_on_incorrect_lane': 0,
+                'num_attention_switches_on_margins': 0,
+                'num_attention_switches_on_middle': 0,
+                'reading_speed': 0,
+                'layout': self._reading_content_layout_name,
+                'event interval': self._background_event_interval_level,
+            }
+        # For the training mode, only focus on this model, deploy a lot of stochasticity
+        else:
+            # Reset the reading task related parameters
+            self._word_wise_reading_progress = 0
+            self._prev_word_wise_reading_progress = 0
+            self._reading_position = self._reading_positions[self._MARGINS]
+            self._reading_position_cost_factor = self._reading_position_cost_factors[self._MARGINS]
+            self._reading_content_layout_name = np.random.choice(list(self._reading_content_layouts.keys()))
+            self._word_selection_time_cost = self._word_selection_time_costs[self._reading_content_layout_name]
+            self._word_selection_error_cost = self._word_selection_error_costs[self._reading_content_layout_name]
+
+            # Reset the walking and background related parameters
+            self._background_event = np.random.choice(list(self._background_events.values()))
+            self._walking_lane = self._background_event
+            self._prev_walking_lane = self._walking_lane
+            self._total_steps_on_incorrect_lane = 0
+            self._steps_on_current_lane = 0
+            self._prev_background_event_step = 0
+            self._observed_background_event = self._background_event
+            self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+            self._background_last_check_duration = 0
+            self._prev_background_last_check_step = 0
+            self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+            self._background_last_check_with_different_event_duration = 0
+            self._prev_observed_background_event = self._background_last_check_with_different_event_flag
+            self._prev_background_last_check_with_different_event_step = 0
+
+            # Randomly initialize the attention allocation
+            self._attention_switch_to_background = False
+
+            # Randomly initialize the background information update frequency level
+            self._background_event_interval_level = np.random.choice(list(self._background_event_intervals.keys()))
+            self._background_event_interval = self._background_event_intervals[self._background_event_interval_level]
+
+            # # Randomly initialize the reading task weight and walking task weight - describes the perceived importance of the two tasks
+            # # self._reading_task_weight = np.random.uniform(self._reading_task_weight_range[0],
+            # #                                               self._reading_task_weight_range[1])
+            # # Start from the simple case - TODO make it dynamic later when static model works out
+            # self._reading_task_weight = 0.5
+            # self._walking_task_weight = 1 - self._reading_task_weight
+
+            self._update_beliefs()
+
+            self._info = {
+                'num_attention_switches': 0,
+                'attention_switch_timesteps': [],
+                'total_timesteps': 0,
+                'num_steps_on_incorrect_lane': 0,
+                'num_attention_switches_on_margins': 0,
+                'num_attention_switches_on_middle': 0,
+                'reading_speed': 0,
+            }
+
+        return self._get_obs()
+
+    def render(self, mode="rgb_array"):
+        pass
+
+    def step(self, action):
+
+        # Action a - decision-making on every time step
+        if action[0] <= self._ZERO_THRESHOLD:
+            self._attention_switch_to_background = False
+            action_name = 'continue_reading'
+        else:
+            # Add uncertainty to agent's decision-making / action
+            switch_attention = np.random.choice([True, False], p=[1-self._action_uncertainty, self._action_uncertainty])
+            if switch_attention:
+                self._attention_switch_to_background = True
+                action_name = 'switch_to_background'
+                # Log the data
+                self._info['attention_switch_timesteps'].append(self._steps)
+                self._info['num_attention_switches'] += 1
+                if self._reading_position == self._reading_positions[self._MARGINS]:
+                    self._info['num_attention_switches_on_margins'] += 1
+                else:
+                    self._info['num_attention_switches_on_middle'] += 1
+            else:
+                self._attention_switch_to_background = False
+                action_name = 'continue_reading'
+
+        # State s'
+        self._steps += 1
+
+        # Update the background events
+        self._update_background_events()
+
+        # Apply actions
+        # Continue reading
+        if not self._attention_switch_to_background:
+            # Testing mode
+            if self._config['rl']['mode'] == 'test':
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
+                # Continue the reading task, read one more cells/words
+                self._word_wise_reading_progress += 1
+                # Update the reading position
+                self._update_reading_position()
+            else:
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
+                # Continue the reading task, read one more cells/words
+                self._word_wise_reading_progress += 1
+                # Update the reading position
+                self._update_reading_position()
+        # Switch attention to the environment, interrupt the reading task
+        else:
+            # Testing mode
+            if self._config['rl']['mode'] == 'test':
+                # Update the previous reading progress
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
+                # Update the background last check - no matter whether observe a changed event instruction of not
+                self._prev_background_last_check_step = self._steps
+                # Update the observation of the background event
+                self._observed_background_event = self._background_event
+                # If the instruction in the background has changed, the agent will update its state
+                if self._observed_background_event != self._prev_observed_background_event:
+                    self._prev_observed_background_event = self._observed_background_event
+                    self._prev_background_last_check_with_different_event_step = self._steps
+
+                    # The background information has been read, then move to the correct lane
+                    self._walking_lane = self._background_event
+                    if self._prev_walking_lane != self._walking_lane:
+                        self._steps_on_current_lane = 0
+                        self._prev_walking_lane = self._walking_lane
+
+                    # Resume reading - word selection
+                    self._update_word_selection_costs()
+            # All other non-testing modes
+            else:
+                # Update the previous reading progress
+                self._prev_word_wise_reading_progress = self._word_wise_reading_progress
+                # Update the background last check - no matter whether observe a changed event instruction of not
+                self._prev_background_last_check_step = self._steps
+                # Update the observation of the background event
+                self._observed_background_event = self._background_event
+                # If the instruction in the background has changed, the agent will update its state
+                if self._observed_background_event != self._prev_observed_background_event:
+                    self._prev_observed_background_event = self._observed_background_event
+                    self._prev_background_last_check_with_different_event_step = self._steps
+
+                    # The background information has been read, then move to the correct lane
+                    self._walking_lane = self._background_event
+                    if self._prev_walking_lane != self._walking_lane:
+                        self._steps_on_current_lane = 0
+                        self._prev_walking_lane = self._walking_lane
+
+                    # Resume reading - word selection
+                    self._update_word_selection_costs()
+
+        # Update the step relevant flags
+        self._update_background_check_flags()
+
+        # Update the steps on the incorrect lane
+        self._info['num_steps_on_incorrect_lane'] += 1 if self._walking_lane != self._background_event else 0
+
+        # Update the steps on the current lane
+        self._steps_on_current_lane += 1
+
+        # Update beliefs
+        self._update_beliefs()
+
+        # Reward r
+        reward = self._get_reward()
+
+        # Termination
+        terminate = False
+        if self._steps >= self.ep_len or self._word_wise_reading_progress >= self._total_reading_words:
+            terminate = True
+            self._info['reading_speed'] = np.round(self._word_wise_reading_progress / self._steps, 4)
+            self._info['total_timesteps'] = self._steps
+
+        if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
+            print(f"The reading content layout name is {self._reading_content_layout_name}, "
+                  f"the background event interval is {self._background_event_interval}\n"
+                  f"The action name is {action_name}, the action value is {action}, \n"
+                  f"The step is {self._steps}, \n"
+                  f"The reading progress is {self._word_wise_reading_progress}, "
+                  f"the reading position is: {[k for k, v in self._reading_positions.items() if v == self._reading_position]}, \n"
+                  f"Walking on the lane {self._walking_lane}, the assigned lane: {self._background_event}, "
+                  f"the total steps of walking incorrectly: {self._total_steps_on_incorrect_lane}\n"
+                  f"The update background event list is {self._background_event_update_steps_list}, \n"
+                  f"The reward is {reward}, \n")
+
+        return self._get_obs(), reward, terminate, self._info
+
+    # TODO Prepare to collect data for drawing the trajectory of the attention switches
+
+    @staticmethod
+    def normalise(x, x_min, x_max, a, b):
+        # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
+        return (b - a) * ((x - x_min) / (x_max - x_min)) + a
+
+    def _get_obs(self):
+        # Get the stateful information observation - normalize to [-1, 1]
+        remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
+        # Explicitly tell the agent the selected background event update intervals
+        event_update_interval_norm = self.normalise(self._background_event_interval, 0, self.ep_len, -1, 1)
+        # # Get reading and walking task's weight
+        # reading_task_weight_norm = self._reading_task_weight
+        # walking_task_weight_norm = self._walking_task_weight
+        # Get the belief observation - normalize to [-1, 1]
+        belief = self._beliefs.copy()
+
+        stateful_info = np.array([remaining_ep_len_norm, event_update_interval_norm,
+                                  # reading_task_weight_norm, walking_task_weight_norm,
+                                  *belief])
+
+        # Observation space check
+        if stateful_info.shape[0] != self._num_stateful_info:
+            raise ValueError(f"The shape of stateful information observation is not correct! "
+                             f"The allocated shape is: {self._num_stateful_info}, "
+                             f"the actual shape is: {stateful_info.shape[0]}")
+
+        return stateful_info
+
+    def _update_background_events(self):
+        # Update the background event updates, we assume when the background events are updated,
+        #   if the agent switch its attention on it, the agent can observe it immediately
+        if self._steps - self._prev_background_event_step >= self._background_event_interval:
+            # Add uncertainty to the background event updates
+            change_event = np.random.choice([True, False],
+                                            p=[1 - self._background_event_uncertainty, self._background_event_uncertainty])
+            if change_event:
+                # Update the background event update steps list
+                self._background_event_update_steps_list.append(self._steps)
+                # Update the previous background event
+                prev_background_event = self._background_event
+                # From the current background event, sample a new background event
+                while True:
+                    self._background_event = np.random.choice(list(self._background_events.values()))
+                    if self._background_event != prev_background_event:
+                        break
+                self._prev_background_event_step = self._steps
+
+    def _update_reading_position(self):
+        # If the remains is not 0, then determine its position from a sentence's perspective
+        sentence_remain = self._word_wise_reading_progress % self._reading_content_per_page['num_cols']
+        # If the remained word is the first or last word in a sentence, then the reading position is at the margin
+        if sentence_remain == 1 or sentence_remain == 0:
+            reading_position_key = self._MARGINS
+        # If the remained word is in the middle of a sentence, then the reading position is at the middle
+        else:
+            reading_position_key = self._MIDDLE
+        # Update the reading position and the reading position cost factor
+        self._reading_position = self._reading_positions[reading_position_key]
+        self._reading_position_cost_factor = self._reading_position_cost_factors[reading_position_key]
+
+    def _update_word_selection_costs(self):
+        # Start from training with simple cases: deterministic word selection costs.
+        #   Then move to the more complex cases where costs varies across trials
+        self._word_selection_time_cost = self._word_selection_time_cost
+        self._word_selection_error_cost = self._word_selection_error_cost
+
+    def _update_background_check_flags(self):
+        # Check and update the last checks
+        # TODO to generalize the beliefs indicating when should the agent pay attention to the environment,
+        #  maybe use continuous (blurred) probability instead of discrete flags
+        if self._steps - self._prev_background_last_check_step >= self._background_last_check_step_wise_threshold:
+            self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+        else:
+            self._background_last_check_flag = self._background_last_check_flags[self._RECENT]
+
+        # Check and update the perceived background events
+        if self._steps - self._prev_background_last_check_with_different_event_step >= self._background_last_check_with_different_event_step_wise_threshold:
+            self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+        else:
+            self._background_last_check_with_different_event_flag = self._background_last_check_with_different_event_flags[self._RECENT]
+
+        self._background_last_check_duration = self._steps - self._prev_background_last_check_step
+        self._background_last_check_with_different_event_duration = self._steps - self._prev_background_last_check_with_different_event_step
+
+    def _update_beliefs(self):
+        # Update the LHS's reading related beliefs, containing the reading progress, reading position, estimated costs of switching attention
+        reading_progress_norm = self.normalise(self._word_wise_reading_progress, 0, self._total_reading_words, -1, 1)
+        reading_position_norm = self._reading_position
+        reading_content_layout_norm = self._reading_content_layouts[self._reading_content_layout_name]
+
+        # TODO not sure if we should include this in here, maybe should just appear in the reward function
+        # word_selection_time_cost_norm = self._word_selection_time_cost * self._reading_position_cost_factor
+        # word_selection_error_cost_norm = self._word_selection_error_cost * self._reading_position_cost_factor
+        reading_related_beliefs = [reading_progress_norm, reading_position_norm, reading_content_layout_norm,
+                                   # word_selection_time_cost_norm, word_selection_error_cost_norm
+                                   ]
+
+        # Update the RHS's environmental awareness/Walking related beliefs
+        background_last_check_duration_norm = self.normalise(self._background_last_check_duration, 0, self.ep_len, -1, 1)
+        background_last_check_with_different_event_duration_norm = self.normalise(self._background_last_check_with_different_event_duration, 0, self.ep_len, -1, 1)
+        walking_lane_norm = self._walking_lane
+        # TODO add the steps on the current lane in later, maybe it can speed up the training,
+        #  since with this, the agent just need to map between the steps on the current lane and the event update interval
+        steps_on_current_lane_norm = self.normalise(self._steps_on_current_lane, 0, self.ep_len, -1, 1)
+        walking_related_beliefs = [background_last_check_duration_norm,
+                                   background_last_check_with_different_event_duration_norm, walking_lane_norm]
+
+        # Update the beliefs
+        self._beliefs = reading_related_beliefs + walking_related_beliefs
+
+    def _get_reward(self, reward=0):
+
+        # Time cost for being there
+        reward_time_cost = -0.1
+
+        # Customized reward function, coefficients are to be tuned/modified
+        reading_coefficient = 1
+        if self._word_wise_reading_progress > self._prev_word_wise_reading_progress:
+            reward_reading_making_progress = reading_coefficient * 1
+        else:
+            reward_reading_making_progress = 0
+
+        # Make sure that the attention switch cost and reading resumption cost are not too high; otherwise,
+        #   they will overshadow the other rewards and deter the agent from ever switching attention.
+        # Define the tunable attention switch factor
+        attention_switch_coefficient = 0.1
+        if self._attention_switch_to_background:
+            reward_attention_switch_cost = -0.25   # Can be proportional to the time cost
+            reward_word_selection_time_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_time_cost, -1, 1, 0.1, 0.25)
+            reward_word_selection_error_cost = -self._reading_position_cost_factor * self.normalise(self._word_selection_error_cost, -1, 1, 0.1, 0.25)
+        else:
+            reward_attention_switch_cost = 0
+            reward_word_selection_time_cost = 0
+            reward_word_selection_error_cost = 0
+
+        # Define the reward related to walking, firstly define the tunable walking task factor
+        walk_coefficient = 5
+        if self._walking_lane == self._background_event:
+            reward_walk_on_correct_lane = 0
+        else:
+            # Capture the nuances of multitasking behavior.
+            #   An agent who hasn't checked the environment for a very long time might receive a bigger penalty if they are in the wrong lane.
+            time_elapsed = self._background_last_check_duration
+            reward_walk_on_correct_lane = walk_coefficient * (-0.5 + 2.5 * (np.exp(-0.04 * time_elapsed) - 1))
+
+        # reward_reading = self._reading_task_weight * reward_reading_making_progress
+        # reward_walking = self._walking_task_weight * reward_walk_on_correct_lane
+
+        reward_reading = reward_reading_making_progress
+        reward_walking = reward_walk_on_correct_lane
+        reward_attention_switch = attention_switch_coefficient * (
+                reward_attention_switch_cost +
+                reward_word_selection_time_cost +
+                reward_word_selection_error_cost
+        )
+        reward += reward_time_cost + reward_reading + reward_walking + reward_attention_switch
+
+        # TODO to further differentiate different layouts, scale up the weight and range of the word selection costs
+
+        if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
+            print(f"The reward components are:\n"
+                  f"reward_reading_making_progress: {reward_reading_making_progress}\n"
+                  f"reward_word_selection_time_cost: {reward_word_selection_time_cost}\n"
+                  f"reward_word_selection_error_cost: {reward_word_selection_error_cost}\n"
+                  f"reward_walk_on_correct_lane: {reward_walk_on_correct_lane}\n"
+                  f"reward_attention_switch_cost: {reward_attention_switch_cost}, reward_time_cost: {reward_time_cost}\n"
+                  f"reward: {reward}\n")
+
+        return reward
