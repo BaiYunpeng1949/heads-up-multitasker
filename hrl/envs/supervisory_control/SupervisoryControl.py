@@ -878,17 +878,20 @@ class SupervisoryControlWalkControl(Env):
         time_cost = -1
 
         # Reading related rewards
-        reading_making_progress = self._reading_progress - self._prev_reading_progress
+        reading_making_progress = 0.2 * (self._reading_progress - self._prev_reading_progress)
 
         # Walking related rewards
         bonus_finish_task = 0
         bonus_signs_read = 0
         if terminate is True:
             if self._walking_position >= self._total_walking_path_length:
-                # Successfully finished the walking task
-                bonus_finish_task = 10
-                # Check whether the agent has read all the signs
+                # Reward for finishing the walking task
+                bonus_finish_task = 50
                 bonus_signs_read = len(self._seen_signs) * 5
+            else:
+                # Punish if not finished the walking task
+                bonus_finish_task = -50
+                bonus_signs_read = -(len(self._sign_perceivable_locations) - len(self._seen_signs)) * 5
 
         reward = time_cost + reading_making_progress + bonus_finish_task + bonus_signs_read
         # TODO maybe need to tune the reward function (each component's weights)
