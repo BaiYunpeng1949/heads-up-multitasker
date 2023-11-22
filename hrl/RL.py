@@ -23,7 +23,7 @@ from hrl.utils.write_video import write_video
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
 from hrl.envs.supervisory_control.WordSelection import WordSelection
-from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl
+from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl, SupervisoryControlWalkControl
 from hrl.envs.supervisory_control.ScanEnvironment import ScanEnvironment
 
 _MODES = {
@@ -210,7 +210,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = OcularMotorControl()    #LocomotionControl()
+        self._env = SupervisoryControlWalkControl()  # SupervisoryControl()    # OcularMotorControl()    # LocomotionControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -258,8 +258,8 @@ class RL:
                 )
                 policy = "MultiInputPolicy"
             # Configure the model - HRL - Word Selection, Read Background, Supervisory Control
-            elif isinstance(self._env, WordSelection) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControl):
-                if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl):
+            elif isinstance(self._env, WordSelection) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl):
+                if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl):
                     features_dim = 128
                     net_arch = [256, 256]
                 else:
@@ -849,11 +849,11 @@ class RL:
                     video_name_prefix = self._mode + '_' + self._config_rl['train']['checkpoints_folder_name'] + '_' + self._loaded_model_name + '_'
                     video_path = os.path.join(video_folder_path, video_name_prefix + '.avi')
 
-                    write_video(
-                        filepath=video_path,
-                        fps=int(self._env.action_sample_freq),
-                        rgb_images=rgb_images,
-                    )
+                    # write_video(
+                    #     filepath=video_path,
+                    #     fps=int(self._env.action_sample_freq),
+                    #     rgb_images=rgb_images,
+                    # )
         else:
             pass
 
