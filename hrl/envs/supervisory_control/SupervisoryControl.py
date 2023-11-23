@@ -828,6 +828,8 @@ class SupervisoryControlWalkControl(Env):
         # Update the seen signs
         self._prev_seen_signs = self._seen_signs.copy()
 
+        # Update the reading progress
+
         # Determine the attention allocation
         if action_attention <= self._action_attention_thresholds[self._NA][-1]:
             # Do nothing, the agent is looking no where
@@ -876,6 +878,7 @@ class SupervisoryControlWalkControl(Env):
                 'signs_read': self._seen_signs,
                 'step_wise_attentions': self._step_wise_attentions,
                 'step_wise_walking_speeds': self._step_wise_walking_speeds,
+                'step_wise_reading_ratios': self._step_wise_reading_ratios,
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
             print(self._info)
