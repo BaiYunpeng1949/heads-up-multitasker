@@ -651,6 +651,10 @@ class SupervisoryControlWalkControl(Env):
         #   ultimately directly get from the performance of oculomotor control model's interaction with the environment.
 
         # Attention related states
+        self._attention_allocation = None   # The position of where the attention is allocated voluntarily
+        # The position of the actual attention, it differentiates with the above one,
+        # since the attention can be allocated to the environment, but the agent might not be able to perceive it,
+        # e.g., when the agent is seeing the sign in the environment
         self._attention = None
         self._NA = 'nothing in the environment'
         self._OHMD = 'text words on the OHMD'
@@ -672,6 +676,7 @@ class SupervisoryControlWalkControl(Env):
         # Firstly try to use a one-dimensional array to represent the path environment
         self._walking_path_perimeter = 30   # The perimeter of the path is 30 meters in the experiment, ref: Not All Spacings are Created Equal
         self._walking_position = None   # The unit is also meter
+        self._prev_walking_position = None
         self._total_walking_rounds = 2  # The number of rounds of walking in the experiment is set to 2, ref: Not All Spacings are Created Equal
         self._current_walking_rounds = None
         self._total_walking_path_length = self._walking_path_perimeter * self._total_walking_rounds
@@ -697,6 +702,7 @@ class SupervisoryControlWalkControl(Env):
             'sign_7': [sign_7 - half_perceivable_range_on_path, sign_7],
             'sign_8': [sign_8 - half_perceivable_range_on_path, sign_8],
         }
+        self._prev_seen_signs = None
         self._seen_signs = None     # Should be a list
         self._perceive_signs_duration = 3   # Need to cumulatively perceive the sign for 3 seconds to be able to read it
         self._steps_on_sign = None
@@ -709,7 +715,7 @@ class SupervisoryControlWalkControl(Env):
         self._info = None
 
         # Define the observation space
-        self._num_stateful_info = 7
+        self._num_stateful_info = 10
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - 1st: attention allocation; 2nd: walking speed control
@@ -731,6 +737,7 @@ class SupervisoryControlWalkControl(Env):
         self._step_wise_walking_positions = None
         self._step_wise_attentions = None
         self._step_wise_walking_speeds = None
+        self._step_wise_reading_ratios = None
         self._step_wise_reading_progress = None
 
         # # Initialize the pre-trained middle level RL models when testing the supervisory control
@@ -764,13 +771,16 @@ class SupervisoryControlWalkControl(Env):
         self._steps = 0
 
         # Initialize the attention allocation
+        self._attention_allocation = self._NA
         self._attention = self._NA
         self._PPWS = self._PPWS_ratio_intervals['normal'][0]
         self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
         self._reading_progress = 0
         self._prev_reading_progress = 0
         self._walking_position = 0
+        self._prev_walking_position = 0
         self._current_walking_rounds = 0
+        self._prev_seen_signs = []
         self._seen_signs = []
         self._steps_on_sign = 0
         self._sign_perceivable = False
@@ -780,6 +790,7 @@ class SupervisoryControlWalkControl(Env):
         self._step_wise_walking_positions = []
         self._step_wise_attentions = []
         self._step_wise_walking_speeds = []
+        self._step_wise_reading_ratios = []
         self._step_wise_reading_progress = []
 
         return self._get_obs()
@@ -810,31 +821,41 @@ class SupervisoryControlWalkControl(Env):
         else:
             raise ValueError(f"The action value of walking speed is not in the range of [-1, 1]! "
                              f"The action value is: {action_walking_speed}")
+        # Update the walking position
+        self._prev_walking_position = self._walking_position
         self._walking_position += self._PPWS * self._preferred_walking_speed
+
+        # Update the seen signs
+        self._prev_seen_signs = self._seen_signs.copy()
 
         # Determine the attention allocation
         if action_attention <= self._action_attention_thresholds[self._NA][-1]:
             # Do nothing, the agent is looking no where
-            attention = self._NA    # TODO: change to self._attention
+            self._attention_allocation = self._NA
+            self._attention = self._NA
         elif self._action_attention_thresholds[self._OHMD][0] < action_attention <= self._action_attention_thresholds[self._OHMD][-1]:
             # The agent is reading on the OHMD
             self._prev_reading_progress = self._reading_progress
             self._reading_progress += self._reading_speed_ratio * self._reading_speed
-            attention = self._OHMD  # TODO: change to self._attention
+            self._attention_allocation = self._OHMD
+            self._attention = self._OHMD
         elif self._action_attention_thresholds[self._SIGN][0] < action_attention <= self._action_attention_thresholds[self._SIGN][-1]:
             # The agent is reading the sign in the environment
             # Determine whether it can see the sign - whether in the perceivable range
             self._sign_perceivable, sign_name = self._determine_sign_perceivable()
+            self._attention_allocation = self._SIGN
+            self._attention = self._NA
             if self._sign_perceivable:
+                self._attention = self._SIGN
                 # If the sign is in the perceivable range, then the agent can read it
                 if sign_name not in self._seen_signs and sign_name is not None:
                     self._steps_on_sign += 1
                 if self._steps_on_sign >= self._perceive_signs_duration:
                     # If the agent has perceived the sign for 3 seconds, then the agent can read it, but only append the sign that has not been seen before
                     if sign_name not in self._seen_signs and sign_name is not None:
+                        # self._prev_seen_signs = self._seen_signs.copy()
                         self._seen_signs.append(sign_name)
                         self._steps_on_sign = 0
-            attention = self._SIGN  # TODO: change to self._attention
 
         terminate = self._get_terminate()
         reward = self._get_reward(terminate=terminate)
@@ -843,8 +864,9 @@ class SupervisoryControlWalkControl(Env):
         self._step_indexes.append(self._steps)
         # self._step_wise_attentions.append(self._attention)
         self._step_wise_walking_positions.append(self._walking_position)
-        self._step_wise_attentions.append(attention)
+        self._step_wise_attentions.append(self._attention)
         self._step_wise_walking_speeds.append(self._PPWS)
+        self._step_wise_reading_ratios.append(self._reading_speed_ratio)
         self._step_wise_reading_progress.append(self._reading_progress)
 
         if terminate and (self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test'):
@@ -882,10 +904,17 @@ class SupervisoryControlWalkControl(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
 
         # Get the attention allocation
+        norm_attention_allocation = self._attention_positions[self._attention_allocation]
         norm_attention = self._attention_positions[self._attention]
 
         # Get the walking position
         norm_walking_position = self.normalise(self._walking_position, 0, self._total_walking_path_length, -1, 1)
+
+        # Get the walking speed
+        norm_walking_speed = self.normalise(self._PPWS, 0, 1, -1, 1)
+
+        # Get the reading speed
+        norm_reading_speed = self.normalise(self._reading_speed_ratio, 0, 1, -1, 1)
 
         # Get the reading progress
         norm_reading_progress = self.normalise(self._reading_progress, 0, self._text_length, -1, 1)
@@ -895,8 +924,9 @@ class SupervisoryControlWalkControl(Env):
         norm_sign_perceivable = 1 if self._sign_perceivable else -1
         norm_num_seen_signs = self.normalise(len(self._seen_signs), 0, len(self._sign_perceivable_locations), -1, 1)
 
-        stateful_info = np.array([remaining_ep_len_norm, norm_attention, norm_walking_position, norm_reading_progress,
-                                  norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs])
+        stateful_info = np.array([remaining_ep_len_norm, norm_attention_allocation, norm_attention, norm_walking_position,
+                                  norm_walking_speed, norm_reading_speed,
+                                  norm_reading_progress, norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs])
 
         # Observation space check
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -914,20 +944,25 @@ class SupervisoryControlWalkControl(Env):
         # Reading related rewards
         reading_making_progress = 0.2 * (self._reading_progress - self._prev_reading_progress)
 
-        # Walking related rewards
-        bonus_finish_task = 0
+        # Sign reading related rewards
         bonus_signs_read = 0
+        if len(self._prev_seen_signs) < len(self._seen_signs):
+            bonus_signs_read = 10
+
+        # Walking progress related rewards
+        walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
+
+        # Walking task finished related rewards
+        bonus_finish_task = 0
         if terminate is True:
             if self._walking_position >= self._total_walking_path_length:
                 # Reward for finishing the walking task
                 bonus_finish_task = 50
-                bonus_signs_read = len(self._seen_signs) * 5
             else:
                 # Punish if not finished the walking task
                 bonus_finish_task = -50
-                bonus_signs_read = -(len(self._sign_perceivable_locations) - len(self._seen_signs)) * 5
 
-        reward = time_cost + reading_making_progress + bonus_finish_task + bonus_signs_read
+        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task + bonus_signs_read
         # TODO maybe need to tune the reward function (each component's weights)
 
         return reward
