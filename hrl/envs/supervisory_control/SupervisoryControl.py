@@ -726,6 +726,13 @@ class SupervisoryControlWalkControl(Env):
             'normal': [0.5, 1],
         }
 
+        # Determine the information loggers
+        self._step_indexes = None
+        self._step_wise_walking_positions = None
+        self._step_wise_attentions = None
+        self._step_wise_walking_speeds = None
+        self._step_wise_reading_progress = None
+
         # # Initialize the pre-trained middle level RL models when testing the supervisory control
         # if self._config['rl']['mode'] == 'test':
         #     # Initialize the RL middle level task environments
@@ -767,7 +774,13 @@ class SupervisoryControlWalkControl(Env):
         self._seen_signs = []
         self._steps_on_sign = 0
         self._sign_perceivable = False
+
         self._info = {}
+        self._step_indexes = []
+        self._step_wise_walking_positions = []
+        self._step_wise_attentions = []
+        self._step_wise_walking_speeds = []
+        self._step_wise_reading_progress = []
 
         return self._get_obs()
 
@@ -781,7 +794,7 @@ class SupervisoryControlWalkControl(Env):
         action_attention = action[0]
         action_walking_speed = action[1]
 
-        # Determine the walking speed
+        # Determine the walking speed - TODO: forgot to update the attention position
         if action_walking_speed <= self._action_walking_speed_thresholds['very slow'][-1]:
             self._PPWS = self._PPWS_ratio_intervals['very slow'][0]
             self._reading_speed_ratio = self._PPWS_ratio_intervals['very slow'][-1]
@@ -802,11 +815,12 @@ class SupervisoryControlWalkControl(Env):
         # Determine the attention allocation
         if action_attention <= self._action_attention_thresholds[self._NA][-1]:
             # Do nothing, the agent is looking no where
-            pass
+            attention = self._NA    # TODO: change to self._attention
         elif self._action_attention_thresholds[self._OHMD][0] < action_attention <= self._action_attention_thresholds[self._OHMD][-1]:
             # The agent is reading on the OHMD
             self._prev_reading_progress = self._reading_progress
             self._reading_progress += self._reading_speed_ratio * self._reading_speed
+            attention = self._OHMD  # TODO: change to self._attention
         elif self._action_attention_thresholds[self._SIGN][0] < action_attention <= self._action_attention_thresholds[self._SIGN][-1]:
             # The agent is reading the sign in the environment
             # Determine whether it can see the sign - whether in the perceivable range
@@ -820,9 +834,29 @@ class SupervisoryControlWalkControl(Env):
                     if sign_name not in self._seen_signs and sign_name is not None:
                         self._seen_signs.append(sign_name)
                         self._steps_on_sign = 0
+            attention = self._SIGN  # TODO: change to self._attention
 
         terminate = self._get_terminate()
         reward = self._get_reward(terminate=terminate)
+
+        # Log the information
+        self._step_indexes.append(self._steps)
+        # self._step_wise_attentions.append(self._attention)
+        self._step_wise_walking_positions.append(self._walking_position)
+        self._step_wise_attentions.append(attention)
+        self._step_wise_walking_speeds.append(self._PPWS)
+        self._step_wise_reading_progress.append(self._reading_progress)
+
+        if terminate and (self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test'):
+            self._info = {
+                'steps': self._step_indexes,
+                'walking_path_finished': self._walking_position >= self._total_walking_path_length,
+                'signs_read': self._seen_signs,
+                'step_wise_attentions': self._step_wise_attentions,
+                'step_wise_walking_speeds': self._step_wise_walking_speeds,
+                'step_wise_reading_progress': self._step_wise_reading_progress,
+            }
+            print(self._info)
 
         return self._get_obs(), reward, terminate, self._info
 

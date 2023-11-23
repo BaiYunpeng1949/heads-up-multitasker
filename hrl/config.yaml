@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 200000000
@@ -22,8 +22,8 @@ rl:
 
   test:
     num_episodes: 1
-    loaded_model_name: 'rl_model_100000000_steps'
-    continual_logs_name: 'PPO_24'
+    loaded_model_name: 'rl_model_125000000_steps'
+    continual_logs_name: 'PPO_33'
 
     grid_search_perturbation:
       enable: False
@@ -39,7 +39,7 @@ rl:
       layouts: ['L0', 'L50', 'L100']
       num_episodes: 50
     grid_search_supervisory_control:
-      enable: True
+      enable: False
       agent_name: 'Norman'   # Shakespeare, Norman, and Olaf
       layouts: ['L0', 'L50', 'L100']
       event_update_levels: ['short', 'middle', 'long']
