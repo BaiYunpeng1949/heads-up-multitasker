@@ -962,10 +962,10 @@ class SupervisoryControlWalkControl(Env):
                     bonus_read_on_ohmd = 100 * (self._reading_progress / self._steps)
                 else:
                     # Punish if not read all the signs
-                    bonus_finish_task = -100
+                    bonus_finish_task = -10
             else:
                 # Punish if not read all the signs nor finished the walking task
-                bonus_finish_task = -100
+                bonus_finish_task = -10
 
         reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task + bonus_read_on_ohmd
         # TODO maybe need to tune the reward function (each component's weights)
