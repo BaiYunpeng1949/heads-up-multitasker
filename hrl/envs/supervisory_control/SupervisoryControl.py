@@ -835,7 +835,8 @@ class SupervisoryControlWalkControl(Env):
             self._attention = self._NA
         elif self._action_attention_thresholds[self._OHMD][0] < action_attention <= self._action_attention_thresholds[self._OHMD][-1]:
             # The agent is reading on the OHMD
-            self._reading_progress += self._reading_speed_ratio * self._reading_speed
+            if self._reading_progress < self._text_length:
+                self._reading_progress += self._reading_speed_ratio * self._reading_speed
             self._attention_allocation = self._OHMD
             self._attention = self._OHMD
         elif self._action_attention_thresholds[self._SIGN][0] < action_attention <= self._action_attention_thresholds[self._SIGN][-1]:
@@ -942,27 +943,31 @@ class SupervisoryControlWalkControl(Env):
         time_cost = -1
 
         # Reading related rewards
-        reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
-
-        # Sign reading related rewards
-        bonus_signs_read = 0
-        if len(self._prev_seen_signs) < len(self._seen_signs):
-            bonus_signs_read = 10
+        reading_making_progress = 0.5 * (self._reading_progress - self._prev_reading_progress)
 
         # Walking progress related rewards
-        walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
+        # walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
+        walking_making_progress = 0
 
         # Walking task finished related rewards
+        bonus_read_on_ohmd = 0
         bonus_finish_task = 0
         if terminate is True:
             if self._walking_position >= self._total_walking_path_length:
-                # Reward for finishing the walking task
-                bonus_finish_task = 50
+                # Finished the walking task
+                if len(self._seen_signs) == len(self._sign_perceivable_locations):
+                    # Reward for reading all the signs
+                    bonus_finish_task = 100
+                    # Reward bonus for reading on the OHMD - as quick as possible
+                    bonus_read_on_ohmd = 100 * (self._reading_progress / self._steps)
+                else:
+                    # Punish if not read all the signs
+                    bonus_finish_task = -100
             else:
-                # Punish if not finished the walking task
-                bonus_finish_task = -50
+                # Punish if not read all the signs nor finished the walking task
+                bonus_finish_task = -100
 
-        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task + bonus_signs_read
+        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task + bonus_read_on_ohmd
         # TODO maybe need to tune the reward function (each component's weights)
 
         return reward
