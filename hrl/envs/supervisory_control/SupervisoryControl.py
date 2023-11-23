@@ -800,12 +800,16 @@ class SupervisoryControlWalkControl(Env):
 
     def step(self, action):
 
+        self._prev_walking_position = self._walking_position
+        self._prev_seen_signs = self._seen_signs.copy()
+        self._prev_reading_progress = self._reading_progress
+
         self._steps += 1
 
         action_attention = action[0]
         action_walking_speed = action[1]
 
-        # Determine the walking speed - TODO: forgot to update the attention position
+        # Determine the walking speed
         if action_walking_speed <= self._action_walking_speed_thresholds['very slow'][-1]:
             self._PPWS = self._PPWS_ratio_intervals['very slow'][0]
             self._reading_speed_ratio = self._PPWS_ratio_intervals['very slow'][-1]
@@ -822,13 +826,7 @@ class SupervisoryControlWalkControl(Env):
             raise ValueError(f"The action value of walking speed is not in the range of [-1, 1]! "
                              f"The action value is: {action_walking_speed}")
         # Update the walking position
-        self._prev_walking_position = self._walking_position
         self._walking_position += self._PPWS * self._preferred_walking_speed
-
-        # Update the seen signs
-        self._prev_seen_signs = self._seen_signs.copy()
-
-        # Update the reading progress
 
         # Determine the attention allocation
         if action_attention <= self._action_attention_thresholds[self._NA][-1]:
@@ -837,7 +835,6 @@ class SupervisoryControlWalkControl(Env):
             self._attention = self._NA
         elif self._action_attention_thresholds[self._OHMD][0] < action_attention <= self._action_attention_thresholds[self._OHMD][-1]:
             # The agent is reading on the OHMD
-            self._prev_reading_progress = self._reading_progress
             self._reading_progress += self._reading_speed_ratio * self._reading_speed
             self._attention_allocation = self._OHMD
             self._attention = self._OHMD
@@ -945,7 +942,7 @@ class SupervisoryControlWalkControl(Env):
         time_cost = -1
 
         # Reading related rewards
-        reading_making_progress = 0.2 * (self._reading_progress - self._prev_reading_progress)
+        reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
 
         # Sign reading related rewards
         bonus_signs_read = 0
