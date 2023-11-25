@@ -633,9 +633,9 @@ class SupervisoryControlWalkControl(Env):
             # 'relative slow': [[0.5, 0.8], [0.6, 0.4]],
             # 'normal': [[0.8, 1], [0.4, 0.25]],
             # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
-            'very slow': [0.1, 0.95],
-            'slow': [0.4, 0.7],
-            'relative slow': [0.7, 0.5],
+            'very slow': [0.1, 0.7],
+            'slow': [0.5, 0.7],
+            # 'relative slow': [0.7, 0.5],
             'normal': [0.9, 0.3],
         }
         # TODO: design the function between the readability <--> head perturbation <--> walking speed,
@@ -692,6 +692,17 @@ class SupervisoryControlWalkControl(Env):
         sign_6 = 41
         sign_7 = 48.5
         sign_8 = 56
+        # Get the normalized sign positions
+        self._normalised_sign_positions = [
+            self.normalise(sign_1, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_2, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_3, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_4, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_5, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_6, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_7, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(sign_8, 0, self._total_walking_path_length, -1, 1),
+        ]
         self._sign_perceivable_locations = {
             'sign_1': [sign_1 - half_perceivable_range_on_path, sign_1],
             'sign_2': [sign_2 - half_perceivable_range_on_path, sign_2],
@@ -707,6 +718,7 @@ class SupervisoryControlWalkControl(Env):
         self._perceive_signs_duration = 3   # Need to cumulatively perceive the sign for 3 seconds to be able to read it
         self._steps_on_sign = None
         self._sign_perceivable = None
+        self._is_failed = None      # An indicator of whether the agent has failed in the task: walk by a sign without perceiving it
 
         # Initialize the RL training related parameters
         self._steps = None
@@ -715,7 +727,7 @@ class SupervisoryControlWalkControl(Env):
         self._info = None
 
         # Define the observation space
-        self._num_stateful_info = 10
+        self._num_stateful_info = 19
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - 1st: attention allocation; 2nd: walking speed control
@@ -725,11 +737,16 @@ class SupervisoryControlWalkControl(Env):
             self._OHMD: [-0.3, 0.3],
             self._SIGN: [0.3, 1],
         }
+        # self._action_walking_speed_thresholds = {
+        #     'very slow': [-1, -0.5],
+        #     'slow': [-0.5, 0],
+        #     'relative slow': [0, 0.5],
+        #     'normal': [0.5, 1],
+        # }
         self._action_walking_speed_thresholds = {
-            'very slow': [-1, -0.5],
-            'slow': [-0.5, 0],
-            'relative slow': [0, 0.5],
-            'normal': [0.5, 1],
+            'very slow': [-1, -0.3],
+            'slow': [-0.3, 0.3],
+            'normal': [0.3, 1],
         }
 
         # Determine the information loggers
@@ -784,6 +801,7 @@ class SupervisoryControlWalkControl(Env):
         self._seen_signs = []
         self._steps_on_sign = 0
         self._sign_perceivable = False
+        self._is_failed = False
 
         self._info = {}
         self._step_indexes = []
@@ -816,9 +834,9 @@ class SupervisoryControlWalkControl(Env):
         elif self._action_walking_speed_thresholds['slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['slow'][-1]:
             self._PPWS = self._PPWS_ratio_intervals['slow'][0]
             self._reading_speed_ratio = self._PPWS_ratio_intervals['slow'][-1]
-        elif self._action_walking_speed_thresholds['relative slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['relative slow'][-1]:
-            self._PPWS = self._PPWS_ratio_intervals['relative slow'][0]
-            self._reading_speed_ratio = self._PPWS_ratio_intervals['relative slow'][-1]
+        # elif self._action_walking_speed_thresholds['relative slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['relative slow'][-1]:
+        #     self._PPWS = self._PPWS_ratio_intervals['relative slow'][0]
+        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['relative slow'][-1]
         elif self._action_walking_speed_thresholds['normal'][0] < action_walking_speed <= self._action_walking_speed_thresholds['normal'][-1]:
             self._PPWS = self._PPWS_ratio_intervals['normal'][0]
             self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
@@ -908,8 +926,11 @@ class SupervisoryControlWalkControl(Env):
         norm_attention_allocation = self._attention_positions[self._attention_allocation]
         norm_attention = self._attention_positions[self._attention]
 
-        # Get the walking position
+        # Get the walking position - where the agent is and where the destination is
         norm_walking_position = self.normalise(self._walking_position, 0, self._total_walking_path_length, -1, 1)
+
+        # Get the sign positions
+        norm_sign_positions = self._normalised_sign_positions
 
         # Get the walking speed
         norm_walking_speed = self.normalise(self._PPWS, 0, 1, -1, 1)
@@ -925,9 +946,15 @@ class SupervisoryControlWalkControl(Env):
         norm_sign_perceivable = 1 if self._sign_perceivable else -1
         norm_num_seen_signs = self.normalise(len(self._seen_signs), 0, len(self._sign_perceivable_locations), -1, 1)
 
+        # Get the task related information
+        norm_fail_task = 1 if self._is_failed else -1
+
         stateful_info = np.array([remaining_ep_len_norm, norm_attention_allocation, norm_attention, norm_walking_position,
                                   norm_walking_speed, norm_reading_speed,
-                                  norm_reading_progress, norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs])
+                                  norm_reading_progress, norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs,
+                                  *norm_sign_positions,
+                                  norm_fail_task,
+                                  ])
 
         # Observation space check
         if stateful_info.shape[0] != self._num_stateful_info:
@@ -936,6 +963,30 @@ class SupervisoryControlWalkControl(Env):
                              f"the actual shape is: {stateful_info.shape[0]}")
 
         return stateful_info
+
+    def _get_terminate(self):
+
+        terminate = False
+
+        # Normal termination: determine by the walking position
+        if self._walking_position >= self._total_walking_path_length:
+            terminate = True
+
+        # Abnormal termination: determine by exceeding the maximum steps
+        if self._steps >= self.ep_len:
+            terminate = True
+
+        # Abnormal termination: determine by failing the task
+        for sign in self._sign_perceivable_locations.keys():
+            perceivable_range = self._sign_perceivable_locations[sign]
+            if self._walking_position > perceivable_range[1]:
+                # If the agent is in the perceivable range, then the agent perceives the sign
+                if sign not in self._seen_signs and sign is not None:
+                    self._is_failed = True
+                    terminate = True
+                    break
+
+        return terminate
 
     def _get_reward(self, terminate=False):
 
@@ -950,38 +1001,19 @@ class SupervisoryControlWalkControl(Env):
         walking_making_progress = 0
 
         # Walking task finished related rewards
-        bonus_read_on_ohmd = 0
         bonus_finish_task = 0
         if terminate is True:
-            if self._walking_position >= self._total_walking_path_length:
-                # Finished the walking task
-                if len(self._seen_signs) == len(self._sign_perceivable_locations):
-                    # Reward for reading all the signs
+            if self._is_failed:
+                # Punish if failed the task - did not read all the signs along the way
+                bonus_finish_task = -100
+            else:
+                if self._walking_position >= self._total_walking_path_length:
+                    # Finished the walking task
                     bonus_finish_task = 100
-                    # Reward bonus for reading on the OHMD - as quick as possible
-                    bonus_read_on_ohmd = 100 * (self._reading_progress / self._steps)
                 else:
                     # Punish if not read all the signs
-                    bonus_finish_task = -10
-            else:
-                # Punish if not read all the signs nor finished the walking task
-                bonus_finish_task = -10
+                    bonus_finish_task = -100
 
-        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task + bonus_read_on_ohmd
-        # TODO maybe need to tune the reward function (each component's weights)
+        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task
 
         return reward
-
-    def _get_terminate(self):
-
-        terminate = False
-
-        # Normal termination: determine by the walking position
-        if self._walking_position >= self._total_walking_path_length:
-            terminate = True
-
-        # Abnormal termination: determine by exceeding the maximum steps
-        if self._steps >= self.ep_len:
-            terminate = True
-
-        return terminate
