@@ -475,6 +475,16 @@ class RL:
                 'event interval': None,
             }
 
+            ep_study4_info = {
+                'sign_positions': [],
+                'steps': [],
+                'step_wise_walking_positions': [],
+                'step_wise_attentions': [],
+                'step_wise_walking_speeds': [],
+                'step_wise_reading_ratios': [],
+                'step_wise_reading_progress': [],
+            }
+
             for episode in range(1, self._num_episodes + 1):
                 omc_params['target_mjidx'] += 1
                 # use these when testing the ocular motor control
@@ -523,6 +533,14 @@ class RL:
                     ep_info['reading_speed'] += info['reading_speed']
                     ep_info['layout'] = info['layout']
                     ep_info['event interval'] = info['event interval']
+                elif isinstance(self._env, SupervisoryControlWalkControl):
+                    ep_study4_info['sign_positions'].append(info['sign_positions'])
+                    ep_study4_info['steps'].append(info['steps'])
+                    ep_study4_info['step_wise_walking_positions'].append(info['step_wise_walking_positions'])
+                    ep_study4_info['step_wise_attentions'].append(info['step_wise_attentions'])
+                    ep_study4_info['step_wise_walking_speeds'].append(info['step_wise_walking_speeds'])
+                    ep_study4_info['step_wise_reading_ratios'].append(info['step_wise_reading_ratios'])
+                    ep_study4_info['step_wise_reading_progress'].append(info['step_wise_reading_progress'])
 
                 print(
                     f'Episode:{episode}     Score:{score} \n'
@@ -536,6 +554,13 @@ class RL:
                       f"The average number of attention switches on middle is {ep_info['num_attention_switches_on_middle'] / self._num_episodes}\n"
                       f"The average number of steps on incorrect lane is {ep_info['num_steps_on_incorrect_lane'] / self._num_episodes}\n"
                       f"The average reading speed is {ep_info['reading_speed'] / self._num_episodes}\n")
+            elif isinstance(self._env, SupervisoryControlWalkControl):
+                # Write to a csv file
+                df = pd.DataFrame(ep_study4_info)
+                dir = os.path.dirname(os.path.realpath(__file__))
+                root_dir = os.path.dirname(dir)
+                study_data_file_path = os.path.join(root_dir, 'study data', 'Study 4', 'study4_data.csv')
+                df.to_csv(study_data_file_path, index=False)
 
             return imgs, imgs_eye
 

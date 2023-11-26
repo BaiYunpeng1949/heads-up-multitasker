@@ -633,7 +633,7 @@ class SupervisoryControlWalkControl(Env):
             # 'relative slow': [[0.5, 0.8], [0.6, 0.4]],
             # 'normal': [[0.8, 1], [0.4, 0.25]],
             # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
-            'very slow': [0.1, 0.7],
+            'very slow': [0.1, 0.9],    # Previously: [0.1, 0.9]
             'slow': [0.5, 0.7],
             # 'relative slow': [0.7, 0.5],
             'normal': [0.9, 0.3],
@@ -684,34 +684,34 @@ class SupervisoryControlWalkControl(Env):
         # Empirical setting - the extreme perceivable distance of seeing the sign in the environment
         self._perceivable_distance = 3  # FIXME: This might be a free-parameter that we can tune later on
         half_perceivable_range_on_path = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
-        sign_1 = 3.5
-        sign_2 = 11
-        sign_3 = 18.5
-        sign_4 = 26
-        sign_5 = 33.5
-        sign_6 = 41
-        sign_7 = 48.5
-        sign_8 = 56
+        self._sign_1 = 3.5
+        self._sign_2 = 11
+        self._sign_3 = 18.5
+        self._sign_4 = 26
+        self._sign_5 = 33.5
+        self._sign_6 = 41
+        self._sign_7 = 48.5
+        self._sign_8 = 56
         # Get the normalized sign positions
         self._normalised_sign_positions = [
-            self.normalise(sign_1, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_2, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_3, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_4, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_5, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_6, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_7, 0, self._total_walking_path_length, -1, 1),
-            self.normalise(sign_8, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_1, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_2, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_3, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_4, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_5, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_6, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_7, 0, self._total_walking_path_length, -1, 1),
+            self.normalise(self._sign_8, 0, self._total_walking_path_length, -1, 1),
         ]
         self._sign_perceivable_locations = {
-            'sign_1': [sign_1 - half_perceivable_range_on_path, sign_1],
-            'sign_2': [sign_2 - half_perceivable_range_on_path, sign_2],
-            'sign_3': [sign_3 - half_perceivable_range_on_path, sign_3],
-            'sign_4': [sign_4 - half_perceivable_range_on_path, sign_4],
-            'sign_5': [sign_5 - half_perceivable_range_on_path, sign_5],
-            'sign_6': [sign_6 - half_perceivable_range_on_path, sign_6],
-            'sign_7': [sign_7 - half_perceivable_range_on_path, sign_7],
-            'sign_8': [sign_8 - half_perceivable_range_on_path, sign_8],
+            'sign_1': [self._sign_1 - half_perceivable_range_on_path, self._sign_1],
+            'sign_2': [self._sign_2 - half_perceivable_range_on_path, self._sign_2],
+            'sign_3': [self._sign_3 - half_perceivable_range_on_path, self._sign_3],
+            'sign_4': [self._sign_4 - half_perceivable_range_on_path, self._sign_4],
+            'sign_5': [self._sign_5 - half_perceivable_range_on_path, self._sign_5],
+            'sign_6': [self._sign_6 - half_perceivable_range_on_path, self._sign_6],
+            'sign_7': [self._sign_7 - half_perceivable_range_on_path, self._sign_7],
+            'sign_8': [self._sign_8 - half_perceivable_range_on_path, self._sign_8],
         }
         self._prev_seen_signs = None
         self._seen_signs = None     # Should be a list
@@ -722,7 +722,7 @@ class SupervisoryControlWalkControl(Env):
 
         # Initialize the RL training related parameters
         self._steps = None
-        self.ep_len = int(2 * self._text_length)
+        self.ep_len = 100   # Previously: int(2 * self._text_length)
         self._epsilon = 1e-100
         self._info = None
 
@@ -892,12 +892,15 @@ class SupervisoryControlWalkControl(Env):
                 'steps': self._step_indexes,
                 'walking_path_finished': self._walking_position >= self._total_walking_path_length,
                 'signs_read': self._seen_signs,
+                'sign_positions': [self._sign_1, self._sign_2, self._sign_3, self._sign_4, self._sign_5, self._sign_6, self._sign_7, self._sign_8],
                 'step_wise_attentions': self._step_wise_attentions,
+                'step_wise_walking_positions': self._step_wise_walking_positions,
                 'step_wise_walking_speeds': self._step_wise_walking_speeds,
                 'step_wise_reading_ratios': self._step_wise_reading_ratios,
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
             print(self._info)
+            print(self._info['step_wise_walking_positions'])
 
         return self._get_obs(), reward, terminate, self._info
 
@@ -975,6 +978,9 @@ class SupervisoryControlWalkControl(Env):
         # Abnormal termination: determine by exceeding the maximum steps
         if self._steps >= self.ep_len:
             terminate = True
+            if self._is_failed:
+                # If the agent spends too much steps on finishing the task (now set 100 steps as the episode length)
+                self._is_failed = True
 
         # Abnormal termination: determine by failing the task
         for sign in self._sign_perceivable_locations.keys():
@@ -994,7 +1000,7 @@ class SupervisoryControlWalkControl(Env):
         time_cost = -1
 
         # Reading related rewards
-        reading_making_progress = 0.5 * (self._reading_progress - self._prev_reading_progress)
+        reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
 
         # Walking progress related rewards
         # walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
@@ -1005,7 +1011,7 @@ class SupervisoryControlWalkControl(Env):
         if terminate is True:
             if self._is_failed:
                 # Punish if failed the task - did not read all the signs along the way
-                bonus_finish_task = -100    # TODO: think about: Maybe change this to 10? And make the final reward bigger.
+                bonus_finish_task = -100
             else:
                 if self._walking_position >= self._total_walking_path_length:
                     # Finished the walking task
