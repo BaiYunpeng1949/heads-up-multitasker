@@ -1005,7 +1005,7 @@ class SupervisoryControlWalkControl(Env):
         if terminate is True:
             if self._is_failed:
                 # Punish if failed the task - did not read all the signs along the way
-                bonus_finish_task = -100
+                bonus_finish_task = -100    # TODO: think about: Maybe change this to 10? And make the final reward bigger.
             else:
                 if self._walking_position >= self._total_walking_path_length:
                     # Finished the walking task
