@@ -559,7 +559,12 @@ class RL:
                 df = pd.DataFrame(ep_study4_info)
                 dir = os.path.dirname(os.path.realpath(__file__))
                 root_dir = os.path.dirname(dir)
-                study_data_file_path = os.path.join(root_dir, 'study data', 'Study 4', 'study4_data.csv')
+                # Get current local time
+                current_time = datetime.now()
+                # Format the time as "MM-DD-HH"
+                formatted_time = current_time.strftime("%m-%d-%H")
+                # Write the data file name with the formatted time
+                study_data_file_path = os.path.join(root_dir, 'study data', 'Study 4', f'{formatted_time}-study4_data.csv')
                 df.to_csv(study_data_file_path, index=False)
 
             return imgs, imgs_eye
