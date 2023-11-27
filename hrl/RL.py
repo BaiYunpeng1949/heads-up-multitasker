@@ -562,7 +562,7 @@ class RL:
                 # Get current local time
                 current_time = datetime.now()
                 # Format the time as "MM-DD-HH"
-                formatted_time = current_time.strftime("%m-%d-%H")
+                formatted_time = current_time.strftime("%m-%d-%H-%M")
                 # Create a folder for the study data
                 study_data_folder_path = os.path.join(root_dir, 'study data', 'Study 4', formatted_time)
                 if not os.path.exists(study_data_folder_path):

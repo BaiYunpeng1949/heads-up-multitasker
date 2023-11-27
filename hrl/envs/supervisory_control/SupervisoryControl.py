@@ -651,14 +651,14 @@ class SupervisoryControlWalkControl(Env):
         #   ultimately directly get from the performance of oculomotor control model's interaction with the environment.
 
         # Attention related states
-        self._attention_allocation = None   # The position of where the attention is allocated voluntarily
+        self._attention_target = None   # The position of where the attention is allocated voluntarily
         # The position of the actual attention, it differentiates with the above one,
         # since the attention can be allocated to the environment, but the agent might not be able to perceive it,
         # e.g., when the agent is seeing the sign in the environment
-        self._attention = None
-        self._NA = 'nothing in the environment'
-        self._OHMD = 'text words on the OHMD'
-        self._SIGN = 'sign in the environment'
+        self._attention_actual_position = None
+        self._NA = 'NA'
+        self._OHMD = 'OHMD'
+        self._SIGN = 'Sign'
         self._attention_positions = {
             self._NA: -1,
             self._OHMD: 0,
@@ -788,8 +788,8 @@ class SupervisoryControlWalkControl(Env):
         self._steps = 0
 
         # Initialize the attention allocation
-        self._attention_allocation = self._NA
-        self._attention = self._NA
+        self._attention_target = self._NA
+        self._attention_actual_position = self._NA
         self._PPWS = self._PPWS_ratio_intervals['normal'][0]
         self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
         self._reading_progress = 0
@@ -846,31 +846,36 @@ class SupervisoryControlWalkControl(Env):
         # Update the walking position
         self._walking_position += self._PPWS * self._preferred_walking_speed
 
+        # Update the perceivable range of the sign in the environment out of the loop for in-time update
+        # Determine whether it can see the sign - whether in the perceivable range
+        self._sign_perceivable, sign_name = self._determine_sign_perceivable()
+
         # Determine the attention allocation
         if action_attention <= self._action_attention_thresholds[self._NA][-1]:
             # Do nothing, the agent is looking no where
-            self._attention_allocation = self._NA
-            self._attention = self._NA
+            self._attention_target = self._NA
+            self._attention_actual_position = self._NA
         elif self._action_attention_thresholds[self._OHMD][0] < action_attention <= self._action_attention_thresholds[self._OHMD][-1]:
             # The agent is reading on the OHMD
             if self._reading_progress < self._text_length:
                 self._reading_progress += self._reading_speed_ratio * self._reading_speed
-            self._attention_allocation = self._OHMD
-            self._attention = self._OHMD
+                self._reading_progress = np.clip(self._reading_progress, 0, self._text_length)
+            self._attention_target = self._OHMD
+            self._attention_actual_position = self._OHMD
         elif self._action_attention_thresholds[self._SIGN][0] < action_attention <= self._action_attention_thresholds[self._SIGN][-1]:
             # The agent is reading the sign in the environment
-            # Determine whether it can see the sign - whether in the perceivable range
-            self._sign_perceivable, sign_name = self._determine_sign_perceivable()
-            self._attention_allocation = self._SIGN
-            self._attention = self._NA
+            # # Determine whether it can see the sign - whether in the perceivable range - update here will make it not in-time disable the flag
+            # self._sign_perceivable, sign_name = self._determine_sign_perceivable()
+            self._attention_target = self._SIGN
+            self._attention_actual_position = self._NA
             if self._sign_perceivable:
-                self._attention = self._SIGN
+                self._attention_actual_position = self._SIGN
                 # If the sign is in the perceivable range, then the agent can read it
                 if sign_name not in self._seen_signs and sign_name is not None:
                     self._steps_on_sign += 1
-                if self._steps_on_sign >= self._perceive_signs_duration:
-                    # If the agent has perceived the sign for 3 seconds, then the agent can read it, but only append the sign that has not been seen before
-                    if sign_name not in self._seen_signs and sign_name is not None:
+                    if self._steps_on_sign >= self._perceive_signs_duration:
+                        # # If the agent has perceived the sign for 3 seconds, then the agent can read it, but only append the sign that has not been seen before
+                        # if sign_name not in self._seen_signs and sign_name is not None:
                         # self._prev_seen_signs = self._seen_signs.copy()
                         self._seen_signs.append(sign_name)
                         self._steps_on_sign = 0
@@ -882,12 +887,21 @@ class SupervisoryControlWalkControl(Env):
         self._step_indexes.append(self._steps)
         # self._step_wise_attentions.append(self._attention)
         self._step_wise_walking_positions.append(self._walking_position)
-        self._step_wise_attentions.append(self._attention)
+        self._step_wise_attentions.append(self._attention_actual_position)
         self._step_wise_walking_speeds.append(self._PPWS)
         self._step_wise_reading_ratios.append(self._reading_speed_ratio)
         self._step_wise_reading_progress.append(self._reading_progress)
 
+        # if self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test':
+        #     # Step-wise print out debugging
+        #     print(f"Step: {self._steps}, "
+        #           f"Attention: {self._attention_actual_position}, "
+        #           f"Steps on sign: {self._steps_on_sign}, "
+        #           f"Sign perceivable: {self._sign_perceivable}, "
+        #           f"Walking positions: {self._walking_position}, ")
+
         if terminate and (self._config['rl']['mode'] == 'debug' or self._config['rl']['mode'] == 'test'):
+            # Episode-wise print out debugging
             self._info = {
                 'steps': self._step_indexes,
                 'walking_path_finished': self._walking_position >= self._total_walking_path_length,
@@ -926,8 +940,8 @@ class SupervisoryControlWalkControl(Env):
         remaining_ep_len_norm = (self.ep_len - self._steps) / self.ep_len * 2 - 1
 
         # Get the attention allocation
-        norm_attention_allocation = self._attention_positions[self._attention_allocation]
-        norm_attention = self._attention_positions[self._attention]
+        norm_attention_target = self._attention_positions[self._attention_target]
+        norm_attention_actual_position = self._attention_positions[self._attention_actual_position]
 
         # Get the walking position - where the agent is and where the destination is
         norm_walking_position = self.normalise(self._walking_position, 0, self._total_walking_path_length, -1, 1)
@@ -952,7 +966,7 @@ class SupervisoryControlWalkControl(Env):
         # Get the task related information
         norm_fail_task = 1 if self._is_failed else -1
 
-        stateful_info = np.array([remaining_ep_len_norm, norm_attention_allocation, norm_attention, norm_walking_position,
+        stateful_info = np.array([remaining_ep_len_norm, norm_attention_target, norm_attention_actual_position, norm_walking_position,
                                   norm_walking_speed, norm_reading_speed,
                                   norm_reading_progress, norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs,
                                   *norm_sign_positions,
