@@ -634,7 +634,7 @@ class SupervisoryControlWalkControl(Env):
             # 'normal': [[0.8, 1], [0.4, 0.25]],
             # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
             'very slow': [0.1, 0.9],    # Previously: [0.1, 0.9]
-            'slow': [0.5, 0.7],
+            'slow': [0.5, 0.85],
             # 'relative slow': [0.7, 0.5],
             'normal': [0.9, 0.3],
         }
@@ -1011,7 +1011,7 @@ class SupervisoryControlWalkControl(Env):
     def _get_reward(self, terminate=False):
 
         # Time cost
-        time_cost = -1
+        time_cost = -1 + 1 * (np.exp(-0.035 * self._steps) - 1)
 
         # Reading related rewards
         reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
