@@ -722,7 +722,7 @@ class SupervisoryControlWalkControl(Env):
 
         # Initialize the RL training related parameters
         self._steps = None
-        self.ep_len = 100   # Previously: int(2 * self._text_length)
+        self.ep_len = int(2 * self._text_length)    # 100 - failed to finish the task
         self._epsilon = 1e-100
         self._info = None
 
