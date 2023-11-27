@@ -563,8 +563,12 @@ class RL:
                 current_time = datetime.now()
                 # Format the time as "MM-DD-HH"
                 formatted_time = current_time.strftime("%m-%d-%H")
+                # Create a folder for the study data
+                study_data_folder_path = os.path.join(root_dir, 'study data', 'Study 4', formatted_time)
+                if not os.path.exists(study_data_folder_path):
+                    os.makedirs(study_data_folder_path)
                 # Write the data file name with the formatted time
-                study_data_file_path = os.path.join(root_dir, 'study data', 'Study 4', f'{formatted_time}-study4_data.csv')
+                study_data_file_path = os.path.join(study_data_folder_path, f'{formatted_time}-study4_data.csv')
                 df.to_csv(study_data_file_path, index=False)
 
             return imgs, imgs_eye
