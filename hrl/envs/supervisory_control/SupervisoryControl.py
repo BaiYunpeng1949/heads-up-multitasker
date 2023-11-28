@@ -1049,6 +1049,6 @@ class SupervisoryControlWalkControl(Env):
         w = self._weight
         r1 = self._reading_speed_ratio
         r2 = self._PPWS
-        reward = w * r1 + (1 - w) * r2
+        reward = w * r1 - (1 - w) * r2
 
         return reward
