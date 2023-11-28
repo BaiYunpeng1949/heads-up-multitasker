@@ -720,6 +720,9 @@ class SupervisoryControlWalkControl(Env):
         self._sign_perceivable = None
         self._is_failed = None      # An indicator of whether the agent has failed in the task: walk by a sign without perceiving it
 
+        # The weight that balances the reading and walking tasks, ranges from 0 to 1
+        self._weight = None
+
         # Initialize the RL training related parameters
         self._steps = None
         self.ep_len = int(2 * self._text_length)    # 100 - failed to finish the task
@@ -802,6 +805,7 @@ class SupervisoryControlWalkControl(Env):
         self._steps_on_sign = 0
         self._sign_perceivable = False
         self._is_failed = False
+        self._weight = np.random.uniform(0, 1)
 
         self._info = {}
         self._step_indexes = []
@@ -1008,32 +1012,43 @@ class SupervisoryControlWalkControl(Env):
 
         return terminate
 
+    # def _get_reward(self, terminate=False):
+    #     # Bai Yunpeng's version of reward function - suspended for now
+    #
+    #     # Time cost
+    #     time_cost = -1 + 1 * (np.exp(-0.035 * self._steps) - 1)
+    #
+    #     # Reading related rewards
+    #     reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
+    #
+    #     # Walking progress related rewards
+    #     # walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
+    #     walking_making_progress = 0
+    #
+    #     # Walking task finished related rewards
+    #     bonus_finish_task = 0
+    #     if terminate is True:
+    #         if self._is_failed:
+    #             # Punish if failed the task - did not read all the signs along the way
+    #             bonus_finish_task = -100
+    #         else:
+    #             if self._walking_position >= self._total_walking_path_length:
+    #                 # Finished the walking task
+    #                 bonus_finish_task = 100
+    #             else:
+    #                 # Punish if not read all the signs
+    #                 bonus_finish_task = -100
+    #
+    #     reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task
+    #
+    #     return reward
+
     def _get_reward(self, terminate=False):
 
-        # Time cost
-        time_cost = -1 + 1 * (np.exp(-0.035 * self._steps) - 1)
-
-        # Reading related rewards
-        reading_making_progress = 1 * (self._reading_progress - self._prev_reading_progress)
-
-        # Walking progress related rewards
-        # walking_making_progress = 0.1 * (self._walking_position - self._prev_walking_position)
-        walking_making_progress = 0
-
-        # Walking task finished related rewards
-        bonus_finish_task = 0
-        if terminate is True:
-            if self._is_failed:
-                # Punish if failed the task - did not read all the signs along the way
-                bonus_finish_task = -100
-            else:
-                if self._walking_position >= self._total_walking_path_length:
-                    # Finished the walking task
-                    bonus_finish_task = 100
-                else:
-                    # Punish if not read all the signs
-                    bonus_finish_task = -100
-
-        reward = time_cost + reading_making_progress + walking_making_progress + bonus_finish_task
+        # Aleksi's version of reward function
+        w = self._weight
+        r1 = self._reading_speed_ratio
+        r2 = self._PPWS
+        reward = w * r1 + (1 - w) * r2
 
         return reward
