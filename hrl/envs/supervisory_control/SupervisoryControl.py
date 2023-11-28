@@ -730,7 +730,7 @@ class SupervisoryControlWalkControl(Env):
         self._info = None
 
         # Define the observation space
-        self._num_stateful_info = 19
+        self._num_stateful_info = 20
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - 1st: attention allocation; 2nd: walking speed control
@@ -807,8 +807,7 @@ class SupervisoryControlWalkControl(Env):
         self._is_failed = False
 
         if params is None:
-            self._weight = 0.01  # TODO debug delete alter
-            # self._weight = np.random.uniform(0, 1)
+            self._weight = np.random.uniform(0, 1)
         else:
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
@@ -978,13 +977,14 @@ class SupervisoryControlWalkControl(Env):
         # Get the task related information
         norm_fail_task = 1 if self._is_failed else -1
 
-        # TODO add weights to the observation
+        # Get the tasks' weight
+        w = self._weight
 
         stateful_info = np.array([remaining_ep_len_norm, norm_attention_target, norm_attention_actual_position, norm_walking_position,
                                   norm_walking_speed, norm_reading_speed,
                                   norm_reading_progress, norm_prev_reading_progress, norm_sign_perceivable, norm_num_seen_signs,
                                   *norm_sign_positions,
-                                  norm_fail_task,
+                                  norm_fail_task, w,
                                   ])
 
         # Observation space check
@@ -1061,9 +1061,6 @@ class SupervisoryControlWalkControl(Env):
         r1 = self._reading_speed_ratio
         r2 = self._PPWS
         reward = w * r1 - (1 - w) * r2
-
-        # TODO debug delete later
-        print(f"reward: {reward}, w: {w}, r1: {r1}, r2: {r2}")
 
         # [GPT4] Normalization Benefits: Normalizing rewards can help in stabilizing training,
         # especially in environments where the scale of rewards can vary significantly.
