@@ -786,11 +786,11 @@ class SupervisoryControlWalkControl(Env):
         #     self._read_bg_params = None
         #     self.read_bg_imgaes = None
 
-    def reset(self, grid_search_params=None):
+    def reset(self, params=None):
 
         self._steps = 0
 
-        # Initialize the attention allocation
+        # Initialize the variables
         self._attention_target = self._NA
         self._attention_actual_position = self._NA
         self._PPWS = self._PPWS_ratio_intervals['normal'][0]
@@ -805,8 +805,13 @@ class SupervisoryControlWalkControl(Env):
         self._steps_on_sign = 0
         self._sign_perceivable = False
         self._is_failed = False
-        self._weight = np.random.uniform(0, 1)
 
+        if params is None:
+            self._weight = np.random.uniform(0, 1)
+        else:
+            self._weight = params['weight']
+
+        # Log related information
         self._info = {}
         self._step_indexes = []
         self._step_wise_walking_positions = []
@@ -970,6 +975,8 @@ class SupervisoryControlWalkControl(Env):
 
         # Get the task related information
         norm_fail_task = 1 if self._is_failed else -1
+
+        # TODO add weights to the observation
 
         stateful_info = np.array([remaining_ep_len_norm, norm_attention_target, norm_attention_actual_position, norm_walking_position,
                                   norm_walking_speed, norm_reading_speed,

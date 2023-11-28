@@ -386,19 +386,23 @@ class RL:
         grid_search_perturbation = self._config_rl['test']['grid_search_perturbation']['enable']
         grid_search_selection = self._config_rl['test']['grid_search_selection']['enable']
         grid_search_supervisory_control = self._config_rl['test']['grid_search_supervisory_control']['enable']
+        grid_test_study4 = self._config_rl['test']['grid_test_study4']['enable']
 
         if self._mode == _MODES['debug']:
-            print('\nThe MuJoCo env and tasks baseline: ')
+            print('\nThe MuJoCo env and tasks baseline ')
         elif self._mode == _MODES['test']:
-            print('\nThe pre-trained RL model testing: ')
+            print('\nThe pre-trained RL model testing ')
             if grid_search_perturbation:
                 self._grid_search_perturbation()
             if grid_search_selection:
                 self._grid_search_selection()
             if grid_search_supervisory_control:
                 self._grid_search_supervisory_control()
+            if grid_test_study4:
+                print(f'Now grid testing the Study 4')
+                self._grid_test_study4()
 
-        if ((grid_search_perturbation or grid_search_selection or grid_search_supervisory_control)
+        if ((grid_search_perturbation or grid_search_selection or grid_search_supervisory_control or grid_test_study4)
                 and self._mode == _MODES['test']):
             pass
 
@@ -446,8 +450,8 @@ class RL:
                 )
             return imgs, imgs_eye
 
-        if (not (grid_search_perturbation or grid_search_selection or grid_search_supervisory_control) and
-                self._mode == _MODES['test']):
+        if (not (grid_search_perturbation or grid_search_selection or grid_search_supervisory_control or grid_test_study4)
+                and self._mode == _MODES['test']):
             imgs = []
             imgs_eye = []
             L100_index_array = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
@@ -861,6 +865,81 @@ class RL:
             f"\n--------------------------------------------------------------------------------------------"
             f"\nThe supervisory control grid search results are stored in {csv_save_path}")
 
+    def _grid_test_study4(self):
+        # Download the configurations
+        weight_range = self._config_rl['test']['grid_test_study4']['weight'][0]
+        weight_stride = self._config_rl['test']['grid_test_study4']['weight'][1]
+        # Add stride to the end of the range, or the last value will be missed
+        weight_range[1] += weight_stride
+
+        num_episodes = self._config_rl['test']['grid_test_study4']['num_episodes']
+
+        # Initialize the lists for storing parameters
+
+        df_columns = [
+            'sign_positions',
+            'steps',
+            'weights',
+            'step_wise_walking_positions',
+            'step_wise_attentions',
+            'step_wise_walking_speeds',
+            'step_wise_reading_ratios',
+            'step_wise_reading_progress',
+        ]
+
+        # Get the csv file path
+        dir = os.path.dirname(os.path.realpath(__file__))
+        root_dir = os.path.dirname(dir)
+        # Get current local time
+        current_time = datetime.now()
+        # Format the time as "MM-DD-HH"
+        formatted_time = current_time.strftime("%m-%d-%H-%M")
+        # Create a folder for the study data
+        study_data_folder_path = os.path.join(root_dir, 'study data', 'Study 4', formatted_time)
+        if not os.path.exists(study_data_folder_path):
+            os.makedirs(study_data_folder_path)
+        study_data_file_path = os.path.join(study_data_folder_path, f'{formatted_time}-study4_data.csv')
+
+        # Open the csv file and write as the models run - in case the program crashes/unexpected shutdown
+        if not os.path.isfile(study_data_file_path):
+            with open(study_data_file_path, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(df_columns)
+
+        for weight in np.arange(*weight_range, weight_stride):
+            params = {
+                'weight': weight,
+            }
+
+            for episode in range(1, num_episodes + 1):
+                obs = self._env.reset(params=params)
+                done = False
+                score = 0
+                info = None
+
+                while not done:
+                    action, _states = self._model.predict(obs, deterministic=True)
+                    obs, reward, done, info = self._env.step(action)
+                    score += reward
+
+                # Save to CSV after each episode is finished
+                with open(study_data_file_path, 'a') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        info['sign_positions'],
+                        info['steps'],
+                        info['weight'],
+                        info['step_wise_walking_positions'],
+                        info['step_wise_attentions'],
+                        info['step_wise_walking_speeds'],
+                        info['step_wise_reading_ratios'],
+                        info['step_wise_reading_progress'],
+                    ])
+
+        print(
+            f"\n--------------------------------------------------------------------------------------------"
+            f"\nThe Study 4's grid test results are stored in {study_data_file_path}")
+
     def run(self):
         """
         This method helps run the RL pipeline.
@@ -877,7 +956,7 @@ class RL:
                 self._test()
             else:
                 print(f"HRL testing. The video is being generated.")
-                if isinstance(self._env, SupervisoryControl) or isinstance(self._env, ScanEnvironment):
+                if isinstance(self._env, SupervisoryControl) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControlWalkControl):
                     self._test()
                 else:
                     # Generate the results from the pre-trained model.
