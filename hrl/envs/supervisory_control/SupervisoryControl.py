@@ -807,11 +807,11 @@ class SupervisoryControlWalkControl(Env):
         self._is_failed = False
 
         if params is None:
-            self._weight = np.random.uniform(0, 1)
+            self._weight = 0.01  # TODO debug delete alter
+            # self._weight = np.random.uniform(0, 1)
         else:
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
-                # self._weight = 0.05   # TODO debug delete alter
 
         # Log related information
         self._info = {}
