@@ -908,6 +908,7 @@ class SupervisoryControlWalkControl(Env):
             # Episode-wise print out debugging
             self._info = {
                 'steps': self._step_indexes,
+                'weight': self._weight,
                 'walking_path_finished': self._walking_position >= self._total_walking_path_length,
                 'signs_read': self._seen_signs,
                 'sign_positions': [self._sign_1, self._sign_2, self._sign_3, self._sign_4, self._sign_5, self._sign_6, self._sign_7, self._sign_8],
@@ -918,7 +919,7 @@ class SupervisoryControlWalkControl(Env):
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
             print(self._info)
-            print(self._info['step_wise_walking_positions'])
+            # print(self._info['step_wise_walking_positions'])
 
         return self._get_obs(), reward, terminate, self._info
 
@@ -1015,6 +1016,7 @@ class SupervisoryControlWalkControl(Env):
     # def _get_reward(self, terminate=False):
     #     # Bai Yunpeng's version of reward function - suspended for now
     #
+    #     # TODO: the back-up plan: tune the weight for this
     #     # Time cost
     #     time_cost = -1 + 1 * (np.exp(-0.035 * self._steps) - 1)
     #
@@ -1050,5 +1052,10 @@ class SupervisoryControlWalkControl(Env):
         r1 = self._reading_speed_ratio
         r2 = self._PPWS
         reward = w * r1 - (1 - w) * r2
+
+        # [GPT4] Normalization Benefits: Normalizing rewards can help in stabilizing training,
+        # especially in environments where the scale of rewards can vary significantly.
+        # It helps in ensuring that the gradient updates during training are neither too large (causing instability)
+        # nor too small (slowing down learning).
 
         return reward

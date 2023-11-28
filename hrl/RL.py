@@ -478,6 +478,7 @@ class RL:
             ep_study4_info = {
                 'sign_positions': [],
                 'steps': [],
+                'weights': [],
                 'step_wise_walking_positions': [],
                 'step_wise_attentions': [],
                 'step_wise_walking_speeds': [],
@@ -536,6 +537,7 @@ class RL:
                 elif isinstance(self._env, SupervisoryControlWalkControl):
                     ep_study4_info['sign_positions'].append(info['sign_positions'])
                     ep_study4_info['steps'].append(info['steps'])
+                    ep_study4_info['weights'].append(info['weight'])
                     ep_study4_info['step_wise_walking_positions'].append(info['step_wise_walking_positions'])
                     ep_study4_info['step_wise_attentions'].append(info['step_wise_attentions'])
                     ep_study4_info['step_wise_walking_speeds'].append(info['step_wise_walking_speeds'])
