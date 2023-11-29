@@ -807,7 +807,8 @@ class SupervisoryControlWalkControl(Env):
         self._is_failed = False
 
         if params is None:
-            self._weight = np.random.uniform(0, 1)
+            # self._weight = np.random.uniform(0, 1)
+            self._weight = 0.9      # TODO debug delete later
         else:
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
@@ -1063,6 +1064,9 @@ class SupervisoryControlWalkControl(Env):
         r2 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
 
         reward = w * r1 - (1 - w) * r2
+
+        # TODO debug delete later
+        print(f"r1: {r1}, r2: {r2}, reward: {reward}")
 
         # [GPT4] Normalization Benefits: Normalizing rewards can help in stabilizing training,
         # especially in environments where the scale of rewards can vary significantly.
