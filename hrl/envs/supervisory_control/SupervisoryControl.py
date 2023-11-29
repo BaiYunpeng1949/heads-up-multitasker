@@ -1058,8 +1058,10 @@ class SupervisoryControlWalkControl(Env):
 
         # Aleksi's version of reward function
         w = self._weight
-        r1 = self._reading_speed_ratio
-        r2 = self._PPWS
+        # r1 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
+        r1 = self._PPWS
+        r2 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
+
         reward = w * r1 - (1 - w) * r2
 
         # [GPT4] Normalization Benefits: Normalizing rewards can help in stabilizing training,
