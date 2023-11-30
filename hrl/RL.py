@@ -877,6 +877,8 @@ class RL:
         # Initialize the lists for storing parameters
 
         df_columns = [
+            'walking_path_finished',
+            'sign_read'
             'sign_positions',
             'steps',
             'weights',
@@ -885,6 +887,7 @@ class RL:
             'step_wise_walking_speeds',
             'step_wise_reading_ratios',
             'step_wise_reading_progress',
+            'score',
         ]
 
         # Get the csv file path
@@ -926,6 +929,8 @@ class RL:
                 with open(study_data_file_path, 'a') as f:
                     writer = csv.writer(f)
                     writer.writerow([
+                        info['walking_path_finished'],
+                        info['signs_read'],
                         info['sign_positions'],
                         info['steps'],
                         info['weight'],
@@ -934,6 +939,7 @@ class RL:
                         info['step_wise_walking_speeds'],
                         info['step_wise_reading_ratios'],
                         info['step_wise_reading_progress'],
+                        score,
                     ])
 
         print(

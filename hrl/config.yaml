@@ -46,5 +46,5 @@ rl:
       num_episodes: 500
     grid_test_study4:
       enable: True
-      weight: [[0, 1], 0.01]
+      weight: [[0.9, 1], 0.01]
       num_episodes: 10
