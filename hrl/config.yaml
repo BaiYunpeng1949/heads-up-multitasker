@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 200000000
@@ -22,7 +22,7 @@ rl:
 
   test:
     num_episodes: 1
-    loaded_model_name: 'rl_model_55000000_steps'
+    loaded_model_name: 'rl_model_45000000_steps'
     continual_logs_name: 'PPO_33'
 
     grid_search_perturbation:
@@ -46,5 +46,5 @@ rl:
       num_episodes: 500
     grid_test_study4:
       enable: True
-      weight: [[0.9, 1], 0.01]
+      weight: [[0, 1], 0.01]
       num_episodes: 10

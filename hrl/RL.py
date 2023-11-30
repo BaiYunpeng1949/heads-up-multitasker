@@ -878,7 +878,7 @@ class RL:
 
         df_columns = [
             'walking_path_finished',
-            'sign_read'
+            'sign_read',
             'sign_positions',
             'steps',
             'weights',
