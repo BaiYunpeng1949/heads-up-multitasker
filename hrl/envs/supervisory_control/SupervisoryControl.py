@@ -1060,7 +1060,11 @@ class SupervisoryControlWalkControl(Env):
         w = self._weight
         # r1 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
         r1 = self._PPWS
-        r2 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
+        # r2 = self._reading_speed_ratio if self._attention_actual_position == self._OHMD else 0
+        if self._attention_actual_position == self._OHMD and self._reading_progress < self._text_length:
+            r2 = self._reading_speed_ratio
+        else:
+            r2 = 0
 
         # reward = w * r1 - (1 - w) * r2
         reward = w * r1 + (1 - w) * r2
