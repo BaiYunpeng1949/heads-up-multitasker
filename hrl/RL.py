@@ -23,7 +23,7 @@ from hrl.utils.write_video import write_video
 from hrl.envs.supervisory_control.OcularMotorControl import OcularMotorControl
 from hrl.envs.supervisory_control.LocomotionControl import LocomotionControl
 from hrl.envs.supervisory_control.WordSelection import WordSelection
-from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl, SupervisoryControlWalkControl
+from hrl.envs.supervisory_control.SupervisoryControl import SupervisoryControl, SupervisoryControlWalkControl, SupervisoryControlWalkControlElapsedTime
 from hrl.envs.supervisory_control.ScanEnvironment import ScanEnvironment
 
 _MODES = {
@@ -210,7 +210,7 @@ class RL:
             )
 
         # Get an env instance for further constructing parallel environments.
-        self._env = SupervisoryControlWalkControl()  # SupervisoryControl()    # OcularMotorControl()    # LocomotionControl()
+        self._env = SupervisoryControlWalkControlElapsedTime() # SupervisoryControlWalkControl()  # SupervisoryControl()    # OcularMotorControl()    # LocomotionControl()
 
         # Initialise parallel environments
         self._parallel_envs = make_vec_env(
@@ -258,8 +258,8 @@ class RL:
                 )
                 policy = "MultiInputPolicy"
             # Configure the model - HRL - Word Selection, Read Background, Supervisory Control
-            elif isinstance(self._env, WordSelection) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl):
-                if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl):
+            elif isinstance(self._env, WordSelection) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
+                if isinstance(self._env, WordSelection) or isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                     features_dim = 128
                     net_arch = [256, 256]
                 else:
@@ -504,7 +504,7 @@ class RL:
                             obs = self._env.reset(load_model_params=omc_params)
                             imgs.append(self._env.render()[0])
                             # imgs_eye.append(self._env.render()[1])
-                        elif isinstance(self._env, SupervisoryControlWalkControl):
+                        elif isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                             obs = self._env.reset()
                         else:
                             obs = self._env.reset()
@@ -521,7 +521,7 @@ class RL:
                     if not isinstance(self._env, WordSelection):
                         if isinstance(self._env, LocomotionControl):
                             imgs.append(self._env.render())
-                        elif isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl):
+                        elif isinstance(self._env, SupervisoryControl) or isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                             pass
                         else:
                             imgs.append(self._env.render()[0])
@@ -538,7 +538,7 @@ class RL:
                     ep_info['reading_speed'] += info['reading_speed']
                     ep_info['layout'] = info['layout']
                     ep_info['event interval'] = info['event interval']
-                elif isinstance(self._env, SupervisoryControlWalkControl):
+                elif isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                     ep_study4_info['sign_positions'].append(info['sign_positions'])
                     ep_study4_info['steps'].append(info['steps'])
                     ep_study4_info['weights'].append(info['weight'])
@@ -560,7 +560,7 @@ class RL:
                       f"The average number of attention switches on middle is {ep_info['num_attention_switches_on_middle'] / self._num_episodes}\n"
                       f"The average number of steps on incorrect lane is {ep_info['num_steps_on_incorrect_lane'] / self._num_episodes}\n"
                       f"The average reading speed is {ep_info['reading_speed'] / self._num_episodes}\n")
-            elif isinstance(self._env, SupervisoryControlWalkControl):
+            elif isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                 # Write to a csv file
                 df = pd.DataFrame(ep_study4_info)
                 dir = os.path.dirname(os.path.realpath(__file__))
@@ -962,7 +962,7 @@ class RL:
                 self._test()
             else:
                 print(f"HRL testing. The video is being generated.")
-                if isinstance(self._env, SupervisoryControl) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControlWalkControl):
+                if isinstance(self._env, SupervisoryControl) or isinstance(self._env, ScanEnvironment) or isinstance(self._env, SupervisoryControlWalkControl) or isinstance(self._env, SupervisoryControlWalkControlElapsedTime):
                     self._test()
                 else:
                     # Generate the results from the pre-trained model.

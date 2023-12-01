@@ -1,11 +1,11 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 200000000
-    checkpoints_folder_name: 1130_hrl_study4_2_200m
+    checkpoints_folder_name: 1201_hrl_study4_elapsed_time_1_200m
     num_workers: 10   # Smaller than the laptop's number of processes: 16 - should not be the maximum capacity of the processors, otherwise the local memory will overflow.
     num_steps: 5000   # Don't change this parameter
     batch_size: 500   # We recommend using a `batch_size` that is a factor of `n_steps * n_envs`
@@ -45,6 +45,6 @@ rl:
       event_update_levels: ['short', 'middle', 'long']
       num_episodes: 500
     grid_test_study4:
-      enable: True
+      enable: False
       weight: [[0, 1], 0.01]
       num_episodes: 10
