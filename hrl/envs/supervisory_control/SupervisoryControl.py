@@ -1608,7 +1608,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 self._weight = params['weight']
                 self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
 
-        self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
+        # self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
 
         # Log related information
         self._info = {}
