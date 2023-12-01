@@ -1484,10 +1484,12 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._PPWS = None  # Start try with the discrete levels: very slow, slow, relative slow, normal; and each one will correspond to a perturbation level, then finally result in the decrease in the readability from the oculomotor control
         self._PPWS_ratio_intervals = {
             # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
-            'very slow': [0.1, 0.9],    # Previously: [0.1, 0.9]
-            'slow': [0.5, 0.85],
-            # 'relative slow': [0.7, 0.5],
-            'normal': [0.9, 0.3],
+            'slow 1': [0.1, 0.95],    # Previously: [0.1, 0.9]
+            'slow 2': [0.3, 0.9],
+            'slow 3': [0.5, 0.85],
+            'slow 4': [0.7, 0.5],
+            'slow 5': [0.8, 0.4],
+            'normal 1': [0.9, 0.3],
         }
 
         # Attention related states
@@ -1503,7 +1505,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         }
 
         # Reading related states
-        # TODO there will be unlimited texts in the future
         # self._text_length = 360     # The number of words in the text is set with an average value 360, ref: Not All Spacings are Created Equal
         self._reading_progress = None   # The ratio of the words that have been read in the text, ranges from 0 to 1
         # self._prev_reading_progress = None
@@ -1512,7 +1513,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
 
         # Experimental environment related states - Maybe use a two-dimensional array to represent the rectangular-path environment
         # Firstly try to use a one-dimensional array to represent the path environment
-        # TODO there will be no limited path in the future
         self._long_side = 8   # Remaining is even number
         self._short_side = 7    # Remaining is odd number
         # self._walking_path_perimeter = 30   # The perimeter of the path is 30 meters in the experiment, ref: Not All Spacings are Created Equal
@@ -1524,40 +1524,10 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._void_total_walking_path_length = 1000     # A void value for normalising the walking positions and the sign positions
         self._sign_distance = 2.5       # Same as in the experiment - 2.5 meters away from the path
         # Empirical setting - the extreme perceivable distance of seeing the sign in the environment
-        self._perceivable_distance = 3  # FIXME: This might be a free-parameter that we can tune later on
+        self._perceivable_distance = 3
         self._half_perceivable_range = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
-        self._next_sign_position = None     # TODO should be a dynamic value, added by 8, 7, 8, 7, ... depends on the walking position, which determines the path the agent is on
+        self._next_sign_position = None
         self._next_sign_number = None   # Start from 1
-        # TODO instead of giving all sign positions, from now on, we only provide the next sign position when the agent is on the certain path.
-        # self._sign_1 = 3.5
-        # self._sign_2 = 11
-        # self._sign_3 = 18.5
-        # self._sign_4 = 26
-        # self._sign_5 = 33.5
-        # self._sign_6 = 41
-        # self._sign_7 = 48.5
-        # self._sign_8 = 56
-        # # Get the normalized sign positions
-        # self._normalised_sign_positions = [
-        #     self.normalise(self._sign_1, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_2, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_3, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_4, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_5, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_6, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_7, 0, self._total_walking_path_length, -1, 1),
-        #     self.normalise(self._sign_8, 0, self._total_walking_path_length, -1, 1),
-        # ]
-        # self._sign_perceivable_locations = {
-        #     'sign_1': [self._sign_1 - half_perceivable_range_on_path, self._sign_1],
-        #     'sign_2': [self._sign_2 - half_perceivable_range_on_path, self._sign_2],
-        #     'sign_3': [self._sign_3 - half_perceivable_range_on_path, self._sign_3],
-        #     'sign_4': [self._sign_4 - half_perceivable_range_on_path, self._sign_4],
-        #     'sign_5': [self._sign_5 - half_perceivable_range_on_path, self._sign_5],
-        #     'sign_6': [self._sign_6 - half_perceivable_range_on_path, self._sign_6],
-        #     'sign_7': [self._sign_7 - half_perceivable_range_on_path, self._sign_7],
-        #     'sign_8': [self._sign_8 - half_perceivable_range_on_path, self._sign_8],
-        # }
         self._prev_seen_signs = None
         self._seen_signs = None     # Should be a list
         self._step_wise_perceive_signs_duration = 3   # Need to cumulatively perceive the sign for 3 seconds to be able to read it
@@ -1585,10 +1555,18 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             self._OHMD: [-1, 0],
             self._ENV: [0, 1],
         }
+        # self._action_walking_speed_thresholds = {
+        #     'very slow': [-1, -0.3],
+        #     'slow': [-0.3, 0.3],
+        #     'normal': [0.3, 1],
+        # }
         self._action_walking_speed_thresholds = {
-            'very slow': [-1, -0.3],
-            'slow': [-0.3, 0.3],
-            'normal': [0.3, 1],
+            'slow 1': [-1, -0.66],
+            'slow 2': [-0.66, -0.33],
+            'slow 3': [-0.33, 0],
+            'slow 4': [0, 0.33],
+            'slow 5': [0.33, 0.66],
+            'normal 1': [0.66, 1],
         }
 
         # Determine the information loggers
@@ -1606,8 +1584,8 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # Initialize the variables
         self._attention_target = self._ENV
         self._attention_actual_position = self._ENV
-        self._PPWS = self._PPWS_ratio_intervals['normal'][0]
-        self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
+        self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
+        self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
         self._reading_progress = 0
         # self._prev_reading_progress = 0
         self._walking_position = 0
@@ -1658,18 +1636,25 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         action_walking_speed = action[1]
 
         # Determine the walking speed
-        if action_walking_speed <= self._action_walking_speed_thresholds['very slow'][-1]:
-            self._PPWS = self._PPWS_ratio_intervals['very slow'][0]
-            self._reading_speed_ratio = self._PPWS_ratio_intervals['very slow'][-1]
-        elif self._action_walking_speed_thresholds['slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['slow'][-1]:
-            self._PPWS = self._PPWS_ratio_intervals['slow'][0]
-            self._reading_speed_ratio = self._PPWS_ratio_intervals['slow'][-1]
-        elif self._action_walking_speed_thresholds['normal'][0] < action_walking_speed <= self._action_walking_speed_thresholds['normal'][-1]:
-            self._PPWS = self._PPWS_ratio_intervals['normal'][0]
-            self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
-        else:
-            raise ValueError(f"The action value of walking speed is not in the range of [-1, 1]! "
-                             f"The action value is: {action_walking_speed}")
+        for key, value in self._action_walking_speed_thresholds.items():
+            if value[0] <= action_walking_speed <= value[-1]:
+                self._PPWS = self._PPWS_ratio_intervals[key][0]
+                self._reading_speed_ratio = self._PPWS_ratio_intervals[key][-1]
+                break
+
+        # if action_walking_speed <= self._action_walking_speed_thresholds['very slow'][-1]:
+        #     self._PPWS = self._PPWS_ratio_intervals['very slow'][0]
+        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['very slow'][-1]
+        # elif self._action_walking_speed_thresholds['slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['slow'][-1]:
+        #     self._PPWS = self._PPWS_ratio_intervals['slow'][0]
+        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['slow'][-1]
+        # elif self._action_walking_speed_thresholds['normal'][0] < action_walking_speed <= self._action_walking_speed_thresholds['normal'][-1]:
+        #     self._PPWS = self._PPWS_ratio_intervals['normal'][0]
+        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
+        # else:
+        #     raise ValueError(f"The action value of walking speed is not in the range of [-1, 1]! "
+        #                      f"The action value is: {action_walking_speed}")
+
         # Update the walking position
         self._walking_position += self._PPWS * self._preferred_walking_speed
 
