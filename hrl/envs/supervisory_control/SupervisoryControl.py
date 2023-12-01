@@ -1622,10 +1622,13 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._next_sign_position, self._next_sign_number = self._get_next_sign_position()
 
         if params is None:
+            # Default setting: randomize the weight and episode length
             self._weight = np.random.uniform(0, 1)
+            self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
         else:
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
+                self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
 
         self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
 
@@ -1717,9 +1720,11 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             self._info = {
                 'steps': self._step_indexes,
                 'weight': self._weight,
+                'rectangle_path_length': 2 * 2 * (self._long_side + self._short_side),
+                'ep_len': self.ep_len,
+                'sign_positions': [4, 11.5, 19, 26.5, 34, 41.5, 49, 56.5],  # When testing only test two rounds.
                 'walking_path_finished': True if len(self._seen_signs) == self._next_sign_number - 1 else False,
                 'signs_read': self._seen_signs,
-                'sign_positions': [4, 11.5, 19, 26.5, 34, 41.5, 49, 56.5],  # When testing only test two rounds.
                 'step_wise_attentions': self._step_wise_attentions,
                 'step_wise_walking_positions': self._step_wise_walking_positions,
                 'step_wise_walking_speeds': self._step_wise_walking_speeds,

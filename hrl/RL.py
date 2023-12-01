@@ -878,6 +878,8 @@ class RL:
 
         df_columns = [
             'walking_path_finished',
+            'rectangle_path_length',
+            'ep_len',
             'sign_read',
             'sign_positions',
             'steps',
@@ -930,6 +932,8 @@ class RL:
                     writer = csv.writer(f)
                     writer.writerow([
                         info['walking_path_finished'],
+                        info['rectangle_path_length'],
+                        info['ep_len'],
                         info['signs_read'],
                         info['sign_positions'],
                         info['steps'],
