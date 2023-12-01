@@ -1584,8 +1584,10 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # Initialize the variables
         self._attention_target = self._ENV
         self._attention_actual_position = self._ENV
-        self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
-        self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
+        # self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
+        # self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
+        self._PPWS = 1
+        self._reading_speed_ratio = self.get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
         self._reading_progress = 0
         # self._prev_reading_progress = 0
         self._walking_position = 0
@@ -1632,28 +1634,22 @@ class SupervisoryControlWalkControlElapsedTime(Env):
 
         self._steps += 1
 
+        # # Discrete actions
+        # action_attention = action[0]
+        # action_walking_speed = action[1]
+        #
+        # # Determine the walking speed
+        # for key, value in self._action_walking_speed_thresholds.items():
+        #     if value[0] <= action_walking_speed <= value[-1]:
+        #         self._PPWS = self._PPWS_ratio_intervals[key][0]
+        #         self._reading_speed_ratio = self._PPWS_ratio_intervals[key][-1]
+        #         break
+
+        # Continuous actions
         action_attention = action[0]
-        action_walking_speed = action[1]
-
-        # Determine the walking speed
-        for key, value in self._action_walking_speed_thresholds.items():
-            if value[0] <= action_walking_speed <= value[-1]:
-                self._PPWS = self._PPWS_ratio_intervals[key][0]
-                self._reading_speed_ratio = self._PPWS_ratio_intervals[key][-1]
-                break
-
-        # if action_walking_speed <= self._action_walking_speed_thresholds['very slow'][-1]:
-        #     self._PPWS = self._PPWS_ratio_intervals['very slow'][0]
-        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['very slow'][-1]
-        # elif self._action_walking_speed_thresholds['slow'][0] < action_walking_speed <= self._action_walking_speed_thresholds['slow'][-1]:
-        #     self._PPWS = self._PPWS_ratio_intervals['slow'][0]
-        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['slow'][-1]
-        # elif self._action_walking_speed_thresholds['normal'][0] < action_walking_speed <= self._action_walking_speed_thresholds['normal'][-1]:
-        #     self._PPWS = self._PPWS_ratio_intervals['normal'][0]
-        #     self._reading_speed_ratio = self._PPWS_ratio_intervals['normal'][-1]
-        # else:
-        #     raise ValueError(f"The action value of walking speed is not in the range of [-1, 1]! "
-        #                      f"The action value is: {action_walking_speed}")
+        action_walking_speed = self.normalise(action[1], -1, 1, 0, 1)
+        self._PPWS = action_walking_speed
+        self._reading_speed_ratio = self.get_reading_speed_ratio(walking_speed_ratio=self._PPWS)
 
         # Update the walking position
         self._walking_position += self._PPWS * self._preferred_walking_speed
@@ -1671,10 +1667,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             self._attention_actual_position = self._OHMD
             # Update the reading progress
             self._reading_progress += self._reading_speed_ratio * self._reading_speed
-            # # The agent is reading on the OHMD
-            # if self._reading_progress < self._text_length:
-            #     self._reading_progress += self._reading_speed_ratio * self._reading_speed
-            #     self._reading_progress = np.clip(self._reading_progress, 0, self._text_length)
         elif self._action_attention_thresholds[self._ENV][0] < action_attention <= self._action_attention_thresholds[self._ENV][-1]:
             self._attention_target = self._ENV
             if self._sign_perceivable:
@@ -1725,6 +1717,11 @@ class SupervisoryControlWalkControlElapsedTime(Env):
     def normalise(x, x_min, x_max, a, b):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
+
+    @staticmethod
+    def get_reading_speed_ratio(walking_speed_ratio):
+        # Get the reading speed ratio from a heuristic model created by myself
+        return 0.35 * np.cos(np.pi * walking_speed_ratio) + 0.65
 
     def _get_next_sign_position(self):
         # Get the next sign position based on the current walking position
