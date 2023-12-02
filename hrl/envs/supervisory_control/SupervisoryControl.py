@@ -1481,6 +1481,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
 
         # Walking related states
         self._preferred_walking_speed = 1.3  # S.L. Whitney, ... A. Alghadir, in Handbook of Clinical Neurology, 2016; Collectively, the range for normal WS for adults is between 1.2 and 1.4 m/s [73].
+        self._walking_speed_stop_threshold = 0.6    # 0.6 m/s is the threshold of walking speed to stop walking, ref: Effects of walking velocity on vertical head and body movements during locomotion [hirasaki1999effects]
         self._PPWS = None  # Start try with the discrete levels: very slow, slow, relative slow, normal; and each one will correspond to a perturbation level, then finally result in the decrease in the readability from the oculomotor control
         self._PPWS_ratio_intervals = {
             # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
@@ -1491,6 +1492,11 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             'slow 5': [0.8, 0.4],
             'normal 1': [0.9, 0.3],
         }
+
+        # Walking head perturbation's pitch values
+        # Ref: Frequency and velocity of rotational head perturbations during locomotion
+        self._theoretical_pitch_peak_amp = 3  # Theoretical pitch amplitude of the head during walking is 3 degrees - keep consistency with the oculomotor control model
+        self._pitch_amp_ratio_stop_threshold = self.f(self._walking_speed_stop_threshold) / self._theoretical_pitch_peak_amp
 
         # Attention related states
         self._attention_target = None   # Where the agent wants to see
@@ -1524,7 +1530,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._void_total_walking_path_length = 1000     # A void value for normalising the walking positions and the sign positions
         self._sign_distance = 2.5       # Same as in the experiment - 2.5 meters away from the path
         # Empirical setting - the extreme perceivable distance of seeing the sign in the environment
-        self._perceivable_distance = 3  # TODO I think now we can tune it smaller for a more realistic simulation
+        self._perceivable_distance = 2.7  # TODO I think now we can tune it smaller for a more realistic simulation
         self._half_perceivable_range = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
         self._next_sign_position = None
         self._next_sign_number = None   # Start from 1
@@ -1587,7 +1593,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
         # self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
         self._PPWS = 1
-        self._reading_speed_ratio = self.get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
+        self._reading_speed_ratio = self._get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
         self._reading_progress = 0
         # self._prev_reading_progress = 0
         self._walking_position = 0
@@ -1649,7 +1655,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         action_attention = action[0]
         action_walking_speed = self.normalise(action[1], -1, 1, 0, 1)
         self._PPWS = action_walking_speed
-        self._reading_speed_ratio = self.get_reading_speed_ratio(walking_speed_ratio=self._PPWS)
+        self._reading_speed_ratio = self._get_reading_speed_ratio(walking_speed_ratio=self._PPWS)
 
         # Update the walking position
         self._walking_position += self._PPWS * self._preferred_walking_speed
@@ -1718,10 +1724,53 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # Normalise x (which is assumed to be in range [x_min, x_max]) to range [a, b]
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
 
+    def _get_reading_speed_ratio(self, walking_speed_ratio):
+        # # Get the reading speed ratio from a heuristic model created by myself
+        # return 0.35 * np.cos(np.pi * walking_speed_ratio) + 0.65
+
+        # Get the walking speed
+        walking_speed = walking_speed_ratio * self._preferred_walking_speed
+
+        # Get the pitch amplitude
+        pitch_amp = self._get_pitch_amp_from_walking_speed(walking_speed=walking_speed)
+
+        # Get the reading speed ratio
+        reading_speed_ratio = self._get_reading_speed_ratio_from_pitch_amp(pitch_amp=pitch_amp)
+
+        return reading_speed_ratio
+
     @staticmethod
-    def get_reading_speed_ratio(walking_speed_ratio):
-        # Get the reading speed ratio from a heuristic model created by myself
-        return 0.35 * np.cos(np.pi * walking_speed_ratio) + 0.65
+    def f(x):
+        # The quadratic polynomial function that approximates the relationship between the walking speed and the pitch amplitude
+        return 0.2233395 * x**2 - 0.03672422 * x + 1.0099814
+
+    @staticmethod
+    def g(x):
+        # The quadratic polynomial function that approximates the relationship between the pitch amplitude and the reading speed ratio
+        return -0.18624534 * x**2 - 0.2453667 * x + 0.81824108
+
+    def _get_pitch_amp_from_walking_speed(self, walking_speed):
+        # Rough data: Effects of walking velocity on vertical head and body movements during locomotion [hirasaki1999effects]
+        # Approximated data from: WebPlotDigitizer https://apps.automeris.io/wpd/
+        # Rationality of using a quadratic polynomial function to approximate: quadratic polynomial functions are often
+        #   used as a default approximation tool because of their simplicity and flexibility
+        #   [Introduction to optimum design][arora2004introduction]
+        # The log in slides: https://docs.google.com/presentation/d/1qfmHrfqYp4SHzDiCw_vjatLaCZ40jS08PoyUtvQeZyU/edit#slide=id.g262ae9c5a48_0_44
+        if walking_speed <= self._walking_speed_stop_threshold:
+            return 0
+        else:
+            return self.f(walking_speed)
+
+    # TODO set a rough region of walking and stop: 0-0.1 stop; 0.1-1-->map to 0.46-1, since the data only comes from 0.6m/s, and our baseline walking speed is set as 1.3m/s
+
+    def _get_reading_speed_ratio_from_pitch_amp(self, pitch_amp):
+
+        pitch_amp_ratio = pitch_amp / self._theoretical_pitch_peak_amp
+
+        if pitch_amp_ratio <= self._pitch_amp_ratio_stop_threshold:
+            return 1
+        else:
+            return self.g(pitch_amp_ratio)
 
     def _get_next_sign_position(self):
         # Get the next sign position based on the current walking position
