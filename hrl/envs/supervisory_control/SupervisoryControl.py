@@ -1524,7 +1524,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._void_total_walking_path_length = 1000     # A void value for normalising the walking positions and the sign positions
         self._sign_distance = 2.5       # Same as in the experiment - 2.5 meters away from the path
         # Empirical setting - the extreme perceivable distance of seeing the sign in the environment
-        self._perceivable_distance = 3
+        self._perceivable_distance = 3  # TODO I think now we can tune it smaller for a more realistic simulation
         self._half_perceivable_range = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
         self._next_sign_position = None
         self._next_sign_number = None   # Start from 1
