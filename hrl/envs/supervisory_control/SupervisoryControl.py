@@ -1480,7 +1480,12 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self.action_sample_freq = 1
 
         # Walking related states
-        self._preferred_walking_speed = 1.3  # S.L. Whitney, ... A. Alghadir, in Handbook of Clinical Neurology, 2016; Collectively, the range for normal WS for adults is between 1.2 and 1.4 m/s [73].
+        # self._preferred_walking_speed = 1.3
+        # S.L. Whitney, ... A. Alghadir, in Handbook of Clinical Neurology, 2016; Collectively,
+        #   the range for normal WS for adults is between 1.2 and 1.4 m/s [73].
+        self._preferred_walking_speed = None
+        self._preferred_walking_speed_range = [1.2, 1.4]
+        self._preferred_walking_speed_random_factor = None
         self._walking_speed_stop_threshold = 0.6    # 0.6 m/s is the threshold of walking speed to stop walking, ref: Effects of walking velocity on vertical head and body movements during locomotion [hirasaki1999effects]
         self._PPWS = None  # Start try with the discrete levels: very slow, slow, relative slow, normal; and each one will correspond to a perturbation level, then finally result in the decrease in the readability from the oculomotor control
         self._PPWS_ratio_intervals = {
@@ -1552,7 +1557,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._info = None
 
         # Define the observation space
-        self._num_stateful_info = 10
+        self._num_stateful_info = 11
         self.observation_space = Box(low=-1, high=1, shape=(self._num_stateful_info,))
 
         # Define the action space - 1st: attention allocation; 2nd: walking speed control
@@ -1592,6 +1597,8 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._attention_actual_position = self._ENV
         # self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
         # self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
+        self._preferred_walking_speed_random_factor = np.random.uniform(0, 1)
+        self._preferred_walking_speed = self._preferred_walking_speed_range[0] + self._preferred_walking_speed_random_factor * (self._preferred_walking_speed_range[1] - self._preferred_walking_speed_range[0])
         self._PPWS = 1
         self._reading_speed_ratio = self._get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
         self._reading_progress = 0
@@ -1808,7 +1815,10 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         norm_next_sign_position = self.normalise(self._next_sign_position, 0, self._void_total_walking_path_length, -1, 1)
 
         # Get the walking speed
-        norm_walking_speed = self.normalise(self._PPWS, 0, 1, -1, 1)
+        norm_walking_speed_factor = self.normalise(self._preferred_walking_speed_random_factor, 0, 1, -1, 1)
+
+        # Get the walking speed ratio
+        norm_walking_speed_ratio = self.normalise(self._PPWS, 0, 1, -1, 1)
 
         # Get the reading speed
         norm_reading_speed = self.normalise(self._reading_speed_ratio, 0, 1, -1, 1)
@@ -1829,7 +1839,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         w = self._weight
 
         stateful_info = np.array([remaining_ep_len_norm, norm_attention_target, norm_attention_actual_position, norm_walking_position,
-                                  norm_walking_speed, norm_reading_speed,
+                                  norm_walking_speed_factor, norm_walking_speed_ratio, norm_reading_speed,
                                   # norm_reading_progress, norm_prev_reading_progress, norm_num_seen_signs,
                                   norm_sign_perceivable,
                                   norm_next_sign_position,
