@@ -1725,8 +1725,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         return (b - a) * ((x - x_min) / (x_max - x_min)) + a
 
     def _get_reading_speed_ratio(self, walking_speed_ratio):
-        # # Get the reading speed ratio from a heuristic model created by myself
-        # return 0.35 * np.cos(np.pi * walking_speed_ratio) + 0.65
 
         # Get the walking speed
         walking_speed = walking_speed_ratio * self._preferred_walking_speed
@@ -1760,8 +1758,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             return 0
         else:
             return self.f(walking_speed)
-
-    # TODO set a rough region of walking and stop: 0-0.1 stop; 0.1-1-->map to 0.46-1, since the data only comes from 0.6m/s, and our baseline walking speed is set as 1.3m/s
 
     def _get_reading_speed_ratio_from_pitch_amp(self, pitch_amp):
 
