@@ -876,6 +876,10 @@ class RL:
         walk_factor_stride = self._config_rl['test']['grid_test_study4']['walk_factor'][1]
         walk_factor_range[1] += walk_factor_stride
 
+        sign_factor_range = self._config_rl['test']['grid_test_study4']['sign_factor'][0]
+        sign_factor_stride = self._config_rl['test']['grid_test_study4']['sign_factor'][1]
+        sign_factor_range[1] += sign_factor_stride
+
         num_episodes = self._config_rl['test']['grid_test_study4']['num_episodes']
 
         # Initialize the lists for storing parameters
@@ -888,7 +892,8 @@ class RL:
             'sign_positions',
             'steps',
             'weights',
-            'walk_factor',
+            'walk_factors',
+            'sign_factors',
             'preferred_walking_speed',
             'step_wise_walking_positions',
             'step_wise_attentions',
@@ -919,42 +924,45 @@ class RL:
 
         for weight in np.arange(*weight_range, weight_stride):
             for walk_factor in np.arange(*walk_factor_range, walk_factor_stride):
-                params = {
-                    'weight': weight,
-                    'walk_factor': walk_factor,
-                }
+                for sign_factor in np.arange(*sign_factor_range, sign_factor_stride):
+                    params = {
+                        'weight': weight,
+                        'walk_factor': walk_factor,
+                        'sign_factor': sign_factor,
+                    }
 
-                for episode in range(1, num_episodes + 1):
-                    obs = self._env.reset(params=params)
-                    done = False
-                    score = 0
-                    info = None
+                    for episode in range(1, num_episodes + 1):
+                        obs = self._env.reset(params=params)
+                        done = False
+                        score = 0
+                        info = None
 
-                    while not done:
-                        action, _states = self._model.predict(obs, deterministic=True)
-                        obs, reward, done, info = self._env.step(action)
-                        score += reward
+                        while not done:
+                            action, _states = self._model.predict(obs, deterministic=True)
+                            obs, reward, done, info = self._env.step(action)
+                            score += reward
 
-                    # Save to CSV after each episode is finished
-                    with open(study_data_file_path, 'a') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([
-                            info['walking_path_finished'],
-                            info['rectangle_path_length'],
-                            info['ep_len'],
-                            info['signs_read'],
-                            info['sign_positions'],
-                            info['steps'],
-                            info['weight'],
-                            info['walk_factor'],
-                            info['preferred_walking_speed'],
-                            info['step_wise_walking_positions'],
-                            info['step_wise_attentions'],
-                            info['step_wise_walking_speeds'],
-                            info['step_wise_reading_ratios'],
-                            info['step_wise_reading_progress'],
-                            score,
-                        ])
+                        # Save to CSV after each episode is finished
+                        with open(study_data_file_path, 'a') as f:
+                            writer = csv.writer(f)
+                            writer.writerow([
+                                info['walking_path_finished'],
+                                info['rectangle_path_length'],
+                                info['ep_len'],
+                                info['signs_read'],
+                                info['sign_positions'],
+                                info['steps'],
+                                info['weights'],
+                                info['walk_factors'],
+                                info['sign_factors'],
+                                info['preferred_walking_speed'],
+                                info['step_wise_walking_positions'],
+                                info['step_wise_attentions'],
+                                info['step_wise_walking_speeds'],
+                                info['step_wise_reading_ratios'],
+                                info['step_wise_reading_progress'],
+                                score,
+                            ])
 
         print(
             f"\n--------------------------------------------------------------------------------------------"

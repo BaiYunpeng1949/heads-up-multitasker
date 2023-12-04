@@ -1607,7 +1607,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
                 self._preferred_walking_speed_random_factor = params['walk_factor']
-                self._sign_read_step_factor = params['sign_read_factor']
+                self._sign_read_step_factor = params['sign_factor']
                 self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
 
         # Initialize the variables
@@ -1722,8 +1722,9 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             # Episode-wise print out debugging
             self._info = {
                 'steps': self._step_indexes,
-                'weight': self._weight,
-                'walk_factor': self._preferred_walking_speed_random_factor,
+                'weights': self._weight,
+                'walk_factors': self._preferred_walking_speed_random_factor,
+                'sign_factors': self._sign_read_step_factor,
                 'preferred_walking_speed': self._preferred_walking_speed,
                 'rectangle_path_length': 2 * 2 * (self._long_side + self._short_side),
                 'ep_len': self.ep_len,
@@ -1736,8 +1737,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 'step_wise_reading_ratios': self._step_wise_reading_ratios,
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
-            print(f'weight: {self._info["weight"]}, walk_factor: {self._info["walk_factor"]},')
-            # print(self._info['step_wise_walking_positions'])
+            print(f'weight: {self._info["weights"]}, walk_factor: {self._info["walk_factors"]}, sign_factor: {self._info["sign_factors"]}')
 
         return self._get_obs(), reward, terminate, self._info
 
