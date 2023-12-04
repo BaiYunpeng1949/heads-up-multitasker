@@ -1592,12 +1592,23 @@ class SupervisoryControlWalkControlElapsedTime(Env):
 
         self._steps = 0
 
+        if params is None:
+            # Default setting: randomize the weight and episode length
+            self._weight = np.random.uniform(0, 1)
+            self._preferred_walking_speed_random_factor = np.random.uniform(0, 1)
+            self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
+        else:
+            if self._config['rl']['mode'] == 'test':
+                self._weight = params['weight']
+                self._preferred_walking_speed_random_factor = params['walk_factor']
+                self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
+
         # Initialize the variables
         self._attention_target = self._ENV
         self._attention_actual_position = self._ENV
         # self._PPWS = self._PPWS_ratio_intervals['normal 1'][0]
         # self._reading_speed_ratio = self._PPWS_ratio_intervals['normal 1'][-1]
-        self._preferred_walking_speed_random_factor = np.random.uniform(0, 1)
+        # self._preferred_walking_speed_random_factor = np.random.uniform(0, 1)
         self._preferred_walking_speed = self._preferred_walking_speed_range[0] + self._preferred_walking_speed_random_factor * (self._preferred_walking_speed_range[1] - self._preferred_walking_speed_range[0])
         self._PPWS = 1
         self._reading_speed_ratio = self._get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
@@ -1613,15 +1624,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._is_failed = False
 
         self._next_sign_position, self._next_sign_number = self._get_next_sign_position()
-
-        if params is None:
-            # Default setting: randomize the weight and episode length
-            self._weight = np.random.uniform(0, 1)
-            self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
-        else:
-            if self._config['rl']['mode'] == 'test':
-                self._weight = params['weight']
-                self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
 
         # self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
 
@@ -1710,6 +1712,8 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             self._info = {
                 'steps': self._step_indexes,
                 'weight': self._weight,
+                'walk_factor': self._preferred_walking_speed_random_factor,
+                'preferred_walking_speed': self._preferred_walking_speed,
                 'rectangle_path_length': 2 * 2 * (self._long_side + self._short_side),
                 'ep_len': self.ep_len,
                 'sign_positions': [4, 11.5, 19, 26.5, 34, 41.5, 49, 56.5],  # When testing only test two rounds.
@@ -1721,7 +1725,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 'step_wise_reading_ratios': self._step_wise_reading_ratios,
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
-            print(self._info['weight'])
+            print(f'weight: {self._info["weight"]}, walk_factor: {self._info["walk_factor"]},')
             # print(self._info['step_wise_walking_positions'])
 
         return self._get_obs(), reward, terminate, self._info

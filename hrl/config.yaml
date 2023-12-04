@@ -1,7 +1,7 @@
 simulator_name: 'hrl'
 
 rl:
-  mode: train    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
+  mode: test    # Select from: train, continual_train, test, debug (check_env many times for the baseline).
 
   train:
     total_timesteps: 200000000
@@ -47,4 +47,5 @@ rl:
     grid_test_study4:
       enable: True
       weight: [[0, 1], 0.01]
+      walk_factor: [[0, 1], 0.1]
       num_episodes: 1   # No difference across different trials over the same weight value
