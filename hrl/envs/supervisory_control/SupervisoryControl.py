@@ -1488,15 +1488,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._preferred_walking_speed_random_factor = None
         self._walking_speed_stop_threshold = 0.6    # 0.6 m/s is the threshold of walking speed to stop walking, ref: Effects of walking velocity on vertical head and body movements during locomotion [hirasaki1999effects]
         self._PPWS = None  # Start try with the discrete levels: very slow, slow, relative slow, normal; and each one will correspond to a perturbation level, then finally result in the decrease in the readability from the oculomotor control
-        self._PPWS_ratio_intervals = {
-            # Empirical setting - trial structure: [the PPWS, the ratio of readability/reading speed]
-            'slow 1': [0.1, 0.95],    # Previously: [0.1, 0.9]
-            'slow 2': [0.3, 0.9],
-            'slow 3': [0.5, 0.85],
-            'slow 4': [0.7, 0.5],
-            'slow 5': [0.8, 0.4],
-            'normal 1': [0.9, 0.3],
-        }
 
         # Walking head perturbation's pitch values
         # Ref: Frequency and velocity of rotational head perturbations during locomotion
@@ -1535,18 +1526,21 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._void_total_walking_path_length = 1000     # A void value for normalising the walking positions and the sign positions
         self._sign_distance = 2.5       # Same as in the experiment - 2.5 meters away from the path
         # Empirical setting - the extreme perceivable distance of seeing the sign in the environment
-        self._perceivable_distance = 2.6  # TODO I think now we can tune it smaller for a more realistic simulation
-        self._half_perceivable_range = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
+        self._perception_factor = None
+        self._perceivable_distance_range = [2.5, 3]
+        self._perceivable_distance = None
+        self._half_perceivable_range = None
+
         self._next_sign_position = None
         self._next_sign_number = None   # Start from 1
         self._prev_seen_signs = None
         self._seen_signs = None     # Should be a list
         # Sign read duration related states
-        self._sign_read_steps_range = [2, 6]
-        self._sign_read_step_factor = None
-        self._sign_read_steps = None  # Need to cumulatively perceive the sign for 3 seconds to be able to read it
-        self._remaining_sign_read_steps = None
-        self._sign_read_duration_normalise_denominator = 10     # Use as the denominator to normalise the sign read duration
+        # self._sign_read_steps_range = [2, 6]
+        # self._sign_read_step_factor = None
+        self._sign_read_steps = 3  # Need to cumulatively perceive the sign for 3 seconds to be able to read it
+        # self._remaining_sign_read_steps = None
+        # self._sign_read_duration_normalise_denominator = 10     # Use as the denominator to normalise the sign read duration
         self._steps_on_sign = None
         self._sign_perceivable = None
         self._is_failed = None      # An indicator of whether the agent has failed in the task: walk by a sign without perceiving it
@@ -1571,19 +1565,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             self._OHMD: [-1, 0],
             self._ENV: [0, 1],
         }
-        # self._action_walking_speed_thresholds = {
-        #     'very slow': [-1, -0.3],
-        #     'slow': [-0.3, 0.3],
-        #     'normal': [0.3, 1],
-        # }
-        self._action_walking_speed_thresholds = {
-            'slow 1': [-1, -0.66],
-            'slow 2': [-0.66, -0.33],
-            'slow 3': [-0.33, 0],
-            'slow 4': [0, 0.33],
-            'slow 5': [0.33, 0.66],
-            'normal 1': [0.66, 1],
-        }
 
         # Determine the information loggers
         self._step_indexes = None
@@ -1601,13 +1582,13 @@ class SupervisoryControlWalkControlElapsedTime(Env):
             # Default setting: randomize the weight and episode length
             self._weight = np.random.uniform(0, 1)
             self._preferred_walking_speed_random_factor = np.random.uniform(0, 1)
-            self._sign_read_step_factor = np.random.uniform(0, 1)
+            self._perception_factor = np.random.uniform(0, 1)
             self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
         else:
             if self._config['rl']['mode'] == 'test':
                 self._weight = params['weight']
                 self._preferred_walking_speed_random_factor = params['walk_factor']
-                self._sign_read_step_factor = params['sign_factor']
+                self._perception_factor = params['perception_factor']
                 self.ep_len = self._ep_len_range[1]    # Set the episode length to the maximum
 
         # Initialize the variables
@@ -1620,8 +1601,10 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._PPWS = 1
         self._reading_speed_ratio = self._get_reading_speed_ratio(walking_speed_ratio=self._PPWS)   # Get the reading speed ratio from the walking speed ratio - continuous values
         self._reading_progress = 0
-        self._sign_read_steps = self._sign_read_steps_range[0] + self._sign_read_step_factor * (self._sign_read_steps_range[1] - self._sign_read_steps_range[0])
-        self._remaining_sign_read_steps = self._sign_read_steps
+        # self._sign_read_steps = 3
+        self._perceivable_distance = self._perceivable_distance_range[0] + self._perception_factor * (self._perceivable_distance_range[1] - self._perceivable_distance_range[0])
+        self._half_perceivable_range = self._sign_distance * np.tan(np.arccos(self._sign_distance / self._perceivable_distance))
+        # self._remaining_sign_read_steps = self._sign_read_steps
         # self._prev_reading_progress = 0
         self._walking_position = 0
         self._prev_walking_position = 0
@@ -1633,8 +1616,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         self._is_failed = False
 
         self._next_sign_position, self._next_sign_number = self._get_next_sign_position()
-
-        # self.ep_len = np.random.randint(self._ep_len_range[0], self._ep_len_range[1])
 
         # Log related information
         self._info = {}
@@ -1657,17 +1638,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # self._prev_reading_progress = self._reading_progress
 
         self._steps += 1
-
-        # # Discrete actions
-        # action_attention = action[0]
-        # action_walking_speed = action[1]
-        #
-        # # Determine the walking speed
-        # for key, value in self._action_walking_speed_thresholds.items():
-        #     if value[0] <= action_walking_speed <= value[-1]:
-        #         self._PPWS = self._PPWS_ratio_intervals[key][0]
-        #         self._reading_speed_ratio = self._PPWS_ratio_intervals[key][-1]
-        #         break
 
         # Continuous actions
         action_attention = action[0]
@@ -1698,11 +1668,9 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 # If the sign is in the perceivable range, then the agent can read it
                 if sign_name not in self._seen_signs and sign_name is not None:
                     self._steps_on_sign += 1
-                    self._remaining_sign_read_steps -= 1
                     if self._steps_on_sign >= self._sign_read_steps:
                         self._seen_signs.append(sign_name)
                         self._steps_on_sign = 0
-                        self._remaining_sign_read_steps = self._sign_read_steps
             else:
                 self._attention_actual_position = self._ENV
 
@@ -1724,7 +1692,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 'steps': self._step_indexes,
                 'weights': self._weight,
                 'walk_factors': self._preferred_walking_speed_random_factor,
-                'sign_factors': self._sign_read_step_factor,
+                'perception_factors': self._perception_factor,
                 'preferred_walking_speed': self._preferred_walking_speed,
                 'rectangle_path_length': 2 * 2 * (self._long_side + self._short_side),
                 'ep_len': self.ep_len,
@@ -1737,7 +1705,10 @@ class SupervisoryControlWalkControlElapsedTime(Env):
                 'step_wise_reading_ratios': self._step_wise_reading_ratios,
                 'step_wise_reading_progress': self._step_wise_reading_progress,
             }
-            print(f'weight: {self._info["weights"]}, walk_factor: {self._info["walk_factors"]}, sign_factor: {self._info["sign_factors"]}')
+            print(f'weight: {self._info["weights"]}, '
+                  f'\nwalk_factor: {self._info["walk_factors"]}, preferred_walking_speed: {self._info["preferred_walking_speed"]}, '
+                  f'\nperception_factors: {self._info["perception_factors"]}, perceivable_distance: {self._perceivable_distance}, '
+                  f'half_perceivable_range: {self._half_perceivable_range}, ')
 
         return self._get_obs(), reward, terminate, self._info
 
@@ -1829,9 +1800,6 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # Get the sign positions
         norm_next_sign_position = self.normalise(self._next_sign_position, 0, self._void_total_walking_path_length, -1, 1)
 
-        # Get the signs' remaining steps
-        norm_sign_remaining_steps = self.normalise(self._remaining_sign_read_steps, 0, self._sign_read_duration_normalise_denominator, -1, 1)
-
         # Get the walking speed
         norm_walking_speed_factor = self.normalise(self._preferred_walking_speed_random_factor, 0, 1, -1, 1)
 
@@ -1846,6 +1814,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # norm_prev_reading_progress = self.normalise(self._prev_reading_progress, 0, self._text_length, -1, 1)
 
         # Get the sign related observation
+        norm_perception_factor = self.normalise(self._perception_factor, 0, 1, -1, 1)
         norm_sign_perceivable = 1 if self._sign_perceivable else -1
         # norm_num_seen_signs = self.normalise(len(self._seen_signs), 0, len(self._sign_perceivable_locations), -1, 1)
         # Action taken: change this to whether he has seen the last sign, but this can be represented by the following norm_fail_task
@@ -1859,7 +1828,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         stateful_info = np.array([remaining_ep_len_norm, norm_attention_target, norm_attention_actual_position, norm_walking_position,
                                   norm_walking_speed_factor, norm_walking_speed_ratio, norm_reading_speed,
                                   # norm_reading_progress, norm_prev_reading_progress, norm_num_seen_signs,
-                                  norm_sign_perceivable, norm_sign_remaining_steps,
+                                  norm_sign_perceivable, norm_perception_factor,
                                   norm_next_sign_position,
                                   norm_fail_task, w,
                                   ])

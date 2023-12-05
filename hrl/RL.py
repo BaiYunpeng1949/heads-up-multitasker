@@ -876,9 +876,9 @@ class RL:
         walk_factor_stride = self._config_rl['test']['grid_test_study4']['walk_factor'][1]
         walk_factor_range[1] += walk_factor_stride
 
-        sign_factor_range = self._config_rl['test']['grid_test_study4']['sign_factor'][0]
-        sign_factor_stride = self._config_rl['test']['grid_test_study4']['sign_factor'][1]
-        sign_factor_range[1] += sign_factor_stride
+        perception_factor_range = self._config_rl['test']['grid_test_study4']['perception_factor'][0]
+        perception_factor_stride = self._config_rl['test']['grid_test_study4']['perception_factor'][1]
+        perception_factor_range[1] += perception_factor_stride
 
         num_episodes = self._config_rl['test']['grid_test_study4']['num_episodes']
 
@@ -893,7 +893,7 @@ class RL:
             'steps',
             'weights',
             'walk_factors',
-            'sign_factors',
+            'perception_factors',
             'preferred_walking_speed',
             'step_wise_walking_positions',
             'step_wise_attentions',
@@ -924,11 +924,11 @@ class RL:
 
         for weight in np.arange(*weight_range, weight_stride):
             for walk_factor in np.arange(*walk_factor_range, walk_factor_stride):
-                for sign_factor in np.arange(*sign_factor_range, sign_factor_stride):
+                for perception_factor in np.arange(*perception_factor_range, perception_factor_stride):
                     params = {
                         'weight': weight,
                         'walk_factor': walk_factor,
-                        'sign_factor': sign_factor,
+                        'perception_factor': perception_factor,
                     }
 
                     for episode in range(1, num_episodes + 1):
@@ -954,7 +954,7 @@ class RL:
                                 info['steps'],
                                 info['weights'],
                                 info['walk_factors'],
-                                info['sign_factors'],
+                                info['perception_factors'],
                                 info['preferred_walking_speed'],
                                 info['step_wise_walking_positions'],
                                 info['step_wise_attentions'],
