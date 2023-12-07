@@ -37,45 +37,26 @@
         <mesh name="eye" file="assets/basic_eye_2.stl" scale="0.05 0.05 0.05"/>
         <mesh name="background" file="assets/fifthave.stl" scale="1 1 1"/>
         <mesh name="landscape-nus" file="assets/nus_soc_com2.stl" scale="0.025 0.025 0.025"/>
-        <mesh name="ribcage" file="assets/ribcage.stl" scale="0.25 0.25 0.25"/>
+        <mesh name="ribcage" file="assets/ribcage.stl" scale="0.5 0.5 0.5"/>
         <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".8 .769 .6" rgb2=".5 .5 .5"/>
         <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
     </asset>
     <worldbody>
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
-        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.86 0.86 0.86 0"/>
-        <geom name="ground" size="2 500 0.1" type="plane" material="grid" condim="3"/>
-        <geom name="environmental-signs-1" pos="-2 7 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-2" pos="-2 10 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-3" pos="-2 13 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-4" pos="-2 16 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-5" pos="-2 19 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-6" pos="-2 22 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-7" pos="-2 25 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-8" pos="-2 28 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-9" pos="-2 31 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-10" pos="-2 34 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-11" pos="-2 37 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-12" pos="-2 40 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-13" pos="-2 43 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-14" pos="-2 46 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-15" pos="-2 49 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-16" pos="-2 52 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-17" pos="-2 55 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-18" pos="-2 58 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-19" pos="-2 61 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-20" pos="-2 64 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-21" pos="-2 67 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-22" pos="-2 70 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-23" pos="-2 73 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-24" pos="-2 76 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-25" pos="-2 79 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
-        <geom name="environmental-signs-26" pos="-2 82 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
+        <geom name="background" pos="-100 200 0" type="mesh" mesh="background" rgba="0.86 0.86 0.86 0"/>
+        <geom name="ground1" size="0.25 4 0.1" pos="-3.25 0 0" type="plane" condim="3"/>
+        <geom name="ground2" size="3.5 0.25 0.1" pos="0 4.125 0" type="plane" condim="3"/>
+        <geom name="ground3" size="0.25 4 0.1" pos="3.25 0 0" type="plane" condim="3"/>
+        <geom name="ground4" size="3.5 0.25 0.1" pos="0 -4.125 0" type="plane" condim="3"/>
+        <geom name="environmental-signs-1" pos="5.5 0 1.8" euler="0 0 0" size="0.00001 0.5 0.5" type="box" rgba="1 0 0 1.0" condim="3"/>
+        <geom name="environmental-signs-2" pos="0 6.5 1.8" euler="0 0 1.5708" size="0.00001 0.5 0.5" type="box" rgba="1 0 0 1.0" condim="3"/>
+        <geom name="environmental-signs-3" pos="-5.5 0 1.8" euler="0 0 0" size="0.00001 0.5 0.5" type="box" rgba="1 0 0 1.0" condim="3"/>
+        <geom name="environmental-signs-4" pos="0 -6.5 1.8" euler="0 0 1.5708" size="0.00001 0.5 0.5" type="box" rgba="1 0 0 1.0" condim="3"/>
 
-        <body name="agent" pos="0 0 1.8" euler="0 0 0">
-            <camera name="env" pos="0.25 -0.55 0.15" euler="1.5 0.1 0.02"/>
-            <geom name="ribcage" type="mesh" mesh="ribcage" pos="0 0 -0.15" euler="1.57 1.57 0" rgba="0.99 0.99 0.99 0.5"/>
+        <body name="agent" pos="1 -4.125 1.8" euler="0 0 0">
+            <camera name="env" pos="-0.2 -2 0.15" euler="1.5 -0.2 0.02"/>
+            <geom name="ribcage" type="mesh" mesh="ribcage" pos="0 0 -0.25" euler="1.57 1.57 0" rgba="0.99 0.99 0.99 0.5"/>
             <joint name="agent-joint-y" class="agent-translations" axis="0 1 0" range="-100 100"/>
 
             <body name="eye" pos="0 0 0" quat="0.7071068 0.7071068 0 0">
