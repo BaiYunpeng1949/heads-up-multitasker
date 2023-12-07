@@ -1484,7 +1484,7 @@ class SupervisoryControlWalkControlElapsedTime(Env):
         # S.L. Whitney, ... A. Alghadir, in Handbook of Clinical Neurology, 2016; Collectively,
         #   the range for normal WS for adults is between 1.2 and 1.4 m/s [73].
         self._preferred_walking_speed = None
-        self._preferred_walking_speed_range = [1, 1.5]    # [1.2, 1.4]
+        self._preferred_walking_speed_range = [0.8, 1.5]    # [1.2, 1.4]
         self._preferred_walking_speed_random_factor = None
         self._walking_speed_stop_threshold = 0.6    # 0.6 m/s is the threshold of walking speed to stop walking, ref: Effects of walking velocity on vertical head and body movements during locomotion [hirasaki1999effects]
         self._PPWS = None  # Start try with the discrete levels: very slow, slow, relative slow, normal; and each one will correspond to a perturbation level, then finally result in the decrease in the readability from the oculomotor control
