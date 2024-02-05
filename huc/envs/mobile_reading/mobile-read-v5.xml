@@ -42,7 +42,7 @@
     <worldbody>
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
-        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.45 0.45 0.45 1"/>
+        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.4 0.2 0 1"/>
         <geom name="ground" size="500 500 0.1" type="plane" rgba="1.0 0.7 0.4 1.0" condim="3"/>
 
         <body name="agent" pos="0 0 1.8" euler="0 0 1.08">

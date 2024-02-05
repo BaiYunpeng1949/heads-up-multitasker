@@ -44,8 +44,10 @@
     <worldbody>
         <light name="scene_directional_light" directional="true" castshadow="false" cutoff="4" exponent="20"
                diffuse="1 1 1" specular="0 0 0" pos=".9 .3 2.5"/>
-        <geom name="background" pos="-200 500 0" type="mesh" mesh="background" rgba="0.86 0.86 0.86 0"/>
-        <geom name="ground" size="2 500 0.1" type="plane" material="grid" condim="3"/>
+<!--        <geom name="left-path" pos="-200 500 0" type="mesh" mesh="background" rgba="0.86 0.86 0.86 0"/>-->
+<!--        <geom name="right-path" pos="-200 500 0" type="mesh" mesh="background" rgba="0.86 0.86 0.86 0"/>-->
+        <geom name="left-path" pos="-1 0 0" size="1 500 0.1" type="box" rgba="0.451 0.443 0.043 1" condim="3"/>
+        <geom name="right-path" pos="1 0 0" size="1 500 0.1" type="box" rgba="0.129 0.329 0.42 1" condim="3"/>
         <geom name="environmental-signs-1" pos="-2 7 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
         <geom name="environmental-signs-2" pos="-2 10 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
         <geom name="environmental-signs-3" pos="-2 13 1.8" euler="0 0 -0.75" size="0.00001 0.25 0.2" type="box" rgba="1 0 0 1.0" condim="3"/>
